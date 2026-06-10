@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+  <title>Nexus Admin | Sticky Header & Sidebar</title>
+  <!-- Google Fonts + Font Awesome Icons -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <!-- Chart.js CDN for lightweight chart -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #f1f5f9;
+      color: #0f172a;
+      overflow-x: hidden;
+    }
+
+    /* modern scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #e2e8f0;
+      border-radius: 10px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #94a3b8;
+      border-radius: 10px;
+    }
+
+    /* layout grid - sidebar fixed + main flex column with sticky header */
+    .admin-wrapper {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ========= SIDEBAR (FIXED/STICKY) ========= */
+    .sidebar {
+      width: 260px;
+      background: linear-gradient(145deg, #0f172a 0%, #111827 100%);
+      color: #e2e8f0;
+      transition: all 0.25s ease;
+      flex-shrink: 0;
+      position: fixed;
+      top: 0;
+      left: 0;
+      height: 100vh;
+      overflow-y: auto;
+      box-shadow: 4px 0 20px rgba(0, 0, 0, 0.08);
+      z-index: 20;
+    }
+
+    /* main content area with margin left to accommodate fixed sidebar */
+    .main-content {
+      flex: 1;
+      margin-left: 260px;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    /* ========= STICKY HEADER (fixed top when scrolling) ========= */
+    .sticky-header {
+      position: sticky;
+      top: 0;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(12px);
+      z-index: 15;
+      padding: 16px 32px;
+      border-bottom: 1px solid #e9edf2;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+      transition: all 0.2s;
+    }
+
+    /* top bar inside sticky header */
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+
+    .page-title h1 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      letter-spacing: -0.4px;
+      color: #0f172a;
+    }
+    .page-title p {
+      color: #475569;
+      font-size: 0.9rem;
+      margin-top: 4px;
+    }
+    .admin-actions {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+    }
+    .notification-badge {
+      background: white;
+      width: 42px;
+      height: 42px;
+      border-radius: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+      cursor: pointer;
+      transition: 0.2s;
+      border: 1px solid #eef2ff;
+    }
+    .admin-profile {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: white;
+      padding: 6px 16px 6px 12px;
+      border-radius: 60px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+      border: 1px solid #eef2ff;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .admin-profile:hover {
+      background: #f8fafc;
+    }
+    .avatar {
+      background: #3b82f6;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 600;
+    }
+
+    /* scrollable content container */
+    .content-scrollable {
+      padding: 28px 32px;
+      flex: 1;
+    }
+
+    /* stats cards grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 24px;
+      margin-bottom: 36px;
+    }
+    .stat-card {
+      background: white;
+      border-radius: 28px;
+      padding: 20px 24px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.02), 0 2px 4px rgba(0,0,0,0.02);
+      transition: all 0.2s;
+      border: 1px solid #eef2ff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .stat-info h3 {
+      font-size: 0.85rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #5b6e8c;
+    }
+    .stat-number {
+      font-size: 2.2rem;
+      font-weight: 800;
+      margin-top: 8px;
+      color: #0f172a;
+    }
+    .stat-icon {
+      font-size: 2.5rem;
+      color: #3b82f6;
+      opacity: 0.7;
+    }
+
+    /* two column layout */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.2fr;
+      gap: 28px;
+      margin-bottom: 36px;
+    }
+    .chart-card, .recent-activities {
+      background: white;
+      border-radius: 28px;
+      padding: 20px 24px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.02);
+      border: 1px solid #eef2ff;
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 18px;
+      font-weight: 600;
+    }
+    canvas {
+      max-height: 260px;
+      width: 100%;
+    }
+    .activity-list {
+      list-style: none;
+    }
+    .activity-list li {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 0;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .activity-badge {
+      width: 38px;
+      height: 38px;
+      background: #eff6ff;
+      border-radius: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #2563eb;
+    }
+
+    /* data table section */
+    .table-section {
+      background: white;
+      border-radius: 28px;
+      padding: 12px 0 8px 0;
+      border: 1px solid #eef2ff;
+      overflow-x: auto;
+      margin-bottom: 20px;
+    }
+    .table-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 24px;
+      flex-wrap: wrap;
+    }
+    .search-box {
+      background: #f8fafc;
+      border-radius: 40px;
+      padding: 8px 18px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid #e2e8f0;
+    }
+    .search-box i {
+      color: #94a3b8;
+    }
+    .search-box input {
+      border: none;
+      background: transparent;
+      outline: none;
+      font-size: 0.9rem;
+      width: 180px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    th {
+      text-align: left;
+      padding: 16px 20px;
+      background: #fcfdff;
+      font-weight: 600;
+      color: #334155;
+      border-bottom: 1px solid #e9edf2;
+    }
+    td {
+      padding: 16px 20px;
+      border-bottom: 1px solid #f0f2f5;
+      color: #1e293b;
+    }
+    .status {
+      background: #e6f7e6;
+      color: #15803d;
+      padding: 4px 12px;
+      border-radius: 40px;
+      font-weight: 500;
+      font-size: 0.75rem;
+      display: inline-block;
+    }
+    .status.pending {
+      background: #fff3e3;
+      color: #b45309;
+    }
+    .action-icons i {
+      margin: 0 6px;
+      cursor: pointer;
+      color: #94a3b8;
+      transition: 0.2s;
+    }
+    .action-icons i:hover {
+      color: #3b82f6;
+    }
+    footer {
+      text-align: center;
+      margin-top: 30px;
+      color: #5e6f8d;
+      font-size: 0.75rem;
+      padding-bottom: 20px;
+    }
+
+    /* Sidebar nav styling */
+    .sidebar-header {
+      padding: 28px 24px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      margin-bottom: 20px;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+    .logo-icon {
+      background: #3b82f6;
+      width: 36px;
+      height: 36px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+    }
+    .logo-text {
+      background: linear-gradient(135deg, #ffffff, #cbd5e1);
+      background-clip: text;
+      -webkit-background-clip: text;
+      color: transparent;
+    }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 12px 24px;
+      margin: 6px 12px;
+      border-radius: 14px;
+      font-weight: 500;
+      font-size: 0.95rem;
+      transition: all 0.2s;
+      color: #cbd5e1;
+      cursor: pointer;
+    }
+    .nav-item i {
+      width: 22px;
+      font-size: 1.2rem;
+    }
+    .nav-item.active {
+      background: #3b82f6;
+      color: white;
+      box-shadow: 0 6px 12px -6px rgba(59,130,246,0.3);
+    }
+    .nav-item:not(.active):hover {
+      background: rgba(59,130,246,0.2);
+      color: white;
+    }
+
+    /* responsiveness: collapse sidebar on tablet */
+    @media (max-width: 900px) {
+      .sidebar {
+        width: 80px;
+      }
+      .sidebar .logo-text, .sidebar .nav-item span:not(i) {
+        display: none;
+      }
+      .sidebar .nav-item {
+        justify-content: center;
+        padding: 14px 0;
+        margin: 6px 8px;
+      }
+      .sidebar .sidebar-header {
+        padding: 20px 0;
+        text-align: center;
+      }
+      .main-content {
+        margin-left: 80px;
+      }
+      .sticky-header {
+        padding: 12px 20px;
+      }
+      .content-scrollable {
+        padding: 20px;
+      }
+      .dashboard-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    @media (max-width: 580px) {
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+      .top-bar {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .admin-actions {
+        justify-content: flex-end;
+      }
+      .table-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+      }
+    }
+    button, .nav-item, .notification-badge, .admin-profile {
+      cursor: pointer;
+    }
+    /* additional smooth scroll behavior */
+    html {
+      scroll-behavior: smooth;
+    }
+  </style>
+</head>
+<body>
+<div class="admin-wrapper">
+  <!-- SIDEBAR fixed (sticky by default) -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <div class="logo-icon"><i class="fas fa-crown"></i></div>
+        <span class="logo-text">NexusAdmin</span>
+      </div>
+    </div>
+    <nav>
+      <div class="nav-item active" data-page="Dashboard">
+        <i class="fas fa-tachometer-alt"></i> <span>Dashboard</span>
+      </div>
+      <div class="nav-item" data-page="Users">
+        <i class="fas fa-users"></i> <span>Users</span>
+      </div>
+      <div class="nav-item" data-page="Analytics">
+        <i class="fas fa-chart-line"></i> <span>Analytics</span>
+      </div>
+      <div class="nav-item" data-page="Orders">
+        <i class="fas fa-shopping-cart"></i> <span>Orders</span>
+      </div>
+      <div class="nav-item" data-page="Settings">
+        <i class="fas fa-cog"></i> <span>Settings</span>
+      </div>
+    </nav>
+  </aside>
+
+  <!-- MAIN CONTENT with sticky header -->
+  <div class="main-content">
+    <!-- Sticky header section -->
+    <header class="sticky-header">
+      <div class="top-bar">
+        <div class="page-title">
+          <h1 id="dynamicTitle">Dashboard</h1>
+          <p id="dynamicDesc">Welcome back, Alex — here's what's happening today.</p>
+        </div>
+        <div class="admin-actions">
+          <div class="notification-badge" id="notifBtn">
+            <i class="far fa-bell" style="font-size: 1.3rem; color:#3b82f6;"></i>
+          </div>
+          <div class="admin-profile" id="profileBtn">
+            <div class="avatar">AJ</div>
+            <span style="font-weight:500;">Alex Johnson</span>
+            <i class="fas fa-chevron-down" style="font-size: 12px;"></i>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Scrollable content -->
+    <div class="content-scrollable">
+      <!-- STATS CARDS -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-info">
+            <h3>Total Revenue</h3>
+            <div class="stat-number">$48,290</div>
+            <small style="color:#16a34a;">↑ +12.5%</small>
+          </div>
+          <div class="stat-icon"><i class="fas fa-dollar-sign"></i></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-info">
+            <h3>New Users</h3>
+            <div class="stat-number">+2,340</div>
+            <small style="color:#16a34a;">↑ +8.2%</small>
+          </div>
+          <div class="stat-icon"><i class="fas fa-user-plus"></i></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-info">
+            <h3>Orders</h3>
+            <div class="stat-number">1,482</div>
+            <small style="color:#eab308;">↗︎ +3.1%</small>
+          </div>
+          <div class="stat-icon"><i class="fas fa-box"></i></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-info">
+            <h3>Conversion</h3>
+            <div class="stat-number">23.6%</div>
+            <small style="color:#16a34a;">↑ +2%</small>
+          </div>
+          <div class="stat-icon"><i class="fas fa-chart-simple"></i></div>
+        </div>
+      </div>
+
+      <!-- CHARTS & ACTIVITY -->
+      <div class="dashboard-grid">
+        <div class="chart-card">
+          <div class="card-header">
+            <span>📊 Weekly Overview</span>
+            <i class="fas fa-ellipsis-h" style="color:#94a3b8;"></i>
+          </div>
+          <canvas id="revenueChart" width="400" height="200" style="max-width:100%; height:auto;"></canvas>
+        </div>
+        <div class="recent-activities">
+          <div class="card-header">
+            <span>🕒 Recent Activities</span>
+            <i class="fas fa-sync-alt" style="font-size: 0.8rem; color:#6c8bb8;"></i>
+          </div>
+          <ul class="activity-list">
+            <li><div class="activity-badge"><i class="fas fa-user-check"></i></div><div><strong>New user registered</strong><br><small>2 mins ago</small></div></li>
+            <li><div class="activity-badge"><i class="fas fa-shopping-cart"></i></div><div><strong>Order #4021 completed</strong><br><small>1 hour ago</small></div></li>
+            <li><div class="activity-badge"><i class="fas fa-chart-line"></i></div><div><strong>Monthly report generated</strong><br><small>3 hours ago</small></div></li>
+            <li><div class="activity-badge"><i class="fas fa-tag"></i></div><div><strong>Discount campaign started</strong><br><small>Yesterday</small></div></li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- DATA TABLE (USERS ORDERS) -->
+      <div class="table-section">
+        <div class="table-header">
+          <div><strong>📋 Recent Orders</strong> <span style="color:#5b6e8c; font-size:12px;">Last 5 transactions</span></div>
+          <div class="search-box">
+            <i class="fas fa-search"></i>
+            <input type="text" id="searchOrdersInput" placeholder="Search orders...">
+          </div>
+        </div>
+        <div style="overflow-x: auto;">
+          <table id="ordersTable">
+            <thead>
+              <tr><th>Order ID</th><th>Customer</th><th>Product</th><th>Amount</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>#OR-9823</td><td>Emily Clarke</td><td>Pro Plan Annual</td><td>$249.00</td><td><span class="status">Completed</span></td><td class="action-icons"><i class="fas fa-eye"></i> <i class="fas fa-edit"></i></td></tr>
+              <tr><td>#OR-9824</td><td>Michael Rivera</td><td>UI Kit Assets</td><td>$89.00</td><td><span class="status pending">Pending</span></td><td class="action-icons"><i class="fas fa-eye"></i> <i class="fas fa-edit"></i></td></tr>
+              <tr><td>#OR-9825</td><td>Sophia Zhang</td><td>Consulting Hour</td><td>$150.00</td><td><span class="status">Completed</span></td><td class="action-icons"><i class="fas fa-eye"></i> <i class="fas fa-edit"></i></td></tr>
+              <tr><td>#OR-9826</td><td>James Carter</td><td>Cloud Storage 1TB</td><td>$19.99</td><td><span class="status">Shipped</span></td><td class="action-icons"><i class="fas fa-eye"></i> <i class="fas fa-edit"></i></td></tr>
+              <tr><td>#OR-9827</td><td>Olivia Kim</td><td>Masterclass Access</td><td>$299.00</td><td><span class="status pending">Pending</span></td><td class="action-icons"><i class="fas fa-eye"></i> <i class="fas fa-edit"></i></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- admin tip card -->
+      <div style="background: linear-gradient(105deg, #0f172a 0%, #1e293b 100%); border-radius: 28px; padding: 20px 28px; margin: 6px 0 20px 0; color: white; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+        <div><i class="fas fa-rocket" style="font-size: 1.5rem; margin-right: 12px;"></i> <strong style="font-size: 1rem;">Admin pro tip:</strong>  Enable two-factor authentication for extra security.</div>
+        <div id="secureBtn" style="background: #3b82f6; padding: 8px 20px; border-radius: 40px; font-size:0.8rem; font-weight:500; cursor: pointer;"><i class="fas fa-shield-alt"></i> Secure now</div>
+      </div>
+      <footer>
+        © 2025 Nexus Admin — Built with <i class="fas fa-heart" style="color:#ef4444;"></i> for modern dashboards
+      </footer>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function() {
+    // --- Chart.js Line Chart ---
+    const ctx = document.getElementById('revenueChart').getContext('2d');
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        datasets: [{
+          label: 'Revenue (USD)',
+          data: [3200, 4800, 5100, 6700, 8900, 10200, 8700],
+          borderColor: '#3b82f6',
+          backgroundColor: 'rgba(59,130,246,0.05)',
+          borderWidth: 3,
+          pointBackgroundColor: '#3b82f6',
+          pointBorderColor: '#fff',
+          pointRadius: 5,
+          pointHoverRadius: 7,
+          tension: 0.3,
+          fill: true
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+          legend: { position: 'top', labels: { boxWidth:12, font:{size:11} } },
+          tooltip: { backgroundColor: '#0f172a' }
+        },
+        scales: {
+          y: { grid: { color: '#eef2ff' }, beginAtZero: true, title: { display: true, text: 'USD', font: {size:10} } },
+          x: { grid: { display: false } }
+        }
+      }
+    });
+
+    // Table search functionality
+    const searchInput = document.getElementById('searchOrdersInput');
+    const tableRows = document.querySelectorAll('#ordersTable tbody tr');
+    if (searchInput) {
+      searchInput.addEventListener('keyup', function(e) {
+        const term = e.target.value.toLowerCase();
+        tableRows.forEach(row => {
+          const text = row.innerText.toLowerCase();
+          row.style.display = text.includes(term) ? '' : 'none';
+        });
+      });
+    }
+
+    // Navigation: change active class + update header title/desc (demo)
+    const navItems = document.querySelectorAll('.nav-item');
+    const dynamicTitle = document.getElementById('dynamicTitle');
+    const dynamicDesc = document.getElementById('dynamicDesc');
+
+    function setActivePage(pageName) {
+      if (dynamicTitle) dynamicTitle.innerText = pageName;
+      if (dynamicDesc) {
+        if (pageName === 'Dashboard') {
+          dynamicDesc.innerText = 'Welcome back, Alex — here\'s what\'s happening today.';
+        } else {
+          dynamicDesc.innerText = `Managing ${pageName.toLowerCase()} section — overview and details.`;
+        }
+      }
+      // optional: scroll to top after navigation smooth
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    navItems.forEach(item => {
+      item.addEventListener('click', function(e) {
+        navItems.forEach(nav => nav.classList.remove('active'));
+        this.classList.add('active');
+        const pageName = this.getAttribute('data-page') || this.innerText.trim();
+        setActivePage(pageName);
+        // if not dashboard we could simulate content, but stays demo
+        console.log(`Navigation to ${pageName} (UI demo)`);
+      });
+    });
+
+    // profile & notification interactions
+    const profileBtn = document.getElementById('profileBtn');
+    if (profileBtn) {
+      profileBtn.addEventListener('click', () => {
+        alert("👤 Admin profile — Manage account & preferences (demo)");
+      });
+    }
+    const notifBtn = document.getElementById('notifBtn');
+    if (notifBtn) {
+      notifBtn.addEventListener('click', () => {
+        alert("🔔 Notifications: 3 unread messages, 2 system updates (demo)");
+      });
+    }
+    // action icons for orders demo
+    const actionIcons = document.querySelectorAll('.action-icons i');
+    actionIcons.forEach(icon => {
+      icon.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const action = icon.classList.contains('fa-eye') ? 'view details' : 'edit order';
+        alert(`Demo: ${action} for this order (UI prototype)`);
+      });
+    });
+    // secure button
+    const secureBtn = document.getElementById('secureBtn');
+    if (secureBtn) {
+      secureBtn.addEventListener('click', () => {
+        alert("🔒 2FA setup — Security enhanced flow (demo)");
+      });
+    }
+    // tiny fix for sticky header blend: already working
+    console.log("Admin panel ready — sidebar fixed + header sticky on scroll");
+  })();
+</script>
+</body>
+</html>

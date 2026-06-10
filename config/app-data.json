@@ -1,0 +1,13 @@
+{
+  "teamOptions": [
+  ],
+  "authRoleOptions": ["admin", "team_lead", "report_manager", "hod", "team_member"],
+  "createUserRoleOptions": ["team_lead", "report_manager", "hod", "team_member"],
+  "defaultAdmin": {
+    "name": "Admin",
+    "email": "admin@gmail.com",
+    "password": "Admin@123@",
+    "role": "admin",
+    "teamName": "Backend"
+  }
+}
