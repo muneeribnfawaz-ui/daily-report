@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { SessionUser } from "@/lib/types";
 import { ReportField, ReportInput, ReportSelect, ReportTextarea } from "@/components/forms/report-controls";
-import { TaskListEditor } from "@/components/forms/task-list-editor";
 
 type DailyReportValues = z.infer<typeof dailyReportSchema>;
 
@@ -111,9 +110,9 @@ export function EditReportForm({ reportId }: { reportId: string }) {
     setCompletedTasks((report.completedWork ?? "").split("\n").filter(Boolean));
     setPendingTasks((report.pendingWork ?? "").split("\n").filter(Boolean));
     setBlockerTasks((report.blockers ?? "").split("\n").filter(Boolean));
-    setCompletedDraft("");
-    setPendingDraft("");
-    setBlockerDraft("");
+    setCompletedDraft(report.completedWork ?? "");
+    setPendingDraft(report.pendingWork ?? "");
+    setBlockerDraft(report.blockers ?? "");
   }, [report, reset]);
 
   useEffect(() => {
@@ -245,40 +244,67 @@ export function EditReportForm({ reportId }: { reportId: string }) {
       <input type="hidden" {...register("completedWork")} />
       <input type="hidden" {...register("pendingWork")} />
       <input type="hidden" {...register("blockers")} />
-      <TaskListEditor
+      <ReportField
+        className="md:col-span-2"
         label="Completed Work"
         required
-        helperText="Required. Add completed tasks one by one."
-        placeholder="Type a completed task and click Add Task"
-        items={completedTasks}
-        draftValue={completedDraft}
+        helperText="Required. Paste or type completed tasks (one per line)."
         error={errors.completedWork?.message}
-        onAdd={(task) => setCompletedTasks((current) => [...current, task])}
-        onRemove={(index) => setCompletedTasks((current) => current.filter((_, itemIndex) => itemIndex !== index))}
-        onDraftChange={setCompletedDraft}
-      />
-      <TaskListEditor
+      >
+        <ReportTextarea
+          placeholder="Paste your completed work here..."
+          value={completedDraft}
+          onChange={(event) => {
+            const value = event.target.value;
+            const tasks = value
+              .split("\n")
+              .map((task) => task.replace(/^[-•*]\s*/, "").trim())
+              .filter(Boolean);
+            setCompletedDraft(value);
+            setCompletedTasks(tasks);
+          }}
+        />
+      </ReportField>
+      <ReportField
+        className="md:col-span-2"
         label="Pending Work"
-        helperText="Optional. Add pending tasks one by one."
-        placeholder="Type a pending task and click Add Task"
-        items={pendingTasks}
-        draftValue={pendingDraft}
+        helperText="Optional. Paste pending tasks, one per line."
         error={errors.pendingWork?.message}
-        onAdd={(task) => setPendingTasks((current) => [...current, task])}
-        onRemove={(index) => setPendingTasks((current) => current.filter((_, itemIndex) => itemIndex !== index))}
-        onDraftChange={setPendingDraft}
-      />
-      <TaskListEditor
+      >
+        <ReportTextarea
+          placeholder="Paste pending work here..."
+          value={pendingDraft}
+          onChange={(event) => {
+            const value = event.target.value;
+            const tasks = value
+              .split("\n")
+              .map((task) => task.replace(/^[-•*]\s*/, "").trim())
+              .filter(Boolean);
+            setPendingDraft(value);
+            setPendingTasks(tasks);
+          }}
+        />
+      </ReportField>
+      <ReportField
+        className="md:col-span-2"
         label="Blockers"
-        helperText="Optional. Add blockers one by one."
-        placeholder="Type a blocker and click Add Task"
-        items={blockerTasks}
-        draftValue={blockerDraft}
+        helperText="Optional. Paste blockers, one per line."
         error={errors.blockers?.message}
-        onAdd={(task) => setBlockerTasks((current) => [...current, task])}
-        onRemove={(index) => setBlockerTasks((current) => current.filter((_, itemIndex) => itemIndex !== index))}
-        onDraftChange={setBlockerDraft}
-      />
+      >
+        <ReportTextarea
+          placeholder="Paste blockers here..."
+          value={blockerDraft}
+          onChange={(event) => {
+            const value = event.target.value;
+            const tasks = value
+              .split("\n")
+              .map((task) => task.replace(/^[-•*]\s*/, "").trim())
+              .filter(Boolean);
+            setBlockerDraft(value);
+            setBlockerTasks(tasks);
+          }}
+        />
+      </ReportField>
       <ReportField className="md:col-span-2" label="Required clarification" error={errors.requiredClarification?.message}>
         <ReportTextarea placeholder="Required Clarification" {...register("requiredClarification")} />
       </ReportField>
