@@ -4,11 +4,13 @@ import Link from "next/link";
 import type { Route } from "next";
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Download, ArrowLeft } from "lucide-react";
+import { Download, ArrowLeft, FileText, Building2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ReportSheetPreview, type ReportSheetEntry, type ReportSheetTeamGroup } from "@/components/reports/report-sheet-preview";
+
+type ReportGroup = "operations" | "finance";
 
 type ConsolidatedDayReport = {
   date: string;
@@ -56,24 +58,13 @@ function groupReportsByTeam(reports: ReportListItem[]): ReportSheetTeamGroup[] {
   }));
 }
 
-export function ConsolidatedReportPreviewScreen({
-  endpoint,
-  date,
-  backHref,
-  title
-}: {
-  endpoint: string;
-  date: string;
-  backHref: string;
-  title: string;
-}) {
-  const reportQuery = useQuery({
-    queryKey: [endpoint, "detail", date],
+/** Fetches consolidated report data for a given group from the API. */
+function useGroupReport(endpoint: string, date: string, group: ReportGroup) {
+  return useQuery({
+    queryKey: [endpoint, "detail", date, group],
     enabled: Boolean(date),
     queryFn: async () => {
-      const response = await api.get(endpoint, {
-        params: { date }
-      });
+      const response = await api.get(endpoint, { params: { date, group } });
       const payload = response.data?.data as ConsolidatedDayReport | ReportListItem[] | undefined;
       if (!payload) return null;
 
@@ -90,29 +81,65 @@ export function ConsolidatedReportPreviewScreen({
       return payload;
     }
   });
+}
 
-  const report = reportQuery.data;
-  const previewGroups = report?.teamGroups ?? [];
-  const dateLabel = date ? formatDateOnly(date) : "";
+const GROUP_CONFIG: Record<ReportGroup, { label: string; pdfLabel: string; emptyLabel: string; icon: React.ReactNode }> = {
+  operations: {
+    label: "Operations",
+    pdfLabel: "Operations PDF",
+    emptyLabel: "No operations team reports found for this date.",
+    icon: <Building2 className="h-3.5 w-3.5" />
+  },
+  finance: {
+    label: "Finance",
+    pdfLabel: "Finance PDF",
+    emptyLabel: "No finance team reports found for this date.",
+    icon: <FileText className="h-3.5 w-3.5" />
+  }
+};
+
+export function ConsolidatedReportPreviewScreen({
+  endpoint,
+  date,
+  backHref,
+  title
+}: {
+  endpoint: string;
+  date: string;
+  backHref: string;
+  title: string;
+}) {
+  const [activeGroup, setActiveGroup] = useState<ReportGroup>("operations");
   const previewRef = useRef<HTMLDivElement | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+
+  const opsQuery = useGroupReport(endpoint, date, "operations");
+  const financeQuery = useGroupReport(endpoint, date, "finance");
+
+  const activeQuery = activeGroup === "finance" ? financeQuery : opsQuery;
+  const report = activeQuery.data;
+  const previewGroups = report?.teamGroups ?? [];
+  const dateLabel = date ? formatDateOnly(date) : "";
+  const config = GROUP_CONFIG[activeGroup];
 
   const handleDownloadPdf = async () => {
     try {
       setIsDownloading(true);
-      const response = await fetch(`/api/consolidated-reports/pdf?date=${encodeURIComponent(date)}`, {
-        credentials: "include"
-      });
+      const response = await fetch(
+        `/api/consolidated-reports/pdf?date=${encodeURIComponent(date)}&group=${activeGroup}`,
+        { credentials: "include" }
+      );
 
-      if (!response.ok) {
-        throw new Error("PDF generation failed");
-      }
+      if (!response.ok) throw new Error("PDF generation failed");
 
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = objectUrl;
-      link.download = `consolidated-report-${date}.pdf`;
+      link.download =
+        activeGroup === "finance"
+          ? `finance-consolidated-${date}.pdf`
+          : `operations-consolidated-${date}.pdf`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -142,32 +169,77 @@ export function ConsolidatedReportPreviewScreen({
                   Back to list
                 </Link>
               </Button>
-              <Button type="button" onClick={handleDownloadPdf} disabled={isDownloading}>
+              <Button
+                type="button"
+                onClick={handleDownloadPdf}
+                disabled={isDownloading}
+              >
                 <Download className="h-4 w-4" />
-                {isDownloading ? "Downloading..." : "Download PDF"}
+                {isDownloading ? "Downloading..." : config.pdfLabel}
               </Button>
             </div>
           </div>
         </CardHeader>
-        <CardContent className="px-0">
-          <div className="rounded-2xl border bg-background/70 p-4 text-sm text-muted-foreground">
-            This screen shows the reusable full report preview only. The dated list stays on the previous screen.
+
+        {/* Group switcher */}
+        <CardContent className="px-0 pb-0">
+          <div className="flex items-center gap-1 rounded-xl border bg-muted/40 p-1 w-fit">
+            {(Object.entries(GROUP_CONFIG) as [ReportGroup, typeof GROUP_CONFIG[ReportGroup]][]).map(
+              ([group, cfg]) => {
+                const isActive = activeGroup === group;
+                const groupQuery = group === "finance" ? financeQuery : opsQuery;
+                const count = groupQuery.data?.reportCount;
+                return (
+                  <button
+                    key={group}
+                    type="button"
+                    onClick={() => setActiveGroup(group)}
+                    className={[
+                      "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+                      isActive
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    ].join(" ")}
+                  >
+                    {cfg.icon}
+                    {cfg.label}
+                    {count !== undefined && (
+                      <span
+                        className={[
+                          "ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none",
+                          isActive
+                            ? "bg-primary/10 text-primary"
+                            : "bg-muted text-muted-foreground"
+                        ].join(" ")}
+                      >
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                );
+              }
+            )}
           </div>
         </CardContent>
       </Card>
 
-      {reportQuery.isLoading ? (
-        <div className="text-sm text-muted-foreground">Loading consolidated report preview...</div>
-      ) : reportQuery.isError ? (
-        <div className="text-sm text-danger">Failed to load consolidated report preview.</div>
+      {/* Preview body */}
+      {activeQuery.isLoading ? (
+        <div className="text-sm text-muted-foreground">
+          Loading {config.label.toLowerCase()} report preview...
+        </div>
+      ) : activeQuery.isError ? (
+        <div className="text-sm text-danger">
+          Failed to load {config.label.toLowerCase()} report preview.
+        </div>
       ) : !report ? (
         <div className="text-sm text-muted-foreground">No report selected.</div>
       ) : previewGroups.length === 0 ? (
-        <div className="text-sm text-muted-foreground">No daily reports found for {dateLabel}.</div>
+        <div className="text-sm text-muted-foreground">{config.emptyLabel}</div>
       ) : (
         <div ref={previewRef} className="pdf-export-root">
           <ReportSheetPreview
-            title="Daily Team Progress Report"
+            title={`${config.label} Team Progress Report`}
             dateLabel={dateLabel}
             teamGroups={previewGroups}
             subtitle={`${report.reportCount} reports · ${previewGroups.length} teams`}

@@ -3,7 +3,7 @@ import DailyReport from "@/models/DailyReport";
 import User from "@/models/User";
 import { getActiveLeaveRequestsForRange, toInclusiveDateRange, type ActiveLeaveRequest } from "@/lib/leave-requests";
 import type { ReportSheetEntry, ReportSheetTeamGroup } from "@/components/reports/report-sheet-preview";
-import { getActiveTeamTypeShowNameMap } from "@/lib/team-types";
+import { getActiveTeamTypeShowNameMap, getFinanceTeamInternalNames } from "@/lib/team-types";
 
 function collectDescendantUserNames(
   users: Array<{ name?: string | null; managerName?: string | null }>,
@@ -96,10 +96,16 @@ export async function getConsolidatedReportDetail(
   date: string,
   userName: string,
   role: string,
-  teamName?: string | null
+  teamName?: string | null,
+  reportGroup?: "finance" | "operations" | "all"
 ) {
   await connectToDatabase();
   const teamTypeShowNameMap = await getActiveTeamTypeShowNameMap();
+
+  // Resolve which internal names belong to the Finance group.
+  const financeTeamNames = await getFinanceTeamInternalNames();
+  const financeTeamNameSet = new Set(financeTeamNames);
+
   const allUsers = await User.find({}).lean();
   const userRoleById = new Map<string, string | null>();
   for (const user of allUsers as Array<{ _id?: unknown; role?: string | null }>) {
@@ -140,6 +146,16 @@ export async function getConsolidatedReportDetail(
   const { start: day, end: nextDay } = toInclusiveDateRange(date);
   conditions.push({ reportDate: { $gte: day, $lt: nextDay } });
 
+  // Apply Finance / Operations group filter at DB query level when possible.
+  if (reportGroup === "finance" && financeTeamNames.length > 0) {
+    conditions.push({ teamName: { $in: financeTeamNames } });
+  } else if (reportGroup === "operations") {
+    if (financeTeamNames.length > 0) {
+      conditions.push({ teamName: { $nin: financeTeamNames } });
+    }
+  }
+  // "all" or undefined → no extra filter (full backward compatibility)
+
   const filter = conditions.length <= 1 ? conditions[0] ?? {} : { $and: conditions };
   const reports = (await DailyReport.find(filter).sort({ reportDate: -1, createdAt: -1 }).lean()) as unknown as Array<
     ReportSheetEntry & { employeeId: unknown }
@@ -159,6 +175,13 @@ export async function getConsolidatedReportDetail(
     dateFrom: date,
     dateTo: date
   });
+
+  // Filter leave requests by group when applicable.
+  const filteredLeaveRequests = leaveRequests.filter((lr) => {
+    if (reportGroup === "finance") return financeTeamNameSet.has(lr.teamName);
+    if (reportGroup === "operations") return !financeTeamNameSet.has(lr.teamName);
+    return true; // "all" or undefined — include everything
+  });
   const leaveByEmployeeId = new Map<string, ActiveLeaveRequest>();
   const leaveMembersByTeam = new Map<
     string,
@@ -174,7 +197,7 @@ export async function getConsolidatedReportDetail(
   const notSharedMembersByTeam = new Map<string, Array<{ employeeId: string; name: string }>>();
   const shouldShowNotShared = role === "team_lead" || role === "report_manager" || role === "hod" || role === "admin";
 
-  for (const leaveRequest of leaveRequests) {
+  for (const leaveRequest of filteredLeaveRequests) {
     const current = leaveByEmployeeId.get(leaveRequest.employeeId);
     const currentPriority = current?.status === "approved" ? 3 : current?.status === "forwarded_to_hod" ? 2 : current?.status === "pending_tl" ? 1 : 0;
     const nextPriority = leaveRequest.status === "approved" ? 3 : leaveRequest.status === "forwarded_to_hod" ? 2 : 1;
@@ -222,6 +245,11 @@ export async function getConsolidatedReportDetail(
       }
 
       const teamKey = resolveTeamName(user);
+
+      // Apply group filter for notShared members.
+      if (reportGroup === "finance" && !financeTeamNameSet.has(teamKey)) continue;
+      if (reportGroup === "operations" && financeTeamNameSet.has(teamKey)) continue;
+
       const current = notSharedMembersByTeam.get(teamKey) ?? [];
       if (!current.some((item) => item.employeeId === employeeId)) {
         current.push({

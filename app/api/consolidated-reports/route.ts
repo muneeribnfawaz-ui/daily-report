@@ -49,7 +49,16 @@ export async function GET(request: Request) {
     return NextResponse.json({ success: true, data: summary });
   }
 
-  const detail = await getConsolidatedReportDetail(date, user.name, user.role, user.teamName);
+  const detail = await getConsolidatedReportDetail(
+    date,
+    user.name,
+    user.role,
+    user.teamName,
+    (() => {
+      const g = url.searchParams.get("group");
+      return g === "finance" ? "finance" : g === "operations" ? "operations" : g === "all" ? "all" : undefined;
+    })()
+  );
 
   return NextResponse.json({
     success: true,

@@ -41,16 +41,28 @@ export async function GET(request: Request) {
     return NextResponse.json({ success: false, message: "date is required" }, { status: 400 });
   }
 
+  const groupParam = url.searchParams.get("group");
+  const reportGroup: "finance" | "operations" | "all" =
+    groupParam === "finance" ? "finance" : groupParam === "all" ? "all" : "operations";
+
+  const isFinance = reportGroup === "finance";
+  const reportTitle = isFinance
+    ? `Finance Consolidated Report - ${date}`
+    : `Operations Consolidated Report - ${date}`;
+  const downloadFilename = isFinance
+    ? `finance-consolidated-${date}.pdf`
+    : `operations-consolidated-${date}.pdf`;
+
   let stage = "loading report data";
   try {
-    const data = await getConsolidatedReportDetail(date, user.name, user.role, user.teamName);
+    const data = await getConsolidatedReportDetail(date, user.name, user.role, user.teamName, reportGroup);
     stage = "building report HTML";
     const html = buildConsolidatedReportHtml({
       date: data.date,
       reportCount: data.reportCount,
       teamCount: data.teamCount,
       teamGroups: data.teamGroups,
-      title: `Daily Team Progress Report - ${date}`,
+      title: reportTitle,
       generatedBy: user.name,
       subtitle: `${data.reportCount} reports · ${data.teamCount} teams`
     });
@@ -61,7 +73,7 @@ export async function GET(request: Request) {
     return new Response(new Uint8Array(buffer), {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="consolidated-report-${date}.pdf"`
+        "Content-Disposition": `attachment; filename="${downloadFilename}"`
       }
     });
   } catch (error) {

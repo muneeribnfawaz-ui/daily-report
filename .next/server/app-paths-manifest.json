@@ -1,14 +1,14 @@
 {
-  "/api/auth/login/route": "app/api/auth/login/route.js",
   "/api/auth/me/route": "app/api/auth/me/route.js",
-  "/api/reports/my/route": "app/api/reports/my/route.js",
-  "/api/reports/[id]/route": "app/api/reports/[id]/route.js",
-  "/api/report-manager/reports/route": "app/api/report-manager/reports/route.js",
-  "/page": "app/page.js",
-  "/login/page": "app/login/page.js",
-  "/report-manager/dashboard/page": "app/report-manager/dashboard/page.js",
-  "/daily-report/my-reports/page": "app/daily-report/my-reports/page.js",
-  "/daily-report/[id]/preview/page": "app/daily-report/[id]/preview/page.js",
-  "/daily-report/create/page": "app/daily-report/create/page.js",
-  "/report-manager/reports/page": "app/report-manager/reports/page.js"
+  "/api/consolidated-reports/route": "app/api/consolidated-reports/route.js",
+  "/api/auth/login/route": "app/api/auth/login/route.js",
+  "/api/admin/users/route": "app/api/admin/users/route.js",
+  "/api/team-types/route": "app/api/team-types/route.js",
+  "/api/users/[id]/route": "app/api/users/[id]/route.js",
+  "/report-manager/reports/page": "app/report-manager/reports/page.js",
+  "/report-manager/consolidated-reports/[date]/page": "app/report-manager/consolidated-reports/[date]/page.js",
+  "/admin/dashboard/page": "app/admin/dashboard/page.js",
+  "/admin/users/page": "app/admin/users/page.js",
+  "/admin/users/[id]/edit/page": "app/admin/users/[id]/edit/page.js",
+  "/admin/users/create/page": "app/admin/users/create/page.js"
 }
