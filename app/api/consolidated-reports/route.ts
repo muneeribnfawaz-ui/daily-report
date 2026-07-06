@@ -10,12 +10,22 @@ function toDateKey(value: Date | string) {
 
 export async function GET(request: Request) {
   const user = await getCurrentUser();
-  if (!user || (user.role !== "team_lead" && user.role !== "report_manager" && user.role !== "hod" && user.role !== "admin")) {
+  if (!user || (user.role !== "team_lead" && user.role !== "report_manager" && user.role !== "hod" && user.role !== "admin" && user.role !== "ceo")) {
     return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
   }
 
   const url = new URL(request.url);
   const date = url.searchParams.get("date");
+
+  const requestedGroup = (() => {
+    const g = url.searchParams.get("group");
+    return g === "finance" ? "finance" : g === "operations" ? "operations" : g === "all" ? "all" : undefined;
+  })();
+
+  // Finance consolidated reports are restricted to admin, ceo, and hod only.
+  if (requestedGroup === "finance" && user.role !== "admin" && user.role !== "ceo" && user.role !== "hod") {
+    return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
+  }
 
   await connectToDatabase();
 
@@ -54,10 +64,7 @@ export async function GET(request: Request) {
     user.name,
     user.role,
     user.teamName,
-    (() => {
-      const g = url.searchParams.get("group");
-      return g === "finance" ? "finance" : g === "operations" ? "operations" : g === "all" ? "all" : undefined;
-    })()
+    requestedGroup
   );
 
   return NextResponse.json({

@@ -19,7 +19,7 @@ function toDateRange(dateValue: string) {
 }
 
 function canManageLeave(role: string) {
-  return role === "team_lead" || role === "report_manager" || role === "hod" || role === "admin";
+  return role === "team_lead" || role === "report_manager" || role === "hod" || role === "admin" || role === "ceo";
 }
 
 type CreatedLeaveRequest = {

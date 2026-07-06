@@ -17,7 +17,7 @@ function normalizeTeamNames(teamName?: string | null, teamNames?: string[] | nul
 
 export async function GET(request: Request) {
   const user = await getCurrentUser();
-  if (!user || user.role !== "admin") {
+  if (!user || (user.role !== "admin" && user.role !== "ceo")) {
     return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
   }
 
@@ -58,7 +58,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
-  if (!user || user.role !== "admin") {
+  if (!user || (user.role !== "admin" && user.role !== "ceo")) {
     return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
   }
 
@@ -123,7 +123,7 @@ export async function POST(request: Request) {
     status: "active",
     isActive: true,
     isDeleted: false,
-    isAdminActive: parsed.data.role === "admin",
+    isAdminActive: parsed.data.role === "admin" || parsed.data.role === "ceo",
     isEmailActivated: false
   });
 

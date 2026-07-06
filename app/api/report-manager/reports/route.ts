@@ -39,7 +39,7 @@ function toDateKey(value: Date | string | undefined) {
 
 export async function GET(request: Request) {
   const user = await getCurrentUser();
-  if (!user || (user.role !== "team_lead" && user.role !== "report_manager" && user.role !== "hod" && user.role !== "admin")) {
+  if (!user || (user.role !== "team_lead" && user.role !== "report_manager" && user.role !== "hod" && user.role !== "admin" && user.role !== "ceo")) {
     return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
   }
 

@@ -10,7 +10,7 @@ export default async function ReportManagerReportDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const user = await getCurrentUser();
-  if (!user || (user.role !== "team_lead" && user.role !== "report_manager" && user.role !== "hod" && user.role !== "admin")) {
+  if (!user || (user.role !== "team_lead" && user.role !== "report_manager" && user.role !== "hod" && user.role !== "admin" && user.role !== "ceo")) {
     redirect("/report-manager/reports");
   }
 

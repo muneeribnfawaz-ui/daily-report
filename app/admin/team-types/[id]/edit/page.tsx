@@ -14,7 +14,7 @@ export default async function AdminEditTeamTypePage({
 }) {
   const { id } = await Promise.resolve(params);
   const user = await getCurrentUser();
-  if (!user || user.role !== "admin") {
+  if (!user || (user.role !== "admin" && user.role !== "ceo")) {
     redirect("/login");
   }
 

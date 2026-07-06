@@ -36,7 +36,7 @@ function collectDescendantUserNames(users: Array<{ name?: string | null; manager
 
 export async function GET(request: Request) {
   const user = await getCurrentUser();
-  if (!user || (user.role !== "admin" && user.role !== "team_lead" && user.role !== "report_manager" && user.role !== "hod")) {
+  if (!user || (user.role !== "admin" && user.role !== "ceo" && user.role !== "team_lead" && user.role !== "report_manager" && user.role !== "hod")) {
     return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
   }
 
@@ -46,14 +46,14 @@ export async function GET(request: Request) {
   await connectToDatabase();
   const teamTypeShowNameMap = await getActiveTeamTypeShowNameMap();
 
-  const allUsers = user.role === "admin" ? [] : await User.find({}).lean();
+  const allUsers = (user.role === "admin" || user.role === "ceo") ? [] : await User.find({}).lean();
   const visibleUserNames =
-    user.role === "admin"
+    (user.role === "admin" || user.role === "ceo")
       ? null
       : collectDescendantUserNames(allUsers as Array<{ name?: string | null; managerName?: string | null }>, user.name);
 
   const visibilityFilter =
-    user.role === "admin"
+    (user.role === "admin" || user.role === "ceo")
       ? {}
       : user.role === "hod"
         ? {
@@ -77,7 +77,7 @@ export async function GET(request: Request) {
     : null;
 
   const filter =
-    user.role === "admin"
+    (user.role === "admin" || user.role === "ceo")
       ? searchFilter ?? {}
       : searchFilter
         ? { $and: [visibilityFilter, searchFilter] }
@@ -95,7 +95,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
-  if (!user || (user.role !== "admin" && user.role !== "team_lead" && user.role !== "hod")) {
+  if (!user || (user.role !== "admin" && user.role !== "ceo" && user.role !== "team_lead" && user.role !== "hod")) {
     return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
   }
 
@@ -109,8 +109,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, message: "Team leads can only create team members" }, { status: 403 });
   }
 
-  if (user.role === "hod" && (parsed.data.role === "admin" || parsed.data.role === "hod")) {
-    return NextResponse.json({ success: false, message: "HOD cannot create admin or HOD users" }, { status: 403 });
+  if (user.role === "hod" && (parsed.data.role === "admin" || parsed.data.role === "ceo" || parsed.data.role === "hod")) {
+    return NextResponse.json({ success: false, message: "HOD cannot create admin, CEO, or HOD users" }, { status: 403 });
   }
 
   await connectToDatabase();
@@ -188,7 +188,7 @@ export async function POST(request: Request) {
     status: "active",
     isActive: true,
     isDeleted: false,
-    isAdminActive: parsed.data.role === "admin",
+    isAdminActive: parsed.data.role === "admin" || parsed.data.role === "ceo",
     isEmailActivated: false
   });
 

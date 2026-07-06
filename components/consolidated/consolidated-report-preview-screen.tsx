@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ReportSheetPreview, type ReportSheetEntry, type ReportSheetTeamGroup } from "@/components/reports/report-sheet-preview";
+import { useSession } from "@/hooks/use-session";
 
 type ReportGroup = "operations" | "finance";
 
@@ -112,6 +113,8 @@ export function ConsolidatedReportPreviewScreen({
   const [activeGroup, setActiveGroup] = useState<ReportGroup>("operations");
   const previewRef = useRef<HTMLDivElement | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const { data: sessionUser } = useSession();
+  const canViewFinance = sessionUser?.role === "admin" || sessionUser?.role === "ceo" || sessionUser?.role === "hod";
 
   const opsQuery = useGroupReport(endpoint, date, "operations");
   const financeQuery = useGroupReport(endpoint, date, "finance");
@@ -186,6 +189,8 @@ export function ConsolidatedReportPreviewScreen({
           <div className="flex items-center gap-1 rounded-xl border bg-muted/40 p-1 w-fit">
             {(Object.entries(GROUP_CONFIG) as [ReportGroup, typeof GROUP_CONFIG[ReportGroup]][]).map(
               ([group, cfg]) => {
+                // Hide the Finance tab for users who cannot view finance reports.
+                if (group === "finance" && !canViewFinance) return null;
                 const isActive = activeGroup === group;
                 const groupQuery = group === "finance" ? financeQuery : opsQuery;
                 const count = groupQuery.data?.reportCount;

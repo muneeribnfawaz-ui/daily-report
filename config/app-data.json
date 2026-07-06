@@ -1,8 +1,8 @@
 {
   "teamOptions": [
   ],
-  "authRoleOptions": ["admin", "team_lead", "report_manager", "hod", "team_member"],
-  "createUserRoleOptions": ["team_lead", "report_manager", "hod", "team_member"],
+  "authRoleOptions": ["admin", "ceo", "team_lead", "report_manager", "hod", "team_member"],
+  "createUserRoleOptions": ["ceo", "team_lead", "report_manager", "hod", "team_member"],
   "defaultAdmin": {
     "name": "Admin",
     "email": "admin@gmail.com",

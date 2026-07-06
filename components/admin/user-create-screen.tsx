@@ -4,7 +4,7 @@ import { ManagerAddUserForm } from "@/components/admin/manager-add-user-form";
 import type { SessionUser } from "@/lib/types";
 
 export function UserCreateScreen({ currentUser }: { currentUser: SessionUser }) {
-  const isAdmin = currentUser.role === "admin";
+  const isAdmin = currentUser.role === "admin" || currentUser.role === "ceo";
   const isManagerScoped = currentUser.role === "team_lead" || currentUser.role === "hod";
 
   return (

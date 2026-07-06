@@ -38,7 +38,7 @@ export function LoginForm() {
       const response = await api.post("/api/auth/login", values);
       queryClient.clear();
       const role = normalizeRole(response.data?.data?.role);
-      if (role === "admin") router.push("/admin/dashboard");
+      if (role === "admin" || role === "ceo") router.push("/admin/dashboard");
       else if (role === "team_member") router.push("/daily-report/my-reports");
       else if (role === "team_lead" || role === "report_manager" || role === "hod") router.push("/report-manager/dashboard");
       else router.push("/dashboard");

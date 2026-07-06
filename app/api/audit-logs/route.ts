@@ -5,7 +5,7 @@ import AuditLog from "@/models/AuditLog";
 
 export async function GET() {
   const user = await getCurrentUser();
-  if (!user || (user.role !== "admin" && user.role !== "team_lead" && user.role !== "report_manager" && user.role !== "hod")) {
+  if (!user || (user.role !== "admin" && user.role !== "ceo" && user.role !== "team_lead" && user.role !== "report_manager" && user.role !== "hod")) {
     return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
   }
 

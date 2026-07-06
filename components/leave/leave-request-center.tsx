@@ -66,7 +66,7 @@ function ReviewActionButtons({
   const canCancel = isOwner && (requestItem.status === "pending_tl" || requestItem.status === "forwarded_to_hod");
   const canTeamLeadReview = currentUser.role === "team_lead" && !isOwner && requestItem.status === "pending_tl";
   const canFinalize =
-    (currentUser.role === "hod" || currentUser.role === "admin" || currentUser.role === "report_manager") &&
+    (currentUser.role === "hod" || currentUser.role === "admin" || currentUser.role === "ceo" || currentUser.role === "report_manager") &&
     (requestItem.status === "pending_tl" || requestItem.status === "forwarded_to_hod");
   const canReject = canTeamLeadReview || canFinalize;
 
@@ -156,7 +156,7 @@ export function LeaveRequestCenter() {
     }
   };
 
-  const showManagerActions = currentUser?.role === "team_lead" || currentUser?.role === "report_manager" || currentUser?.role === "hod" || currentUser?.role === "admin";
+  const showManagerActions = currentUser?.role === "team_lead" || currentUser?.role === "report_manager" || currentUser?.role === "hod" || currentUser?.role === "admin" || currentUser?.role === "ceo";
   const leaveItems = leaveRequests?.items ?? [];
   const totalPages = leaveRequests?.totalPages ?? 0;
   const currentPage = leaveRequests?.page ?? page;

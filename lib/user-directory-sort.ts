@@ -20,7 +20,7 @@ function getRoleRank(role?: string | null) {
   if (role === "team_lead") return 1;
   if (role === "team_member") return 2;
   if (role === "report_manager") return 3;
-  if (role === "admin") return 4;
+  if (role === "admin" || role === "ceo") return 4;
   return 4;
 }
 

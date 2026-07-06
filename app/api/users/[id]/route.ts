@@ -21,8 +21,8 @@ function normalizeTeamNames(teamName?: string | null, teamNames?: string[] | nul
 }
 
 function canEditUser(editor: { id: string; name: string; role: string }, target: TargetUser) {
-  if (editor.role === "admin") return true;
-  if (target.role === "admin") return false;
+  if (editor.role === "admin" || editor.role === "ceo") return true;
+  if (target.role === "admin" || target.role === "ceo") return false;
   return target.managerName === editor.name;
 }
 
@@ -78,19 +78,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 
   const nextRole = parsed.data.role ?? target.role;
-  if (nextRole === "admin" && user.role !== "admin") {
+  if ((nextRole === "admin" || nextRole === "ceo") && user.role !== "admin" && user.role !== "ceo") {
     return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
   }
 
-  if (parsed.data.email !== undefined && user.role !== "admin") {
+  if (parsed.data.email !== undefined && user.role !== "admin" && user.role !== "ceo") {
     return NextResponse.json({ success: false, message: "Only admin can update email" }, { status: 403 });
   }
 
-  if (parsed.data.managerName && user.role !== "admin" && user.role !== "hod") {
+  if (parsed.data.managerName && user.role !== "admin" && user.role !== "ceo" && user.role !== "hod") {
     return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
   }
 
-  if (parsed.data.resetPassword && user.role !== "admin" && user.role !== "hod") {
+  if (parsed.data.resetPassword && user.role !== "admin" && user.role !== "ceo" && user.role !== "hod") {
     return NextResponse.json({ success: false, message: "Only admin or HOD can reset passwords" }, { status: 403 });
   }
 

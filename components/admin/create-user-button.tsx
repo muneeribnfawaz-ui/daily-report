@@ -21,7 +21,7 @@ export function CreateUserButton({
     staleTime: 60_000
   });
 
-  if (!currentUser || (currentUser.role !== "team_lead" && currentUser.role !== "hod" && currentUser.role !== "admin")) {
+  if (!currentUser || (currentUser.role !== "team_lead" && currentUser.role !== "hod" && currentUser.role !== "admin" && currentUser.role !== "ceo")) {
     return null;
   }
 

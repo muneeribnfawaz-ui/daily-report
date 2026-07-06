@@ -14,7 +14,7 @@ export default async function AdminEditUserPage({
 }) {
   const { id } = await params;
   const user = await getCurrentUser();
-  if (!user || user.role !== "admin") {
+  if (!user || (user.role !== "admin" && user.role !== "ceo")) {
     redirect("/login");
   }
 

@@ -14,14 +14,15 @@ export const TEAM_OPTIONS = appData.teamOptions as unknown as readonly [
   "Digital Marketing"
 ];
 
-export const AUTH_ROLE_OPTIONS = appData.authRoleOptions as unknown as readonly ["admin", "team_lead", "report_manager", "hod", "team_member"];
+export const AUTH_ROLE_OPTIONS = appData.authRoleOptions as unknown as readonly ["admin", "ceo", "team_lead", "report_manager", "hod", "team_member"];
 export type UserRole = (typeof AUTH_ROLE_OPTIONS)[number];
 export const USER_ROLES = AUTH_ROLE_OPTIONS;
 
-export const CREATE_USER_ROLE_OPTIONS = appData.createUserRoleOptions as unknown as readonly ["team_lead", "report_manager", "hod", "team_member"];
+export const CREATE_USER_ROLE_OPTIONS = appData.createUserRoleOptions as unknown as readonly ["ceo", "team_lead", "report_manager", "hod", "team_member"];
 
 export const ROLE_LABELS: Record<UserRole, string> = {
   admin: "Admin",
+  ceo: "CEO",
   team_lead: "Team Lead",
   report_manager: "Report Manager",
   hod: "HOD",
@@ -29,6 +30,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 };
 
 export const CREATE_USER_ROLE_LABELS: Record<(typeof CREATE_USER_ROLE_OPTIONS)[number], string> = {
+  ceo: "CEO",
   team_lead: "Team Lead",
   report_manager: "Report Manager",
   hod: "HOD",
@@ -41,7 +43,7 @@ export const LEGACY_ROLE_ALIASES: Record<string, UserRole> = {
 
 export function normalizeRole(role?: string | null): UserRole | null {
   if (!role) return null;
-  if (role === "admin" || role === "team_lead" || role === "report_manager" || role === "hod" || role === "team_member") return role;
+  if (role === "admin" || role === "ceo" || role === "team_lead" || role === "report_manager" || role === "hod" || role === "team_member") return role;
   return LEGACY_ROLE_ALIASES[role] ?? null;
 }
 
@@ -112,7 +114,8 @@ export const SIDEBAR_NAV_ITEMS_BY_ROLE = {
   team_lead: TEAM_LEAD_SIDEBAR_ITEMS,
   report_manager: REPORT_MANAGER_SIDEBAR_ITEMS,
   hod: HOD_SIDEBAR_ITEMS,
-  admin: ADMIN_SIDEBAR_ITEMS
+  admin: ADMIN_SIDEBAR_ITEMS,
+  ceo: ADMIN_SIDEBAR_ITEMS
 } as const;
 
 export const SOFTWARE_ROLE_OPTIONS = [

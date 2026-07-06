@@ -6,7 +6,7 @@ import { logAuditEntry } from "@/lib/audit";
 
 async function assertPrivilegedUser() {
   const user = await getCurrentUser();
-  if (!user || (user.role !== "team_lead" && user.role !== "report_manager" && user.role !== "hod" && user.role !== "admin")) return null;
+  if (!user || (user.role !== "team_lead" && user.role !== "report_manager" && user.role !== "hod" && user.role !== "admin" && user.role !== "ceo")) return null;
   return user;
 }
 

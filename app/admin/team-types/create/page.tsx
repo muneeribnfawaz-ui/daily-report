@@ -9,7 +9,7 @@ import { getCurrentUser } from "@/lib/auth";
 
 export default async function AdminCreateTeamTypePage() {
   const user = await getCurrentUser();
-  if (!user || user.role !== "admin") {
+  if (!user || (user.role !== "admin" && user.role !== "ceo")) {
     redirect("/login");
   }
 

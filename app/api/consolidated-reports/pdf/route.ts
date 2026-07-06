@@ -27,7 +27,7 @@ export async function GET(request: Request) {
   let user: SessionUser | null;
   try {
     user = await getCurrentUser();
-    if (!user || (user.role !== "team_lead" && user.role !== "report_manager" && user.role !== "hod" && user.role !== "admin")) {
+    if (!user || (user.role !== "team_lead" && user.role !== "report_manager" && user.role !== "hod" && user.role !== "admin" && user.role !== "ceo")) {
       return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
     }
   } catch (error) {
@@ -44,6 +44,11 @@ export async function GET(request: Request) {
   const groupParam = url.searchParams.get("group");
   const reportGroup: "finance" | "operations" | "all" =
     groupParam === "finance" ? "finance" : groupParam === "all" ? "all" : "operations";
+
+  // Finance consolidated reports are restricted to admin, ceo, and hod only.
+  if (reportGroup === "finance" && user.role !== "admin" && user.role !== "ceo" && user.role !== "hod") {
+    return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
+  }
 
   const isFinance = reportGroup === "finance";
   const reportTitle = isFinance

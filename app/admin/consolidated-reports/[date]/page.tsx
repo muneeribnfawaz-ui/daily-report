@@ -10,7 +10,7 @@ export default async function AdminConsolidatedReportDetailPage({
   params: Promise<{ date: string }>;
 }) {
   const user = await getCurrentUser();
-  if (!user || user.role !== "admin") {
+  if (!user || (user.role !== "admin" && user.role !== "ceo")) {
     redirect("/admin/consolidated-reports");
   }
 

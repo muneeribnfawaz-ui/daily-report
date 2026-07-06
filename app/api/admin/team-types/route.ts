@@ -23,7 +23,7 @@ const teamTypeSchema = z.object({
 
 export async function GET() {
   const user = await getCurrentUser();
-  if (!user || user.role !== "admin") {
+  if (!user || (user.role !== "admin" && user.role !== "ceo")) {
     return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
   }
 
@@ -41,7 +41,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
-  if (!user || user.role !== "admin") {
+  if (!user || (user.role !== "admin" && user.role !== "ceo")) {
     return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
   }
 

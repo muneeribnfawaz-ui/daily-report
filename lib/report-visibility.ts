@@ -35,7 +35,7 @@ export async function getVisibleReportEmployeeIds(user: {
   role: string;
   teamName?: string | null;
 }) {
-  if (user.role === "admin" || user.role === "hod" || user.role === "report_manager") {
+  if (user.role === "admin" || user.role === "ceo" || user.role === "hod" || user.role === "report_manager") {
     return null;
   }
 

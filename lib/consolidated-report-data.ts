@@ -115,7 +115,7 @@ export async function getConsolidatedReportDetail(
 
   const conditions: Record<string, unknown>[] = [];
   let visibleEmployeeIds: string[] = [];
-  if (role !== "admin" && role !== "report_manager") {
+  if (role !== "admin" && role !== "ceo" && role !== "report_manager") {
     visibleEmployeeIds = getVisibleUserIds(
       allUsers as Array<{
         _id?: unknown;
@@ -195,7 +195,7 @@ export async function getConsolidatedReportDetail(
     }>
   >();
   const notSharedMembersByTeam = new Map<string, Array<{ employeeId: string; name: string }>>();
-  const shouldShowNotShared = role === "team_lead" || role === "report_manager" || role === "hod" || role === "admin";
+  const shouldShowNotShared = role === "team_lead" || role === "report_manager" || role === "hod" || role === "admin" || role === "ceo";
 
   for (const leaveRequest of filteredLeaveRequests) {
     const current = leaveByEmployeeId.get(leaveRequest.employeeId);

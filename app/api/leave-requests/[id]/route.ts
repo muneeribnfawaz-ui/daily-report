@@ -51,7 +51,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const isOwner = String(leaveRequest.employeeId) === user.id;
   const isTeamLeadForRequest = user.role === "team_lead" && leaveRequest.teamName === user.teamName;
-  const canFinalReview = user.role === "hod" || user.role === "admin" || user.role === "report_manager";
+  const canFinalReview = user.role === "hod" || user.role === "admin" || user.role === "ceo" || user.role === "report_manager";
 
   if (action === "cancel") {
     if (!isOwner || (leaveRequest.status !== "pending_tl" && leaveRequest.status !== "forwarded_to_hod")) {

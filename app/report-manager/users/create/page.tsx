@@ -6,7 +6,7 @@ import { getCurrentUser } from "@/lib/auth";
 
 export default async function ReportManagerCreateUserPage() {
   const user = await getCurrentUser();
-  if (!user || (user.role !== "team_lead" && user.role !== "hod" && user.role !== "admin")) {
+  if (!user || (user.role !== "team_lead" && user.role !== "hod" && user.role !== "admin" && user.role !== "ceo")) {
     redirect("/report-manager/users");
   }
 

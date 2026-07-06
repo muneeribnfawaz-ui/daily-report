@@ -48,7 +48,7 @@ export async function middleware(request: NextRequest) {
 
   const role = normalizeRole(payload.role as string | undefined);
 
-  if (pathname.startsWith("/admin") && role !== "admin") {
+  if (pathname.startsWith("/admin") && role !== "admin" && role !== "ceo") {
     return withNoStoreHeaders(NextResponse.redirect(new URL("/dashboard", request.url)));
   }
 
@@ -56,7 +56,7 @@ export async function middleware(request: NextRequest) {
     return withNoStoreHeaders(NextResponse.redirect(new URL("/dashboard", request.url)));
   }
 
-  if (pathname.startsWith("/dashboard") && role !== "team_member" && role !== "admin" && role !== "team_lead" && role !== "report_manager") {
+  if (pathname.startsWith("/dashboard") && role !== "team_member" && role !== "admin" && role !== "ceo" && role !== "team_lead" && role !== "report_manager") {
     return withNoStoreHeaders(NextResponse.redirect(new URL("/login", request.url)));
   }
 
