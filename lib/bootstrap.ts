@@ -16,6 +16,8 @@ export async function ensureDefaultAdmin() {
     const password = await hashPassword(DEFAULT_ADMIN_SEED.password);
     await User.create({
       ...DEFAULT_ADMIN_SEED,
+      firstName: "Admin",
+      lastName: "System",
       email: DEFAULT_ADMIN_SEED.email.toLowerCase(),
       role: "admin",
       password

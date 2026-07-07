@@ -77,7 +77,7 @@ function getTeamDisplayName(teamName: string, teamTypeShowNameMap: Record<string
 }
 
 function shouldIncludeVisibleUser(userRole: string | null | undefined, currentRole: string) {
-  if (currentRole === "admin" || currentRole === "hod") {
+  if (currentRole === "admin" || currentRole === "hod" || currentRole === "ceo") {
     return true;
   }
 

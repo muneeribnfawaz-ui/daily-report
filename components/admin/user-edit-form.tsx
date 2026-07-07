@@ -128,10 +128,10 @@ export function UserEditForm({
     () => normalizeTeamNames(sessionUser?.teamName ?? null, sessionUser?.teamNames ?? null),
     [sessionUser?.teamName, sessionUser?.teamNames]
   );
-  const canEditManagerName = currentRole === "admin" || currentRole === "hod";
-  const canEditRole = currentRole === "admin" || currentRole === "hod";
-  const canEditEmail = currentRole === "admin";
-  const canResetPassword = currentRole === "admin" || currentRole === "hod";
+  const canEditManagerName = currentRole === "admin" || currentRole === "hod" || currentRole === "ceo";
+  const canEditRole = currentRole === "admin" || currentRole === "hod" || currentRole === "ceo";
+  const canEditEmail = currentRole === "admin" || currentRole === "ceo";
+  const canResetPassword = currentRole === "admin" || currentRole === "hod" || currentRole === "ceo";
   const availableTeamOptions = useMemo(() => {
     if (currentRole !== "team_lead") return teamOptions;
     if (!currentUserTeamNames.length) return [];

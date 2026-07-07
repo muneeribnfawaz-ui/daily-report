@@ -91,7 +91,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 
   if (parsed.data.resetPassword && user.role !== "admin" && user.role !== "ceo" && user.role !== "hod") {
-    return NextResponse.json({ success: false, message: "Only admin or HOD can reset passwords" }, { status: 403 });
+    return NextResponse.json({ success: false, message: "Only Admin, CEO, or HOD can reset passwords" }, { status: 403 });
   }
 
   if (parsed.data.email) {
