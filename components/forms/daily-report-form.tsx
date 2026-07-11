@@ -9,7 +9,14 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { SessionUser } from "@/lib/types";
+import { FINANCE_TEAM_NAME } from "@/lib/constants";
 import { ReportField, ReportInput, ReportSelect, ReportTextarea } from "@/components/forms/report-controls";
+
+type ApprovalItem = {
+  particulars: string;
+  amountINR: number | string;
+  amountRiyal: number | string;
+};
 
 type DailyReportValues = z.infer<typeof dailyReportSchema>;
 type ReportItem = {
@@ -26,6 +33,14 @@ type ReportItem = {
   isLocked: boolean;
   canEdit: boolean;
   editAccessRequested?: boolean;
+  nextDayApprovalItems?: Array<{
+    particulars: string;
+    amountINR: number;
+    amountRiyal: number;
+    reason?: string;
+    review?: string;
+    approval?: string;
+  }>;
 };
 
 type TeamOption = {
@@ -51,6 +66,7 @@ export function DailyReportForm() {
   const [pendingTasks, setPendingTasks] = useState<string[]>([]);
   const [blockerTasks, setBlockerTasks] = useState<string[]>([]);
   const [selectedTeam, setSelectedTeam] = useState("");
+  const [approvalItems, setApprovalItems] = useState<ApprovalItem[]>([]);
   const today = new Date().toISOString().slice(0, 10);
   const draftLoadedKeyRef = useRef<string | null>(null);
   const { data: currentUser } = useQuery({
@@ -109,6 +125,7 @@ export function DailyReportForm() {
   }, [defaultTeamName, setValue]);
 
   const resolvedSelectedTeam = selectedTeam || defaultTeamName;
+  const isFinanceTeam = resolvedSelectedTeam === FINANCE_TEAM_NAME;
 
   const { data: teamMeetingUpdates } = useQuery({
     queryKey: ["team-meeting-updates", resolvedSelectedTeam, selectedReportDate],
@@ -224,6 +241,13 @@ export function DailyReportForm() {
       setCompletedDraft(existingReport.completedWork);
       setPendingDraft(existingReport.pendingWork);
       setBlockerDraft(existingReport.blockers);
+      setApprovalItems(
+        (existingReport.nextDayApprovalItems ?? []).map((item) => ({
+          particulars: item.particulars ?? "",
+          amountINR: item.amountINR ?? 0,
+          amountRiyal: item.amountRiyal ?? 0
+        }))
+      );
       draftLoadedKeyRef.current = draftStorageKey;
       return;
     }
@@ -324,9 +348,17 @@ export function DailyReportForm() {
     setIsActuallySubmitting(true);
     try {
       const resolvedTeamName = selectedTeam?.trim() || values.teamName?.trim() || defaultTeamName || currentUser?.teamName || "";
+      const filteredApprovalItems = approvalItems
+        .filter((item) => item.particulars.trim())
+        .map((item) => ({
+          particulars: item.particulars.trim(),
+          amountINR: Number(item.amountINR) || 0,
+          amountRiyal: Number(item.amountRiyal) || 0
+        }));
       const parsed = dailyReportSchema.safeParse({
         ...values,
-        teamName: resolvedTeamName
+        teamName: resolvedTeamName,
+        nextDayApprovalItems: isFinanceTeam ? filteredApprovalItems : []
       });
       if (!parsed.success) {
         clearErrors();
@@ -568,6 +600,100 @@ export function DailyReportForm() {
       <ReportField className="md:col-span-2" label="Required clarification" error={errors.requiredClarification?.message}>
         <ReportTextarea placeholder="Required Clarification" {...register("requiredClarification")} />
       </ReportField>
+      {isFinanceTeam ? (
+        <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 dark:border-amber-900/60 dark:bg-amber-950/35">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-700 dark:text-amber-200">Next Day Approval Required</div>
+              <p className="mt-1 text-sm text-muted-foreground dark:text-slate-300">
+                Add items that need CEO approval for the next day. Reason, Review, and Approval will be filled by the CEO.
+              </p>
+            </div>
+            <Badge variant="outline">{approvalItems.length} item{approvalItems.length === 1 ? "" : "s"}</Badge>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-amber-200 dark:border-amber-800">
+                  <th className="py-2 px-2 text-left text-xs font-semibold uppercase tracking-[0.15em] text-amber-800 dark:text-amber-200">Particulars</th>
+                  <th className="py-2 px-2 text-left text-xs font-semibold uppercase tracking-[0.15em] text-amber-800 dark:text-amber-200 w-28">Amount (INR)</th>
+                  <th className="py-2 px-2 text-left text-xs font-semibold uppercase tracking-[0.15em] text-amber-800 dark:text-amber-200 w-28">Amount (Riyal)</th>
+                  <th className="py-2 px-2 w-10" />
+                </tr>
+              </thead>
+              <tbody>
+                {approvalItems.map((item, index) => (
+                  <tr key={`approval-${index}`} className="border-b border-amber-100 dark:border-amber-900/40">
+                    <td className="py-1.5 px-2">
+                      <input
+                        type="text"
+                        className="w-full rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-sm dark:border-amber-800 dark:bg-slate-900 dark:text-slate-100"
+                        placeholder="Enter particulars"
+                        value={item.particulars}
+                        onChange={(e) => {
+                          const next = [...approvalItems];
+                          next[index] = { ...next[index], particulars: e.target.value };
+                          setApprovalItems(next);
+                        }}
+                      />
+                    </td>
+                    <td className="py-1.5 px-2">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        className="w-full rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-sm dark:border-amber-800 dark:bg-slate-900 dark:text-slate-100"
+                        placeholder="0"
+                        value={item.amountINR}
+                        onChange={(e) => {
+                          const next = [...approvalItems];
+                          next[index] = { ...next[index], amountINR: e.target.value };
+                          setApprovalItems(next);
+                        }}
+                      />
+                    </td>
+                    <td className="py-1.5 px-2">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        className="w-full rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-sm dark:border-amber-800 dark:bg-slate-900 dark:text-slate-100"
+                        placeholder="0"
+                        value={item.amountRiyal}
+                        onChange={(e) => {
+                          const next = [...approvalItems];
+                          next[index] = { ...next[index], amountRiyal: e.target.value };
+                          setApprovalItems(next);
+                        }}
+                      />
+                    </td>
+                    <td className="py-1.5 px-2">
+                      <button
+                        type="button"
+                        className="rounded-lg p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30"
+                        onClick={() => {
+                          setApprovalItems(approvalItems.filter((_, i) => i !== index));
+                        }}
+                        title="Remove item"
+                      >
+                        ✕
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-3 text-sm"
+            onClick={() => setApprovalItems([...approvalItems, { particulars: "", amountINR: "", amountRiyal: "" }])}
+          >
+            + Add Item
+          </Button>
+        </div>
+      ) : null}
       {message ? <p className="text-sm text-success md:col-span-2">{message}</p> : null}
       <Button className="md:col-span-2 w-fit" type="submit" disabled={isActuallySubmitting}>
         {isActuallySubmitting ? (existingReport ? "Saving..." : "Submitting...") : existingReport ? "Save Changes" : "Submit Report"}

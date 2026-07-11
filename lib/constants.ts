@@ -2,6 +2,9 @@ import appData from "@/config/app-data.json";
 
 export const APP_NAME = "Daily Report Management System";
 
+/** The internal team-type name for the Finance team (also in lib/team-types.ts for server use). */
+export const FINANCE_TEAM_NAME = "FINANCE_TEAM";
+
 export const TEAM_OPTIONS = appData.teamOptions as unknown as readonly [
   "Backend",
   "Blockchain",

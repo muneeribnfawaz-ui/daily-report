@@ -73,6 +73,7 @@ export async function POST(request: Request) {
       pendingWork: parsed.data.pendingWork ?? "",
       blockers: parsed.data.blockers ?? "",
       requiredClarification: parsed.data.requiredClarification ?? "",
+      nextDayApprovalItems: parsed.data.nextDayApprovalItems ?? [],
       status: "submitted"
     } as const;
 

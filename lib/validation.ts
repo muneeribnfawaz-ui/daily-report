@@ -179,6 +179,15 @@ export const signupSchema = z.object({
 
 const DAILY_REPORT_TYPES = ["Daily Update", "Bug Fix", "Meeting Notes", "Blocker", "Attendance", "Other"] as const;
 
+export const nextDayApprovalItemSchema = z.object({
+  particulars: z.string().min(1, "Particulars is required"),
+  amountINR: z.preprocess((v) => (v === "" || v === undefined || v === null ? 0 : Number(v)), z.number().min(0)),
+  amountRiyal: z.preprocess((v) => (v === "" || v === undefined || v === null ? 0 : Number(v)), z.number().min(0)),
+  reason: z.string().optional().default(""),
+  review: z.string().optional().default(""),
+  approval: z.enum(["pending", "yes", "no"]).optional().default("pending")
+});
+
 export const dailyReportSchema = z.object({
   teamName: z.union([z.string().min(1), z.literal("")]).optional(),
   reportType: z.union([z.enum(DAILY_REPORT_TYPES), z.literal("")]).optional(),
@@ -188,7 +197,8 @@ export const dailyReportSchema = z.object({
   completedWork: z.string().min(2, "Completed work is required"),
   pendingWork: z.union([z.string(), z.literal("")]).optional(),
   blockers: z.union([z.string(), z.literal("")]).optional(),
-  requiredClarification: z.union([z.string(), z.literal("")]).optional()
+  requiredClarification: z.union([z.string(), z.literal("")]).optional(),
+  nextDayApprovalItems: z.array(nextDayApprovalItemSchema).optional().default([])
 });
 
 export const leaveRequestSchema = z.object({

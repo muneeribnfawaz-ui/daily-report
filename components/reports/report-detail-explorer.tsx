@@ -5,6 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { ReportSheetPreview, type ReportSheetEntry, type ReportSheetTeamGroup } from "@/components/reports/report-sheet-preview";
+import { CeoApprovalSection } from "@/components/reports/ceo-approval-section";
+import { useSession } from "@/hooks/use-session";
 
 type ManagedReport = ReportSheetEntry & {
   editAccessRequested?: boolean;
@@ -36,6 +38,7 @@ function groupReportsByTeam(reports: ReportSheetEntry[]): ReportSheetTeamGroup[]
 }
 
 export function ReportDetailExplorer({ reportId }: { reportId: string }) {
+  const { data: sessionUser } = useSession();
   const reportQuery = useQuery({
     queryKey: ["report-detail", reportId],
     queryFn: async () => {
@@ -78,6 +81,9 @@ export function ReportDetailExplorer({ reportId }: { reportId: string }) {
     return <div className="text-sm text-danger">Failed to load the report.</div>;
   }
 
+  const approvalItems = report.nextDayApprovalItems ?? [];
+  const isCeo = sessionUser?.role === "ceo";
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-2 rounded-2xl border bg-background/70 p-4">
@@ -88,6 +94,21 @@ export function ReportDetailExplorer({ reportId }: { reportId: string }) {
         ) : null}
       </div>
       <ReportSheetPreview title="Daily Team Progress Report" dateLabel={dateLabel} teamGroups={singlePreviewGroups} />
+      {approvalItems.length > 0 ? (
+        <CeoApprovalSection
+          reportId={reportId}
+          items={approvalItems.map((item) => ({
+            particulars: item.particulars ?? "",
+            amountINR: item.amountINR ?? 0,
+            amountRiyal: item.amountRiyal ?? 0,
+            reason: item.reason ?? "",
+            review: item.review ?? "",
+            approval: (item.approval as "pending" | "yes" | "no") ?? "pending"
+          }))}
+          isCeo={isCeo}
+          onUpdate={() => reportQuery.refetch()}
+        />
+      ) : null}
     </div>
   );
 }

@@ -21,6 +21,14 @@ export type ReportSheetEntry = {
   leaveType?: string;
   leaveReason?: string;
   leaveReviewedByName?: string | null;
+  nextDayApprovalItems?: Array<{
+    particulars: string;
+    amountINR: number;
+    amountRiyal: number;
+    reason: string;
+    review: string;
+    approval: "pending" | "yes" | "no";
+  }>;
 };
 
 export type ReportSheetTeamGroup = {
@@ -181,6 +189,53 @@ function ReportCard({ report }: { report: ReportSheetEntry }) {
         <DetailRow label="Blockers" value={report.blockers} />
         <DetailRow label="Required Clarification" value={report.requiredClarification} />
       </div>
+
+      {report.nextDayApprovalItems?.length ? (
+        <div className="border-t border-slate-200 bg-amber-50/60 px-4 py-3">
+          <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.25em] text-amber-700">
+            Next Day Approval Required
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="border-b border-amber-200">
+                  <th className="py-1.5 px-2 text-left font-bold text-amber-800">Particulars</th>
+                  <th className="py-1.5 px-2 text-right font-bold text-amber-800 w-24">INR</th>
+                  <th className="py-1.5 px-2 text-right font-bold text-amber-800 w-24">Riyal</th>
+                  <th className="py-1.5 px-2 text-left font-bold text-amber-800">Reason</th>
+                  <th className="py-1.5 px-2 text-left font-bold text-amber-800">Review</th>
+                  <th className="py-1.5 px-2 text-center font-bold text-amber-800 w-24">Approval</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report.nextDayApprovalItems.map((item, i) => (
+                  <tr key={`approval-preview-${i}`} className="border-b border-amber-100">
+                    <td className="py-1.5 px-2 text-slate-900 font-medium">{item.particulars}</td>
+                    <td className="py-1.5 px-2 text-right text-slate-900 tabular-nums">{item.amountINR.toLocaleString("en-IN")}</td>
+                    <td className="py-1.5 px-2 text-right text-slate-900 tabular-nums">{item.amountRiyal.toLocaleString("en-SA")}</td>
+                    <td className="py-1.5 px-2 text-slate-700">{item.reason || "—"}</td>
+                    <td className="py-1.5 px-2 text-slate-700">{item.review || "—"}</td>
+                    <td className="py-1.5 px-2 text-center">
+                      <span
+                        className={cn(
+                          "inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em]",
+                          item.approval === "yes"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : item.approval === "no"
+                              ? "bg-rose-100 text-rose-700"
+                              : "bg-amber-100 text-amber-700"
+                        )}
+                      >
+                        {item.approval === "yes" ? "Yes" : item.approval === "no" ? "No" : "Pending"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

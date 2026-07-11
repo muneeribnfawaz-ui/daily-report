@@ -288,7 +288,8 @@ export async function getConsolidatedReportDetail(
       leaveStatus: leaveByEmployeeId.get(String(report.employeeId))?.status ?? null,
       leaveType: leaveByEmployeeId.get(String(report.employeeId))?.leaveType ?? undefined,
       leaveReason: leaveByEmployeeId.get(String(report.employeeId))?.reason ?? undefined,
-      leaveReviewedByName: leaveByEmployeeId.get(String(report.employeeId))?.reviewedByName ?? undefined
+      leaveReviewedByName: leaveByEmployeeId.get(String(report.employeeId))?.reviewedByName ?? undefined,
+      nextDayApprovalItems: ((report as unknown as { nextDayApprovalItems?: Array<{ particulars: string; amountINR: number; amountRiyal: number; reason: string; review: string; approval: "pending" | "yes" | "no" }> }).nextDayApprovalItems) ?? undefined
     }));
 
   for (const report of sortedReports) {

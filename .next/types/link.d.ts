@@ -93,6 +93,7 @@ declare namespace __next_route_internal_types__ {
     | `/api/report-manager/reports/${SafeSlug<T>}/edit-access`
     | `/api/report-manager/reports/${SafeSlug<T>}/reject`
     | `/api/reports/${SafeSlug<T>}`
+    | `/api/reports/${SafeSlug<T>}/ceo-approval`
     | `/api/reports/${SafeSlug<T>}/edit-request`
     | `/api/users/${SafeSlug<T>}`
     | `/daily-report/${SafeSlug<T>}`

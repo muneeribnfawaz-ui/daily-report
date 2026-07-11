@@ -158,6 +158,41 @@ export function buildConsolidatedReportHtml(data: ConsolidatedReportPdfData) {
                         </div>
                       ` : ""}
                     </div>
+                    ${(() => {
+                      const items = (report as unknown as { nextDayApprovalItems?: Array<{ particulars: string; amountINR: number; amountRiyal: number; reason: string; review: string; approval: string }> }).nextDayApprovalItems;
+                      if (!items?.length) return "";
+                      return `
+                        <div class="approval-section">
+                          <div class="approval-title">Next Day Approval Required</div>
+                          <table class="approval-table">
+                            <thead>
+                              <tr>
+                                <th>Particulars</th>
+                                <th style="text-align:right">Amount (INR)</th>
+                                <th style="text-align:right">Amount (Riyal)</th>
+                                <th>Reason</th>
+                                <th>Review</th>
+                                <th style="text-align:center">Approval</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              ${items.map((item) => `
+                                <tr>
+                                  <td>${escapeHtml(item.particulars)}</td>
+                                  <td style="text-align:right">${Number(item.amountINR).toLocaleString("en-IN")}</td>
+                                  <td style="text-align:right">${Number(item.amountRiyal).toLocaleString("en-SA")}</td>
+                                  <td>${item.reason ? escapeHtml(item.reason) : "—"}</td>
+                                  <td>${item.review ? escapeHtml(item.review) : "—"}</td>
+                                  <td style="text-align:center">
+                                    <span class="approval-badge approval-${item.approval || "pending"}">${item.approval === "yes" ? "Yes" : item.approval === "no" ? "No" : "Pending"}</span>
+                                  </td>
+                                </tr>
+                              `).join("")}
+                            </tbody>
+                          </table>
+                        </div>
+                      `;
+                    })()}
                   </article>
                 `;
               })
@@ -525,6 +560,61 @@ export function buildConsolidatedReportHtml(data: ConsolidatedReportPdfData) {
         margin: 0 0 4px;
       }
       .muted { color: #94a3b8; }
+      .approval-section {
+        padding: 12px 14px;
+        border-top: 1px solid var(--line);
+        background: #FFFBEB;
+      }
+      .approval-title {
+        margin-bottom: 8px;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.25em;
+        text-transform: uppercase;
+        color: #B45309;
+      }
+      .approval-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      .approval-table th {
+        padding: 6px 8px;
+        border-bottom: 2px solid #FCD34D;
+        font-weight: 700;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: #92400E;
+        text-align: left;
+      }
+      .approval-table td {
+        padding: 6px 8px;
+        border-bottom: 1px solid #FEF3C7;
+        color: var(--ink);
+      }
+      .approval-badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 9999px;
+        padding: 2px 8px;
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+      .approval-yes {
+        background: #D1FAE5;
+        color: #065F46;
+      }
+      .approval-no {
+        background: #FEE2E2;
+        color: #991B1B;
+      }
+      .approval-pending {
+        background: #FEF3C7;
+        color: #92400E;
+      }
     </style>
   </head>
   <body>

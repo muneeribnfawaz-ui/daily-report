@@ -27,6 +27,19 @@ const DailyReportSchema = new Schema(
     isLocked: { type: Boolean, default: false },
     lockedAt: { type: Date, default: null },
     lockedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    nextDayApprovalItems: {
+      type: [
+        {
+          particulars: { type: String, default: "" },
+          amountINR: { type: Number, default: 0 },
+          amountRiyal: { type: Number, default: 0 },
+          reason: { type: String, default: "" },
+          review: { type: String, default: "" },
+          approval: { type: String, default: "pending", enum: ["pending", "yes", "no"] }
+        }
+      ],
+      default: []
+    },
     consolidatedReportId: { type: Schema.Types.ObjectId, ref: "ConsolidatedReport", default: null }
   },
   { timestamps: true }
