@@ -2,15 +2,19 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardPageHeader, DashboardPanel, DashboardStatCard } from "@/components/dashboard/ui";
+import { FinanceDashboardSection } from "@/components/finance/finance-dashboard-section";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
+import { canViewFinanceReport } from "@/lib/permissions";
 
 export default async function EmployeeDashboardPage() {
   const user = await getCurrentUser();
   if (!user) {
     redirect("/login");
   }
+
+  const showFinance = canViewFinanceReport(user);
 
   return (
     <AppShell title="Employee Dashboard" role={user.role}>
@@ -77,6 +81,13 @@ export default async function EmployeeDashboardPage() {
             </div>
           </DashboardPanel>
         </div>
+
+        {/* Finance Section — shown only to authorized roles */}
+        {showFinance && (
+          <div className="border-t pt-6">
+            <FinanceDashboardSection />
+          </div>
+        )}
       </div>
     </AppShell>
   );

@@ -17,15 +17,16 @@ export const TEAM_OPTIONS = appData.teamOptions as unknown as readonly [
   "Digital Marketing"
 ];
 
-export const AUTH_ROLE_OPTIONS = appData.authRoleOptions as unknown as readonly ["admin", "ceo", "team_lead", "report_manager", "hod", "team_member"];
+export const AUTH_ROLE_OPTIONS = appData.authRoleOptions as unknown as readonly ["admin", "ceo", "finance_team", "team_lead", "report_manager", "hod", "team_member"];
 export type UserRole = (typeof AUTH_ROLE_OPTIONS)[number];
 export const USER_ROLES = AUTH_ROLE_OPTIONS;
 
-export const CREATE_USER_ROLE_OPTIONS = appData.createUserRoleOptions as unknown as readonly ["ceo", "team_lead", "report_manager", "hod", "team_member"];
+export const CREATE_USER_ROLE_OPTIONS = appData.createUserRoleOptions as unknown as readonly ["ceo", "finance_team", "team_lead", "report_manager", "hod", "team_member"];
 
 export const ROLE_LABELS: Record<UserRole, string> = {
   admin: "Admin",
   ceo: "CEO",
+  finance_team: "Finance Team",
   team_lead: "Team Lead",
   report_manager: "Report Manager",
   hod: "HOD",
@@ -34,6 +35,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 
 export const CREATE_USER_ROLE_LABELS: Record<(typeof CREATE_USER_ROLE_OPTIONS)[number], string> = {
   ceo: "CEO",
+  finance_team: "Finance Team",
   team_lead: "Team Lead",
   report_manager: "Report Manager",
   hod: "HOD",
@@ -46,7 +48,7 @@ export const LEGACY_ROLE_ALIASES: Record<string, UserRole> = {
 
 export function normalizeRole(role?: string | null): UserRole | null {
   if (!role) return null;
-  if (role === "admin" || role === "ceo" || role === "team_lead" || role === "report_manager" || role === "hod" || role === "team_member") return role;
+  if (role === "admin" || role === "ceo" || role === "finance_team" || role === "team_lead" || role === "report_manager" || role === "hod" || role === "team_member") return role;
   return LEGACY_ROLE_ALIASES[role] ?? null;
 }
 
@@ -72,6 +74,7 @@ export type SidebarNavItem = {
 const REPORT_MANAGER_SIDEBAR_ITEMS = [
   { href: "/report-manager/reports", label: "Reports" },
   { href: "/report-manager/consolidated-reports", label: "Consolidated" },
+  { href: "/finance", label: "Finance" },
   { href: "/profile", label: "Profile" }
 ] as const satisfies ReadonlyArray<SidebarNavItem>;
 
@@ -81,6 +84,7 @@ const TEAM_LEAD_SIDEBAR_ITEMS = [
   { href: "/report-manager/users", label: "My Team" },
   { href: "/report-manager/reports", label: "All Reports" },
   { href: "/report-manager/consolidated-reports", label: "Consolidated" },
+  { href: "/finance", label: "Finance" },
   { href: "/leave-requests", label: "Leave Requests" },
   { href: "/profile", label: "Profile" }
 ] as const satisfies ReadonlyArray<SidebarNavItem>;
@@ -90,11 +94,19 @@ const HOD_SIDEBAR_ITEMS = [
   { href: "/report-manager/users", label: "Users" },
   { href: "/report-manager/reports", label: "Reports" },
   { href: "/report-manager/consolidated-reports", label: "Consolidated" },
+  { href: "/finance", label: "Finance" },
   { href: "/leave-requests", label: "Leave Requests" },
   { href: "/profile", label: "Profile" }
 ] as const satisfies ReadonlyArray<SidebarNavItem>;
 
 const TEAM_MEMBER_SIDEBAR_ITEMS = [
+  { href: "/daily-report/my-reports", label: "My Report" },
+  { href: "/leave-requests", label: "Leave Requests" },
+  { href: "/profile", label: "Profile" }
+] as const satisfies ReadonlyArray<SidebarNavItem>;
+
+const FINANCE_TEAM_SIDEBAR_ITEMS = [
+  { href: "/finance", label: "Finance" },
   { href: "/daily-report/my-reports", label: "My Report" },
   { href: "/leave-requests", label: "Leave Requests" },
   { href: "/profile", label: "Profile" }
@@ -106,6 +118,7 @@ const ADMIN_SIDEBAR_ITEMS = [
   { href: "/admin/team-types", label: "Team Types" },
   { href: "/admin/reports", label: "Reports" },
   { href: "/admin/consolidated-reports", label: "Consolidated" },
+  { href: "/finance", label: "Finance" },
   { href: "/leave-requests", label: "Leave Requests" },
   { href: "/profile", label: "Profile" },
   { href: "/admin/settings", label: "Settings" },
@@ -117,6 +130,7 @@ export const SIDEBAR_NAV_ITEMS_BY_ROLE = {
   team_lead: TEAM_LEAD_SIDEBAR_ITEMS,
   report_manager: REPORT_MANAGER_SIDEBAR_ITEMS,
   hod: HOD_SIDEBAR_ITEMS,
+  finance_team: FINANCE_TEAM_SIDEBAR_ITEMS,
   admin: ADMIN_SIDEBAR_ITEMS,
   ceo: ADMIN_SIDEBAR_ITEMS
 } as const;
@@ -194,4 +208,22 @@ export const CONSOLIDATED_REPORT_STATUSES = [
   "draft",
   "finalized",
   "archived"
+] as const;
+
+export const FINANCE_REPORT_STATUSES = [
+  "pending",
+  "approved",
+  "rejected"
+] as const;
+
+export const FINANCE_REPORT_FIELDS = [
+  { key: "openingBalance", label: "Opening Balance", group: "income" },
+  { key: "cashReceived", label: "Cash Received", group: "income" },
+  { key: "cardSales", label: "Card Sales", group: "income" },
+  { key: "onlinePayments", label: "Online Payments", group: "income" },
+  { key: "expenses", label: "Expenses", group: "expense" },
+  { key: "refunds", label: "Refunds", group: "expense" },
+  { key: "pettyCash", label: "Petty Cash", group: "expense" },
+  { key: "bankDeposit", label: "Bank Deposit", group: "neutral" },
+  { key: "closingCashBalance", label: "Closing Cash Balance", group: "neutral" }
 ] as const;

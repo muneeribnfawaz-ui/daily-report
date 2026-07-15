@@ -301,3 +301,21 @@ export const consolidatedReportSchema = z.object({
 export const unlockReportSchema = z.object({
   reason: z.string().min(10)
 });
+
+const numericField = z.preprocess(
+  (v) => (v === "" || v === undefined || v === null ? 0 : Number(v)),
+  z.number().min(0, "Value must be 0 or greater")
+);
+
+export const financeReportSchema = z.object({
+  reportDate: z.string().min(1, "Report date is required"),
+  openingBalance: numericField,
+  cashReceived: numericField,
+  cardSales: numericField,
+  onlinePayments: numericField,
+  expenses: numericField,
+  refunds: numericField,
+  pettyCash: numericField,
+  bankDeposit: numericField,
+  closingCashBalance: numericField
+});

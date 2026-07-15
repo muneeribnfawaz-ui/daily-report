@@ -3,6 +3,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardPageHeader, DashboardPanel, DashboardStatCard } from "@/components/dashboard/ui";
+import { FinanceDashboardSection } from "@/components/finance/finance-dashboard-section";
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
 
@@ -39,6 +40,11 @@ export default async function AdminDashboardPage() {
           <DashboardStatCard label="Total Employees" value="104" delta="Most active role" accent="from-primaryDark/20 via-primaryDark/5 to-transparent" />
           <DashboardStatCard label="Total Reports" value="1,248" delta="Growing steadily" accent="from-success/20 via-success/5 to-transparent" />
           <DashboardStatCard label="Active Users" value="122" delta="95% uptime" accent="from-warning/20 via-warning/5 to-transparent" />
+        </div>
+
+        {/* Finance Section */}
+        <div className="border-t pt-6">
+          <FinanceDashboardSection />
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">

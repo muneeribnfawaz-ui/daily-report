@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sidebar } from "@/components/layout/sidebar";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 import { useSession } from "@/hooks/use-session";
 
 function clearBrowserSessionState() {
@@ -101,6 +102,7 @@ export function AppShell({
                 </Button>
               </div>
               <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                <NotificationBell />
                 <ThemeToggle />
                 <Badge
                   variant="outline"

@@ -56,7 +56,12 @@ export async function middleware(request: NextRequest) {
     return withNoStoreHeaders(NextResponse.redirect(new URL("/dashboard", request.url)));
   }
 
-  if (pathname.startsWith("/dashboard") && role !== "team_member" && role !== "admin" && role !== "ceo" && role !== "team_lead" && role !== "report_manager") {
+  // Finance route — only visible to finance_team, admin, ceo, team_lead, report_manager, hod
+  if (pathname.startsWith("/finance") && role === "team_member") {
+    return withNoStoreHeaders(NextResponse.redirect(new URL("/dashboard", request.url)));
+  }
+
+  if (pathname.startsWith("/dashboard") && role !== "team_member" && role !== "admin" && role !== "ceo" && role !== "team_lead" && role !== "report_manager" && role !== "finance_team" && role !== "hod") {
     return withNoStoreHeaders(NextResponse.redirect(new URL("/login", request.url)));
   }
 

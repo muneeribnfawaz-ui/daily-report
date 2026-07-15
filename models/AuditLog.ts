@@ -7,6 +7,7 @@ const AuditLogSchema = new Schema(
     userName: { type: String, default: null },
     reportId: { type: String, default: null },
     consolidatedReportId: { type: String, default: null },
+    financeReportId: { type: String, default: null },
     leaveRequestId: { type: String, default: null },
     oldValue: { type: Schema.Types.Mixed, default: null },
     newValue: { type: Schema.Types.Mixed, default: null },

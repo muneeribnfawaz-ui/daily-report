@@ -51,7 +51,11 @@ declare namespace __next_route_internal_types__ {
     | `/api/auth/register`
     | `/api/consolidated-reports`
     | `/api/consolidated-reports/pdf`
+    | `/api/exchange-rate`
+    | `/api/finance-reports`
+    | `/api/finance-reports/dashboard`
     | `/api/leave-requests`
+    | `/api/notifications`
     | `/api/profile`
     | `/api/report-manager/reports`
     | `/api/report-manager/reports/preview`
@@ -64,6 +68,8 @@ declare namespace __next_route_internal_types__ {
     | `/daily-report/create`
     | `/daily-report/my-reports`
     | `/dashboard`
+    | `/finance`
+    | `/finance/create`
     | `/leave-requests`
     | `/leave-requests/create`
     | `/login`
@@ -87,6 +93,9 @@ declare namespace __next_route_internal_types__ {
     | `/api/consolidated-reports/${SafeSlug<T>}/lock`
     | `/api/consolidated-reports/${SafeSlug<T>}/pdf`
     | `/api/consolidated-reports/${SafeSlug<T>}/unlock`
+    | `/api/finance-reports/${SafeSlug<T>}`
+    | `/api/finance-reports/${SafeSlug<T>}/approve`
+    | `/api/finance-reports/${SafeSlug<T>}/pdf`
     | `/api/leave-requests/${SafeSlug<T>}`
     | `/api/report-manager/reports/${SafeSlug<T>}`
     | `/api/report-manager/reports/${SafeSlug<T>}/approve`
@@ -98,6 +107,7 @@ declare namespace __next_route_internal_types__ {
     | `/api/users/${SafeSlug<T>}`
     | `/daily-report/${SafeSlug<T>}`
     | `/daily-report/${SafeSlug<T>}/preview`
+    | `/finance/${SafeSlug<T>}`
     | `/report-manager/consolidated-reports/${SafeSlug<T>}`
     | `/report-manager/reports/${SafeSlug<T>}`
     | `/report-manager/users/${SafeSlug<T>}`
