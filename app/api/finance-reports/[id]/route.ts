@@ -79,7 +79,7 @@ export async function PUT(request: Request, context: RouteContext) {
     const body = await request.json();
     const parsed = financeReportSchema.safeParse(body);
     if (!parsed.success) {
-      const firstError = parsed.error.errors[0]?.message || "Invalid payload";
+      const firstError = parsed.error.issues[0]?.message || "Invalid payload";
       return NextResponse.json({ success: false, message: firstError }, { status: 400 });
     }
 

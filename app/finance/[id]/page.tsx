@@ -17,7 +17,7 @@ export default async function FinanceDetailPage({ params }: PageProps) {
   const { id } = await params;
   await connectToDatabase();
 
-  let report;
+  let report: any;
   try {
     report = await FinanceReport.findById(id).lean();
   } catch {

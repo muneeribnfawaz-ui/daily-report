@@ -108,6 +108,7 @@ declare namespace __next_route_internal_types__ {
     | `/daily-report/${SafeSlug<T>}`
     | `/daily-report/${SafeSlug<T>}/preview`
     | `/finance/${SafeSlug<T>}`
+    | `/finance/${SafeSlug<T>}/edit`
     | `/report-manager/consolidated-reports/${SafeSlug<T>}`
     | `/report-manager/reports/${SafeSlug<T>}`
     | `/report-manager/users/${SafeSlug<T>}`

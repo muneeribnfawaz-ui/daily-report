@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const parsed = financeReportSchema.safeParse(body);
     if (!parsed.success) {
-      const firstError = parsed.error.errors[0]?.message || "Invalid finance report payload";
+      const firstError = parsed.error.issues[0]?.message || "Invalid finance report payload";
       return NextResponse.json({ success: false, message: firstError }, { status: 400 });
     }
 
