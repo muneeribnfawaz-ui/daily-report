@@ -15,8 +15,32 @@ const UserSchema = new Schema(
     password: { type: String, required: true },
     role: { type: String, required: true, enum: AUTH_ROLE_OPTIONS },
     roleTypes: { type: [String], default: [] },
-    teamName: { type: String, required: true },
-    teamNames: { type: [String], default: [] },
+    teamName: { type: String }, // Deprecated in favor of departments
+    teamNames: { type: [String], default: [] }, // Deprecated
+    departments: {
+      type: [
+        {
+          name: {
+            type: String,
+            enum: ["Construction", "Software", "Finance", "Marketing"],
+            required: true
+          },
+          subTeams: {
+            type: [String],
+            enum: ["Physical", "Digital"],
+            default: [],
+            validate: {
+              validator: function (this: any, v: string[]) {
+                if (this.name !== "Marketing" && v && v.length > 0) return false;
+                return true;
+              },
+              message: "Sub-teams are only allowed for Marketing."
+            }
+          }
+        }
+      ],
+      default: []
+    },
     managerName: { type: String, default: "" },
     status: { type: String, default: "active", enum: ["active", "inactive", "suspended"] },
     isActive: { type: Boolean, default: true },

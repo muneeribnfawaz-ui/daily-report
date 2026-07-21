@@ -131,7 +131,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     }
 
     if (!canApproveFinanceReport(user)) {
-      return NextResponse.json({ success: false, message: "Only admins and CEO can delete finance reports" }, { status: 403 });
+      return NextResponse.json({ success: false, message: "Only CEO can delete finance reports" }, { status: 403 });
     }
 
     const { id } = await context.params;

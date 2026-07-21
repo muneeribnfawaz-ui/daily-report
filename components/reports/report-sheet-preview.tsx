@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { LEAVE_DURATION_LABELS, LEAVE_HALF_LABELS } from "@/lib/constants";
+import { ConstructionReportPreview } from "./construction-report-preview";
 
 export type ReportSheetEntry = {
   _id: string;
@@ -17,6 +18,9 @@ export type ReportSheetEntry = {
   blockers: string;
   requiredClarification: string;
   employeeRole?: string | null;
+  constructionWorkPlan?: Array<{ activity?: string; location?: string; unit?: string; plannedQuantity?: string; executedQuantity?: string; completionPercentage?: string; remarks?: string }>;
+  constructionMaterialUtilization?: Array<{ material?: string; unit?: string; openingStock?: string; received?: string; closingStock?: string }>;
+  constructionTomorrowWorkPlan?: Array<{ activity?: string; location?: string; unit?: string; plannedQuantity?: string }>;
   leaveStatus?: "pending_tl" | "forwarded_to_hod" | "approved" | null;
   leaveType?: string;
   leaveReason?: string;
@@ -189,6 +193,7 @@ function ReportCard({ report }: { report: ReportSheetEntry }) {
         <DetailRow label="Blockers" value={report.blockers} />
         <DetailRow label="Required Clarification" value={report.requiredClarification} />
       </div>
+      {report.teamName === "CONSTRUCTION" ? <ConstructionReportPreview report={report} /> : null}
 
       {report.nextDayApprovalItems?.length ? (
         <div className="border-t border-slate-200 bg-amber-50/60 px-4 py-3">

@@ -311,16 +311,18 @@ export function AdminAddUserForm() {
           />
         </div>
       ) : null}
-      <ReportField className="md:col-span-2" label={selectedRole === "team_member" ? "Team Lead" : "Manager"} error={errors.managerName?.message}>
-        <ReportSelect {...register("managerName")}>
-          <option value="">{selectedRole === "team_member" ? "Select team lead" : "Select manager"}</option>
-          {managerSelectOptions.map((manager) => (
-            <option key={manager._id} value={manager.name}>
-              {manager.name}
-            </option>
-          ))}
-        </ReportSelect>
-      </ReportField>
+      {selectedRole !== "ceo" && selectedRole !== "admin" ? (
+        <ReportField className="md:col-span-2" label={selectedRole === "team_member" ? "Team Lead" : "Manager"} error={errors.managerName?.message}>
+          <ReportSelect {...register("managerName")}>
+            <option value="">{selectedRole === "team_member" ? "Select team lead" : "Select manager"}</option>
+            {managerSelectOptions.map((manager) => (
+              <option key={manager._id} value={manager.name}>
+                {manager.name}
+              </option>
+            ))}
+          </ReportSelect>
+        </ReportField>
+      ) : null}
       {error ? <p className="text-sm text-danger md:col-span-2">{error}</p> : null}
       {message ? <p className="text-sm text-success md:col-span-2">{message}</p> : null}
       <Button className="md:col-span-2 w-fit" type="submit" disabled={isSubmitting}>

@@ -34,66 +34,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getCurrentUser();
-  if (!user || (user.role !== "admin" && user.role !== "ceo")) {
-    return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
-  }
-
-  const { id } = await Promise.resolve(params);
-  const body = await request.json();
-  const parsed = teamTypeUpdateSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ success: false, message: "Invalid team type payload" }, { status: 400 });
-  }
-
-  await connectToDatabase();
-  const teamType = await TeamType.findById(id);
-  if (!teamType) {
-    return NextResponse.json({ success: false, message: "Not found" }, { status: 404 });
-  }
-
-  if (parsed.data.showName !== undefined) teamType.showName = parsed.data.showName.trim();
-  if (parsed.data.isActive !== undefined) teamType.isActive = parsed.data.isActive;
-  if (parsed.data.isDeleted !== undefined) teamType.isDeleted = parsed.data.isDeleted;
-
-  const duplicate = await TeamType.findOne({ name: teamType.name, _id: { $ne: teamType._id } }).lean();
-  if (duplicate) {
-    return NextResponse.json({ success: false, message: "Team type already exists" }, { status: 409 });
-  }
-
-  await teamType.save();
-  return NextResponse.json({
-    success: true,
-    data: {
-      ...teamType.toObject(),
-      showName: formatTeamTypeShowName(teamType.toObject())
-    }
-  });
+  return NextResponse.json({ success: false, message: "Team Types are finalized and cannot be modified." }, { status: 405 });
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getCurrentUser();
-  if (!user || (user.role !== "admin" && user.role !== "ceo")) {
-    return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
-  }
-
-  const { id } = await Promise.resolve(params);
-
-  await connectToDatabase();
-  const teamType = await TeamType.findById(id);
-  if (!teamType) {
-    return NextResponse.json({ success: false, message: "Not found" }, { status: 404 });
-  }
-
-  teamType.isDeleted = true;
-  teamType.isActive = false;
-  await teamType.save();
-
-  return NextResponse.json({
-    success: true,
-    data: {
-      ...teamType.toObject(),
-      showName: formatTeamTypeShowName(teamType.toObject())
-    }
-  });
+  return NextResponse.json({ success: false, message: "Team Types are finalized and cannot be deleted." }, { status: 405 });
 }

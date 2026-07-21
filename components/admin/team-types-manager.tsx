@@ -18,6 +18,7 @@ type TeamTypeRecord = {
   isDeleted: boolean;
   createdAt?: string;
   createdBy?: string;
+  subTeams?: string[];
 };
 
 export function TeamTypesManager() {
@@ -66,9 +67,6 @@ export function TeamTypesManager() {
           </div>
           <div className="flex items-center gap-3">
             <Badge variant="soft">{visibleTeamTypes.length} team types</Badge>
-            <Button asChild>
-              <Link href="/admin/team-types/create">Create Team Type</Link>
-            </Button>
           </div>
         </div>
 
@@ -90,7 +88,18 @@ export function TeamTypesManager() {
             ) : (
               visibleTeamTypes.map((teamType) => (
                 <div key={teamType._id} className="grid grid-cols-12 gap-3 px-4 py-4 text-sm">
-                  <div className="col-span-3 font-medium">{teamType.showName || teamType.name}</div>
+                  <div className="col-span-3 font-medium">
+                    <div>{teamType.showName || teamType.name}</div>
+                    {teamType.subTeams && teamType.subTeams.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {teamType.subTeams.map((sub) => (
+                          <Badge key={sub} variant="secondary" className="text-[10px] px-1 py-0 h-4">
+                            {sub}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <div className="col-span-3 text-muted-foreground">{teamType.name}</div>
                   <div className="col-span-2">
                     <Badge variant={teamType.isActive ? "soft" : "outline"}>
@@ -102,25 +111,7 @@ export function TeamTypesManager() {
                     {teamType.createdAt ? new Date(teamType.createdAt).toLocaleDateString() : "N/A"}
                   </div>
                   <div className="col-span-12 flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                    <div>{teamType.isDeleted ? "Deleted teams stay hidden from selection." : null}</div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button asChild size="sm" variant="outline">
-                        <Link href={`/admin/team-types/${teamType._id}/edit`}>Edit</Link>
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="destructive"
-                        onClick={async () => {
-                          await api.delete(`/api/admin/team-types/${teamType._id}`);
-                          await queryClient.invalidateQueries({ queryKey: ["admin-team-types"] });
-                          await queryClient.invalidateQueries({ queryKey: ["team-types"] });
-                        }}
-                        disabled={teamType.isDeleted}
-                      >
-                        {teamType.isDeleted ? "Deleted" : "Delete"}
-                      </Button>
-                    </div>
+                    <div>Team Types are finalized and cannot be modified or deleted.</div>
                   </div>
                 </div>
               ))

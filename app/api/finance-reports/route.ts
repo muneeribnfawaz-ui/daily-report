@@ -91,22 +91,31 @@ export async function POST(request: Request) {
       totalIncomeSAR: convertINRtoSAR(totals.totalIncome, exchangeRate),
       totalExpensesSAR: convertINRtoSAR(totals.totalExpenses, exchangeRate),
       netBalanceSAR: convertINRtoSAR(totals.netBalance, exchangeRate),
-      status: "pending"
+      status: "pending",
+      statusHistory: [
+        {
+          status: "pending",
+          by: user.id,
+          byName: user.name,
+          timestamp: new Date()
+        }
+      ]
     };
 
     const report = await FinanceReport.create(reportPayload);
 
-    // Create notifications for admin/CEO users
-    const adminUsers = await User.find({
-      role: { $in: ["admin", "ceo"] },
+    // Create notifications for Finance HODs
+    const financeHods = await User.find({
+      role: "hod",
+      teamNames: "FINANCE",
       status: "active",
       isDeleted: false
     }).lean();
 
-    const notifications = adminUsers.map((adminUser) => ({
-      recipientId: adminUser._id,
+    const notifications = financeHods.map((hodUser) => ({
+      recipientId: hodUser._id,
       type: "finance_approval_request",
-      title: "Finance Report — Pending Approval",
+      title: "Finance Report — Pending Forward",
       message: `${user.name} submitted a finance report for ${dayStart.toISOString().slice(0, 10)}. Closing Balance: ₹${parsed.data.closingCashBalance.toLocaleString("en-IN")}. Awaiting your approval.`,
       metadata: {
         financeReportId: String(report._id),
@@ -156,7 +165,11 @@ export async function GET(request: Request) {
     await connectToDatabase();
     const filter: Record<string, unknown> = {};
 
-    if (status) filter.status = status;
+    if (status) {
+      filter.status = status;
+    } else if (user.role === "ceo") {
+      filter.status = { $in: ["forwarded_to_ceo", "approved", "rejected"] };
+    }
     if (date) {
       const day = new Date(date);
       const nextDay = new Date(day);

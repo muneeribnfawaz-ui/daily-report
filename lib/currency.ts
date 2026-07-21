@@ -32,18 +32,24 @@ export async function getINRtoSARRate(): Promise<number> {
     clearTimeout(timeout);
 
     if (!response.ok) {
-      throw new Error(`Exchange rate API returned ${response.status}`);
+      console.error("Exchange rate API error", response.status);
+      return getCachedRate();
     }
 
-    const data = await response.json();
-    const sarRate = data?.rates?.SAR;
+    try {
+      const data = await response.json();
+      const sarRate = data?.rates?.SAR;
 
-    if (typeof sarRate !== "number" || sarRate <= 0) {
-      throw new Error("Invalid SAR rate in response");
+      if (typeof sarRate !== "number" || sarRate <= 0) {
+        throw new Error("Invalid SAR rate in response");
+      }
+
+      cachedRate = { rate: sarRate, fetchedAt: Date.now() };
+      return sarRate;
+    } catch (parseError) {
+      console.error("Failed to parse exchange rate JSON", parseError);
+      return getCachedRate();
     }
-
-    cachedRate = { rate: sarRate, fetchedAt: Date.now() };
-    return sarRate;
   } catch (error) {
     console.error("Failed to fetch exchange rate, using cached/fallback", error);
     return cachedRate?.rate ?? FALLBACK_INR_TO_SAR;

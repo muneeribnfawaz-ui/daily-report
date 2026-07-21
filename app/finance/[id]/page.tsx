@@ -2,7 +2,7 @@ import { redirect, notFound } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { DashboardPageHeader } from "@/components/dashboard/ui";
 import { getCurrentUser } from "@/lib/auth";
-import { canViewFinanceReport, canEditFinanceReport, canApproveFinanceReport } from "@/lib/permissions";
+import { canViewFinanceReport, canEditFinanceReport, canApproveFinanceReport, canForwardFinanceReport } from "@/lib/permissions";
 import { connectToDatabase } from "@/lib/db";
 import FinanceReport from "@/models/FinanceReport";
 import { FinanceReportDetail } from "@/components/finance/finance-report-detail";
@@ -27,6 +27,7 @@ export default async function FinanceDetailPage({ params }: PageProps) {
   if (!report) notFound();
 
   const canApprove = canApproveFinanceReport(user);
+  const canForward = canForwardFinanceReport(user);
   const canEdit = canEditFinanceReport(user);
 
   const serializedReport = {
@@ -68,6 +69,7 @@ export default async function FinanceDetailPage({ params }: PageProps) {
         <FinanceReportDetail
           report={serializedReport}
           canApprove={canApprove}
+          canForward={canForward}
           canEdit={canEdit}
         />
       </div>

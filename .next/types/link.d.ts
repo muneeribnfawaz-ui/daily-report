@@ -54,6 +54,7 @@ declare namespace __next_route_internal_types__ {
     | `/api/exchange-rate`
     | `/api/finance-reports`
     | `/api/finance-reports/dashboard`
+    | `/api/finance-reports/latest-balance`
     | `/api/leave-requests`
     | `/api/notifications`
     | `/api/profile`

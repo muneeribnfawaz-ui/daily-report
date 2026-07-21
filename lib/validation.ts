@@ -2,15 +2,23 @@ import { z } from "zod";
 import { AUTH_ROLE_OPTIONS, LEAVE_DURATION_OPTIONS, LEAVE_HALF_OPTIONS, LEAVE_TYPE_OPTIONS, SOFTWARE_ROLE_OPTIONS } from "@/lib/constants";
 import { getLeaveRequestDateWindow, parseDateInputValue } from "@/lib/date-utils";
 
+const strictPasswordSchema = z
+  .string()
+  .min(5, "Password must be at least 5 characters long")
+  .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+  .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+  .regex(/[0-9]/, "Password must contain at least one number")
+  .regex(/[^A-Za-z0-9]/, "Password must contain at least one special character");
+
 export const loginSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8)
+  password: strictPasswordSchema
 });
 
 export const registerSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
-  password: z.string().min(8),
+  password: strictPasswordSchema,
   role: z.enum(AUTH_ROLE_OPTIONS),
   teamName: z.string().min(1)
 });
@@ -18,7 +26,7 @@ export const registerSchema = z.object({
 export const adminCreateReportManagerSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
-  password: z.string().min(8),
+  password: strictPasswordSchema,
   teamName: z.string().min(1)
 });
 
@@ -30,15 +38,23 @@ export const adminCreateUserSchema = z.object({
   role: z.enum(AUTH_ROLE_OPTIONS),
   roleTypes: z.array(z.enum(SOFTWARE_ROLE_OPTIONS)).default([]),
   teamNames: z.array(z.string().min(1)).min(1),
-  managerName: z.string().min(1, "Select a manager"),
+  managerName: z.string().optional().default(""),
   email: z.string().email(),
-  password: z.string().min(8)
+  password: strictPasswordSchema
 }).superRefine((data, ctx) => {
   if (data.role !== "report_manager" && data.roleTypes.length === 0) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["roleTypes"],
       message: "Select at least one role type"
+    });
+  }
+  
+  if (data.role !== "ceo" && data.role !== "admin" && (!data.managerName || data.managerName.trim() === "")) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["managerName"],
+      message: "Select a manager"
     });
   }
 });
@@ -122,17 +138,17 @@ export const profileUpdateSchema = z.object({
     if (typeof value !== "string") return value;
     const trimmed = value.trim();
     return trimmed === "" ? undefined : trimmed;
-  }, z.string().min(8).optional()),
+  }, strictPasswordSchema.optional()),
   newPassword: z.preprocess((value) => {
     if (typeof value !== "string") return value;
     const trimmed = value.trim();
     return trimmed === "" ? undefined : trimmed;
-  }, z.string().min(8).optional()),
+  }, strictPasswordSchema.optional()),
   confirmPassword: z.preprocess((value) => {
     if (typeof value !== "string") return value;
     const trimmed = value.trim();
     return trimmed === "" ? undefined : trimmed;
-  }, z.string().min(8).optional())
+  }, strictPasswordSchema.optional())
 }).superRefine((data, ctx) => {
   const wantsPasswordChange = Boolean(data.oldPassword || data.newPassword || data.confirmPassword);
 
@@ -174,7 +190,7 @@ export const profileUpdateSchema = z.object({
 export const signupSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
-  password: z.string().min(8)
+  password: strictPasswordSchema
 });
 
 const DAILY_REPORT_TYPES = ["Daily Update", "Bug Fix", "Meeting Notes", "Blocker", "Attendance", "Other"] as const;
@@ -194,11 +210,37 @@ export const dailyReportSchema = z.object({
   reportDate: z.union([z.string().min(1), z.literal("")]).optional(),
   attachmentLink: z.union([z.string().url(), z.literal("")]).optional(),
   dailyMeetingUpdate: z.union([z.string(), z.literal("")]).optional(),
-  completedWork: z.string().min(2, "Completed work is required"),
+  completedWork: z.union([z.string(), z.literal("")]).optional(),
   pendingWork: z.union([z.string(), z.literal("")]).optional(),
   blockers: z.union([z.string(), z.literal("")]).optional(),
   requiredClarification: z.union([z.string(), z.literal("")]).optional(),
-  nextDayApprovalItems: z.array(nextDayApprovalItemSchema).optional().default([])
+  nextDayApprovalItems: z.array(nextDayApprovalItemSchema).optional().default([]),
+  
+  // Construction Report Fields
+  constructionWorkPlan: z.array(z.object({
+    activity: z.string().optional().default(""),
+    location: z.string().optional().default(""),
+    unit: z.string().optional().default(""),
+    plannedQuantity: z.string().optional().default(""),
+    executedQuantity: z.string().optional().default(""),
+    completionPercentage: z.string().optional().default(""),
+    remarks: z.string().optional().default("")
+  })).optional().default([]),
+  
+  constructionMaterialUtilization: z.array(z.object({
+    material: z.string().optional().default(""),
+    unit: z.string().optional().default(""),
+    openingStock: z.string().optional().default(""),
+    received: z.string().optional().default(""),
+    closingStock: z.string().optional().default("")
+  })).optional().default([]),
+  
+  constructionTomorrowWorkPlan: z.array(z.object({
+    activity: z.string().optional().default(""),
+    location: z.string().optional().default(""),
+    unit: z.string().optional().default(""),
+    plannedQuantity: z.string().optional().default("")
+  })).optional().default([])
 });
 
 export const leaveRequestSchema = z.object({

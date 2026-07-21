@@ -9,9 +9,8 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ReportSheetPreview, type ReportSheetEntry, type ReportSheetTeamGroup } from "@/components/reports/report-sheet-preview";
-import { useSession } from "@/hooks/use-session";
 
-type ReportGroup = "operations" | "finance";
+type ReportGroup = "operations";
 
 type ConsolidatedDayReport = {
   date: string;
@@ -90,12 +89,6 @@ const GROUP_CONFIG: Record<ReportGroup, { label: string; pdfLabel: string; empty
     pdfLabel: "Operations PDF",
     emptyLabel: "No operations team reports found for this date.",
     icon: <Building2 className="h-3.5 w-3.5" />
-  },
-  finance: {
-    label: "Finance",
-    pdfLabel: "Finance PDF",
-    emptyLabel: "No finance team reports found for this date.",
-    icon: <FileText className="h-3.5 w-3.5" />
   }
 };
 
@@ -110,20 +103,15 @@ export function ConsolidatedReportPreviewScreen({
   backHref: string;
   title: string;
 }) {
-  const [activeGroup, setActiveGroup] = useState<ReportGroup>("operations");
+  const [activeGroup] = useState<ReportGroup>("operations");
   const previewRef = useRef<HTMLDivElement | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
-  const { data: sessionUser } = useSession();
-  const canViewFinance = sessionUser?.role === "admin" || sessionUser?.role === "ceo" || sessionUser?.role === "hod";
 
-  const opsQuery = useGroupReport(endpoint, date, "operations");
-  const financeQuery = useGroupReport(endpoint, date, "finance");
-
-  const activeQuery = activeGroup === "finance" ? financeQuery : opsQuery;
+  const activeQuery = useGroupReport(endpoint, date, "operations");
   const report = activeQuery.data;
   const previewGroups = report?.teamGroups ?? [];
   const dateLabel = date ? formatDateOnly(date) : "";
-  const config = GROUP_CONFIG[activeGroup];
+  const config = GROUP_CONFIG.operations;
 
   const handleDownloadPdf = async () => {
     try {
@@ -139,10 +127,7 @@ export function ConsolidatedReportPreviewScreen({
       const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = objectUrl;
-      link.download =
-        activeGroup === "finance"
-          ? `finance-consolidated-${date}.pdf`
-          : `operations-consolidated-${date}.pdf`;
+      link.download = `operations-consolidated-${date}.pdf`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -184,48 +169,6 @@ export function ConsolidatedReportPreviewScreen({
           </div>
         </CardHeader>
 
-        {/* Group switcher */}
-        <CardContent className="px-0 pb-0">
-          <div className="flex items-center gap-1 rounded-xl border bg-muted/40 p-1 w-fit">
-            {(Object.entries(GROUP_CONFIG) as [ReportGroup, typeof GROUP_CONFIG[ReportGroup]][]).map(
-              ([group, cfg]) => {
-                // Hide the Finance tab for users who cannot view finance reports.
-                if (group === "finance" && !canViewFinance) return null;
-                const isActive = activeGroup === group;
-                const groupQuery = group === "finance" ? financeQuery : opsQuery;
-                const count = groupQuery.data?.reportCount;
-                return (
-                  <button
-                    key={group}
-                    type="button"
-                    onClick={() => setActiveGroup(group)}
-                    className={[
-                      "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
-                      isActive
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    ].join(" ")}
-                  >
-                    {cfg.icon}
-                    {cfg.label}
-                    {count !== undefined && (
-                      <span
-                        className={[
-                          "ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none",
-                          isActive
-                            ? "bg-primary/10 text-primary"
-                            : "bg-muted text-muted-foreground"
-                        ].join(" ")}
-                      >
-                        {count}
-                      </span>
-                    )}
-                  </button>
-                );
-              }
-            )}
-          </div>
-        </CardContent>
       </Card>
 
       {/* Preview body */}

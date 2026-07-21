@@ -55,6 +55,17 @@ export function FinanceReportForm({ mode, initialData }: FinanceReportFormProps)
 
   const todayStr = new Date().toISOString().slice(0, 10);
 
+  const { data: latestBalanceData } = useQuery({
+    queryKey: ["latest-finance-balance"],
+    enabled: mode === "create",
+    queryFn: async () => {
+      const res = await fetch("/api/finance-reports/latest-balance");
+      if (!res.ok) return null;
+      const json = await res.json();
+      return json.data as { openingBalance: number; lastReportDate: string | null };
+    }
+  });
+
   const {
     register,
     handleSubmit,
@@ -85,6 +96,13 @@ export function FinanceReportForm({ mode, initialData }: FinanceReportFormProps)
     const netBalance = totalIncome - totalExpenses;
     return { totalIncome, totalExpenses, netBalance };
   }, [watchedValues]);
+
+  // Pre-fill opening balance if we're creating a new report
+  useEffect(() => {
+    if (mode === "create" && latestBalanceData?.openingBalance !== undefined) {
+      setValue("openingBalance", latestBalanceData.openingBalance);
+    }
+  }, [mode, latestBalanceData, setValue]);
 
   // Auto-compute closing cash balance
   useEffect(() => {

@@ -51,6 +51,7 @@ type FinanceReportData = {
 type FinanceReportDetailProps = {
   report: FinanceReportData;
   canApprove: boolean;
+  canForward?: boolean;
   canEdit: boolean;
 };
 
@@ -68,6 +69,7 @@ function formatDate(value: string | Date) {
 function StatusBadge({ status }: { status: string }) {
   const variants: Record<string, { className: string; label: string }> = {
     pending: { className: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-600 dark:bg-amber-950/50 dark:text-amber-300", label: "Pending Approval" },
+    forwarded_to_ceo: { className: "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-600 dark:bg-blue-950/50 dark:text-blue-300", label: "Forwarded to CEO" },
     approved: { className: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-300", label: "Approved" },
     rejected: { className: "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-600 dark:bg-rose-950/50 dark:text-rose-300", label: "Rejected" }
   };
@@ -75,7 +77,7 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge className={`rounded-full px-3 py-1 text-xs font-semibold ${v.className}`}>{v.label}</Badge>;
 }
 
-export function FinanceReportDetail({ report, canApprove, canEdit }: FinanceReportDetailProps) {
+export function FinanceReportDetail({ report, canApprove, canForward = false, canEdit }: FinanceReportDetailProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [rejectReason, setRejectReason] = useState("");
@@ -83,7 +85,7 @@ export function FinanceReportDetail({ report, canApprove, canEdit }: FinanceRepo
   const [isDownloading, setIsDownloading] = useState(false);
 
   const approvalMutation = useMutation({
-    mutationFn: async ({ action, reason }: { action: "approve" | "reject"; reason?: string }) => {
+    mutationFn: async ({ action, reason }: { action: "approve" | "reject" | "forward"; reason?: string }) => {
       const res = await fetch(`/api/finance-reports/${report._id}/approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -268,8 +270,27 @@ export function FinanceReportDetail({ report, canApprove, canEdit }: FinanceRepo
       </div>
 
       {/* Approval Actions */}
-      {canApprove && report.status === "pending" && (
-        <div className="space-y-4 rounded-xl border border-cardBorder bg-card p-5 shadow-soft">
+      {canForward && report.status === "pending" && (
+        <div className="space-y-4 rounded-xl border border-cardBorder bg-card p-5 shadow-soft mt-6">
+          <h3 className="text-sm font-semibold">Forward to CEO</h3>
+          <Button
+            onClick={() => approvalMutation.mutate({ action: "forward" })}
+            disabled={approvalMutation.isPending}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            {approvalMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
+            Forward to CEO
+          </Button>
+          {approvalMutation.isError && (
+            <div className="text-sm text-destructive mt-2">
+              {(approvalMutation.error as Error).message || "Action failed"}
+            </div>
+          )}
+        </div>
+      )}
+
+      {canApprove && report.status === "forwarded_to_ceo" && (
+        <div className="space-y-4 rounded-xl border border-cardBorder bg-card p-5 shadow-soft mt-6">
           <h3 className="text-sm font-semibold">Approval Actions</h3>
 
           {showRejectForm ? (
@@ -316,7 +337,7 @@ export function FinanceReportDetail({ report, canApprove, canEdit }: FinanceRepo
           )}
 
           {approvalMutation.isError && (
-            <div className="text-sm text-destructive">
+            <div className="text-sm text-destructive mt-2">
               {(approvalMutation.error as Error).message || "Action failed"}
             </div>
           )}

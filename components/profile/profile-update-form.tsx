@@ -28,9 +28,9 @@ const nameUpdateSchema = z.object({
 });
 
 const passwordUpdateSchema = z.object({
-  oldPassword: z.string().min(8, "Enter your current password"),
-  newPassword: z.string().min(8, "Enter a new password"),
-  confirmPassword: z.string().min(8, "Confirm the new password")
+  oldPassword: z.string().min(5, "Enter your current password"),
+  newPassword: z.string().min(5, "Enter a new password"),
+  confirmPassword: z.string().min(5, "Confirm the new password")
 }).superRefine((data, ctx) => {
   if (data.newPassword !== data.confirmPassword) {
     ctx.addIssue({

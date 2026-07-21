@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import type { SessionUser } from "@/lib/types";
 import { FINANCE_TEAM_NAME } from "@/lib/constants";
 import { ReportField, ReportInput, ReportSelect, ReportTextarea } from "@/components/forms/report-controls";
+import { ConstructionReportFields } from "./construction-report-fields";
 
 type ApprovalItem = {
   particulars: string;
@@ -41,6 +42,9 @@ type ReportItem = {
     review?: string;
     approval?: string;
   }>;
+  constructionWorkPlan?: any[];
+  constructionMaterialUtilization?: any[];
+  constructionTomorrowWorkPlan?: any[];
 };
 
 type TeamOption = {
@@ -67,6 +71,9 @@ export function DailyReportForm() {
   const [blockerTasks, setBlockerTasks] = useState<string[]>([]);
   const [selectedTeam, setSelectedTeam] = useState("");
   const [approvalItems, setApprovalItems] = useState<ApprovalItem[]>([]);
+  const [workPlanItems, setWorkPlanItems] = useState<any[]>([]);
+  const [materialItems, setMaterialItems] = useState<any[]>([]);
+  const [tomorrowWorkPlanItems, setTomorrowWorkPlanItems] = useState<any[]>([]);
   const today = new Date().toISOString().slice(0, 10);
   const draftLoadedKeyRef = useRef<string | null>(null);
   const { data: currentUser } = useQuery({
@@ -126,6 +133,7 @@ export function DailyReportForm() {
 
   const resolvedSelectedTeam = selectedTeam || defaultTeamName;
   const isFinanceTeam = resolvedSelectedTeam === FINANCE_TEAM_NAME;
+  const isConstructionTeam = resolvedSelectedTeam === "CONSTRUCTION";
 
   const { data: teamMeetingUpdates } = useQuery({
     queryKey: ["team-meeting-updates", resolvedSelectedTeam, selectedReportDate],
@@ -192,7 +200,7 @@ export function DailyReportForm() {
           completedDraft?: string;
           pendingDraft?: string;
           blockerDraft?: string;
-        };
+         workPlanItems?: any[]; materialItems?: any[]; tomorrowWorkPlanItems?: any[]; };
 
         if (parsedDraft.values) {
           const draftTeamName = parsedDraft.values.teamName ?? defaultTeamName;
@@ -241,7 +249,10 @@ export function DailyReportForm() {
       setCompletedDraft(existingReport.completedWork);
       setPendingDraft(existingReport.pendingWork);
       setBlockerDraft(existingReport.blockers);
-      setApprovalItems(
+      setWorkPlanItems(existingReport.constructionWorkPlan ?? []);
+      setMaterialItems(existingReport.constructionMaterialUtilization ?? []);
+      setTomorrowWorkPlanItems(existingReport.constructionTomorrowWorkPlan ?? []);
+          setApprovalItems(
         (existingReport.nextDayApprovalItems ?? []).map((item) => ({
           particulars: item.particulars ?? "",
           amountINR: item.amountINR ?? 0,
@@ -271,6 +282,9 @@ export function DailyReportForm() {
     setCompletedDraft("");
     setPendingDraft("");
     setBlockerDraft("");
+    setWorkPlanItems([]);
+    setMaterialItems([]);
+    setTomorrowWorkPlanItems([]);
     draftLoadedKeyRef.current = draftStorageKey;
   }, [currentUser, defaultTeamName, draftStorageKey, existingReport, reset, selectedReportDate, selectedTeam, today]);
 
@@ -321,7 +335,10 @@ export function DailyReportForm() {
       blockerTasks,
       completedDraft,
       pendingDraft,
-      blockerDraft
+      blockerDraft,
+      workPlanItems,
+      materialItems,
+      tomorrowWorkPlanItems
     };
 
     window.localStorage.setItem(draftStorageKey, JSON.stringify(draftPayload));
@@ -358,7 +375,10 @@ export function DailyReportForm() {
       const parsed = dailyReportSchema.safeParse({
         ...values,
         teamName: resolvedTeamName,
-        nextDayApprovalItems: isFinanceTeam ? filteredApprovalItems : []
+        nextDayApprovalItems: isFinanceTeam ? filteredApprovalItems : [],
+        constructionWorkPlan: isConstructionTeam ? workPlanItems : [],
+        constructionMaterialUtilization: isConstructionTeam ? materialItems : [],
+        constructionTomorrowWorkPlan: isConstructionTeam ? tomorrowWorkPlanItems : []
       });
       if (!parsed.success) {
         clearErrors();
@@ -533,9 +553,12 @@ export function DailyReportForm() {
           <ReportTextarea placeholder="Add any new meeting points here" {...register("dailyMeetingUpdate")} />
         </ReportField>
       ) : null}
-      <input type="hidden" {...register("completedWork")} />
-      <input type="hidden" {...register("pendingWork")} />
-      <input type="hidden" {...register("blockers")} />
+      {!isConstructionTeam ? (
+        <>
+          <input type="hidden" {...register("completedWork")} />
+          <input type="hidden" {...register("pendingWork")} />
+          <input type="hidden" {...register("blockers")} />
+
       <ReportField
         className="md:col-span-2"
         label="Completed Work"
@@ -597,9 +620,20 @@ export function DailyReportForm() {
           }}
         />
       </ReportField>
-      <ReportField className="md:col-span-2" label="Required clarification" error={errors.requiredClarification?.message}>
-        <ReportTextarea placeholder="Required Clarification" {...register("requiredClarification")} />
-      </ReportField>
+                <ReportField className="md:col-span-2" label="Required clarification" error={errors.requiredClarification?.message}>
+            <ReportTextarea placeholder="Required Clarification" {...register("requiredClarification")} />
+          </ReportField>
+        </>
+      ) : (
+        <ConstructionReportFields
+          workPlanItems={workPlanItems}
+          setWorkPlanItems={setWorkPlanItems}
+          materialItems={materialItems}
+          setMaterialItems={setMaterialItems}
+          tomorrowWorkPlanItems={tomorrowWorkPlanItems}
+          setTomorrowWorkPlanItems={setTomorrowWorkPlanItems}
+        />
+      )}
       {isFinanceTeam ? (
         <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 dark:border-amber-900/60 dark:bg-amber-950/35">
           <div className="flex items-center justify-between gap-3 mb-4">

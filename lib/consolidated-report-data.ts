@@ -146,15 +146,10 @@ export async function getConsolidatedReportDetail(
   const { start: day, end: nextDay } = toInclusiveDateRange(date);
   conditions.push({ reportDate: { $gte: day, $lt: nextDay } });
 
-  // Apply Finance / Operations group filter at DB query level when possible.
-  if (reportGroup === "finance" && financeTeamNames.length > 0) {
-    conditions.push({ teamName: { $in: financeTeamNames } });
-  } else if (reportGroup === "operations") {
-    if (financeTeamNames.length > 0) {
-      conditions.push({ teamName: { $nin: financeTeamNames } });
-    }
+  // Finance is decoupled and explicitly excluded from standard consolidated multi-department reports.
+  if (financeTeamNames.length > 0) {
+    conditions.push({ teamName: { $nin: financeTeamNames } });
   }
-  // "all" or undefined → no extra filter (full backward compatibility)
 
   const filter = conditions.length <= 1 ? conditions[0] ?? {} : { $and: conditions };
   const reports = (await DailyReport.find(filter).sort({ reportDate: -1, createdAt: -1 }).lean()) as unknown as Array<
@@ -176,11 +171,9 @@ export async function getConsolidatedReportDetail(
     dateTo: date
   });
 
-  // Filter leave requests by group when applicable.
+  // Filter out Finance leave requests
   const filteredLeaveRequests = leaveRequests.filter((lr) => {
-    if (reportGroup === "finance") return financeTeamNameSet.has(lr.teamName);
-    if (reportGroup === "operations") return !financeTeamNameSet.has(lr.teamName);
-    return true; // "all" or undefined — include everything
+    return !financeTeamNameSet.has(lr.teamName);
   });
   const leaveByEmployeeId = new Map<string, ActiveLeaveRequest>();
   const leaveMembersByTeam = new Map<
@@ -246,9 +239,8 @@ export async function getConsolidatedReportDetail(
 
       const teamKey = resolveTeamName(user);
 
-      // Apply group filter for notShared members.
-      if (reportGroup === "finance" && !financeTeamNameSet.has(teamKey)) continue;
-      if (reportGroup === "operations" && financeTeamNameSet.has(teamKey)) continue;
+      // Finance is explicitly excluded from standard consolidated reports.
+      if (financeTeamNameSet.has(teamKey)) continue;
 
       const current = notSharedMembersByTeam.get(teamKey) ?? [];
       if (!current.some((item) => item.employeeId === employeeId)) {

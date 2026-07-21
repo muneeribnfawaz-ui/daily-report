@@ -24,6 +24,9 @@ type ReportItem = {
   isLocked?: boolean | null;
   editAccessRequested?: boolean | null;
   editAccessGranted?: boolean | null;
+  constructionWorkPlan?: any[];
+  constructionMaterialUtilization?: any[];
+  constructionTomorrowWorkPlan?: any[];
 };
 
 type DateGroupItem = {
@@ -164,6 +167,9 @@ export async function GET(request: Request) {
     pendingWork: report.pendingWork ?? "",
     blockers: report.blockers ?? "",
     requiredClarification: report.requiredClarification ?? "",
+    constructionWorkPlan: report.constructionWorkPlan,
+    constructionMaterialUtilization: report.constructionMaterialUtilization,
+    constructionTomorrowWorkPlan: report.constructionTomorrowWorkPlan,
     status: report.status ?? "submitted",
     isLocked: Boolean(report.isLocked),
     canEdit: canEditDailyReport(report, { role: userMap.get(String(report.employeeId))?.role ?? null }),

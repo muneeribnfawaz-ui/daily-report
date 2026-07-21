@@ -6,12 +6,32 @@ import { DashboardPageHeader, DashboardPanel, DashboardStatCard } from "@/compon
 import Link from "next/link";
 import { CreateUserButton } from "@/components/admin/create-user-button";
 import { getCurrentUser } from "@/lib/auth";
+import { connectToDatabase } from "@/lib/db";
+import DailyReport from "@/models/DailyReport";
+import { getVisibleReportEmployeeIds } from "@/lib/report-visibility";
 
 export default async function ReportManagerDashboardPage() {
   const user = await getCurrentUser();
   if (!user || (user.role !== "team_lead" && user.role !== "report_manager" && user.role !== "hod" && user.role !== "admin" && user.role !== "ceo")) {
     redirect("/login");
   }
+
+  await connectToDatabase();
+  const visibleEmployeeIds = await getVisibleReportEmployeeIds(user);
+  
+  const conditions: Record<string, unknown>[] = [];
+  if (visibleEmployeeIds) {
+    conditions.push({ employeeId: { $in: visibleEmployeeIds } });
+  }
+  conditions.push({ status: { $in: ["submitted", "pending", "clarification_needed", "approved"] } });
+  
+  const filter = conditions.length === 0 ? {} : conditions.length === 1 ? conditions[0] : { $and: conditions };
+  
+  const recentReports = await DailyReport.find(filter)
+    .sort({ reportDate: -1, createdAt: -1 })
+    .limit(5)
+    .select("name teamName status blockers requiredClarification pendingWork")
+    .lean() as any[];
 
   return (
     <AppShell title="Report Manager Dashboard" role={user.role}>
@@ -49,22 +69,30 @@ export default async function ReportManagerDashboardPage() {
         <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
           <DashboardPanel title="Review Queue" subtitle="High priority reports needing a decision">
             <div className="space-y-3">
-              {[
-                ["Asha", "Backend", "Pending", "Needs clarification"],
-                ["Rohit", "Web", "Submitted", "Awaiting approval"],
-                ["Meera", "QA", "Approved", "Ready for consolidation"]
-              ].map(([name, team, status, note]) => (
-                <div key={`${name}-${team}`} className="rounded-2xl border p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="font-medium">{name}</div>
-                      <div className="text-sm text-muted-foreground">{team} team</div>
+              {recentReports.length > 0 ? (
+                recentReports.map((report) => {
+                  let note = report.pendingWork || report.blockers || report.requiredClarification || "Awaiting review";
+                  if (note.length > 45) note = note.substring(0, 45) + "...";
+                  return (
+                    <div key={String(report._id)} className="rounded-2xl border p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="font-medium">{report.name || "Unknown"}</div>
+                          <div className="text-sm text-muted-foreground">{report.teamName || "General"} team</div>
+                        </div>
+                        <Badge variant={report.status === "approved" ? "soft" : "outline"}>
+                          {report.status ? report.status.charAt(0).toUpperCase() + report.status.slice(1).replace("_", " ") : "Submitted"}
+                        </Badge>
+                      </div>
+                      <div className="mt-3 text-sm text-muted-foreground">{note}</div>
                     </div>
-                    <Badge variant={status === "Approved" ? "soft" : "outline"}>{status}</Badge>
-                  </div>
-                  <div className="mt-3 text-sm text-muted-foreground">{note}</div>
+                  );
+                })
+              ) : (
+                <div className="text-sm text-muted-foreground p-4 text-center">
+                  No reports waiting for review.
                 </div>
-              ))}
+              )}
             </div>
           </DashboardPanel>
 

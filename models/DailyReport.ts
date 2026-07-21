@@ -9,7 +9,7 @@ const DailyReportSchema = new Schema(
     reportDate: { type: Date, required: true },
     attachmentLink: { type: String, default: "" },
     dailyMeetingUpdate: { type: String, default: "" },
-    completedWork: { type: String, required: true },
+    completedWork: { type: String, default: "" },
     pendingWork: { type: String, default: "" },
     blockers: { type: String, default: "" },
     requiredClarification: { type: String, default: "" },
@@ -36,6 +36,43 @@ const DailyReportSchema = new Schema(
           reason: { type: String, default: "" },
           review: { type: String, default: "" },
           approval: { type: String, default: "pending", enum: ["pending", "yes", "no"] }
+        }
+      ],
+      default: []
+    },
+    constructionWorkPlan: {
+      type: [
+        {
+          activity: { type: String, default: "" },
+          location: { type: String, default: "" },
+          unit: { type: String, default: "" },
+          plannedQuantity: { type: String, default: "" },
+          executedQuantity: { type: String, default: "" },
+          completionPercentage: { type: String, default: "" },
+          remarks: { type: String, default: "" }
+        }
+      ],
+      default: []
+    },
+    constructionMaterialUtilization: {
+      type: [
+        {
+          material: { type: String, default: "" },
+          unit: { type: String, default: "" },
+          openingStock: { type: String, default: "" },
+          received: { type: String, default: "" },
+          closingStock: { type: String, default: "" }
+        }
+      ],
+      default: []
+    },
+    constructionTomorrowWorkPlan: {
+      type: [
+        {
+          activity: { type: String, default: "" },
+          location: { type: String, default: "" },
+          unit: { type: String, default: "" },
+          plannedQuantity: { type: String, default: "" }
         }
       ],
       default: []

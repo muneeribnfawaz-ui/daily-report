@@ -74,6 +74,9 @@ export async function POST(request: Request) {
       blockers: parsed.data.blockers ?? "",
       requiredClarification: parsed.data.requiredClarification ?? "",
       nextDayApprovalItems: parsed.data.nextDayApprovalItems ?? [],
+      constructionWorkPlan: parsed.data.constructionWorkPlan ?? [],
+      constructionMaterialUtilization: parsed.data.constructionMaterialUtilization ?? [],
+      constructionTomorrowWorkPlan: parsed.data.constructionTomorrowWorkPlan ?? [],
       status: "submitted"
     } as const;
 

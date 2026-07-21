@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { Route } from "next";
-import { ChevronRight, LayoutGrid, LogOut, Sparkles, X } from "lucide-react";
+import { ChevronRight, LayoutGrid, LogOut, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -34,8 +34,8 @@ export function Sidebar({
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-slate-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-500 text-white shadow-lg shadow-sky-500/20">
-                <Sparkles className="h-5 w-5" />
+              <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl bg-white p-1.5 shadow-lg shadow-black/20">
+                <img src="/logo.png" alt="MEC Logo" className="h-full w-full object-contain" />
               </div>
               <div>
                 <div className="bg-gradient-to-r from-white to-slate-300 bg-clip-text text-sm font-semibold text-transparent">

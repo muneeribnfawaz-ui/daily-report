@@ -40,31 +40,5 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const user = await getCurrentUser();
-  if (!user || (user.role !== "admin" && user.role !== "ceo")) {
-    return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
-  }
-
-  const body = await request.json();
-  const parsed = teamTypeSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ success: false, message: "Invalid team type payload" }, { status: 400 });
-  }
-
-  await connectToDatabase();
-  const generatedName = toInternalTeamTypeName(parsed.data.showName);
-  const existingByGeneratedName = await TeamType.findOne({ name: generatedName }).lean();
-  if (existingByGeneratedName) {
-    return NextResponse.json({ success: false, message: "Team type already exists" }, { status: 409 });
-  }
-
-  const teamType = await TeamType.create({
-    name: generatedName,
-    showName: parsed.data.showName.trim(),
-    isActive: parsed.data.isActive,
-    isDeleted: parsed.data.isDeleted,
-    createdBy: user.name
-  });
-
-  return NextResponse.json({ success: true, data: teamType }, { status: 201 });
+  return NextResponse.json({ success: false, message: "Team Types are finalized and cannot be created." }, { status: 405 });
 }

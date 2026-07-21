@@ -1,18 +1,13 @@
 {
+  "/api/auth/login/route": "app/api/auth/login/route.js",
   "/api/notifications/route": "app/api/notifications/route.js",
+  "/api/finance-reports/dashboard/route": "app/api/finance-reports/dashboard/route.js",
   "/api/auth/me/route": "app/api/auth/me/route.js",
-  "/api/exchange-rate/route": "app/api/exchange-rate/route.js",
-  "/api/leave-requests/route": "app/api/leave-requests/route.js",
-  "/api/consolidated-reports/route": "app/api/consolidated-reports/route.js",
-  "/api/finance-reports/route": "app/api/finance-reports/route.js",
-  "/login/page": "app/login/page.js",
-  "/admin/dashboard/page": "app/admin/dashboard/page.js",
+  "/report-manager/dashboard/page": "app/report-manager/dashboard/page.js",
   "/finance/page": "app/finance/page.js",
-  "/finance/create/page": "app/finance/create/page.js",
-  "/admin/audit-logs/page": "app/admin/audit-logs/page.js",
-  "/admin/settings/page": "app/admin/settings/page.js",
-  "/profile/page": "app/profile/page.js",
-  "/leave-requests/page": "app/leave-requests/page.js",
-  "/admin/consolidated-reports/page": "app/admin/consolidated-reports/page.js",
-  "/finance/[id]/page": "app/finance/[id]/page.js"
+  "/login/page": "app/login/page.js",
+  "/report-manager/reports/page": "app/report-manager/reports/page.js",
+  "/finance/[id]/page": "app/finance/[id]/page.js",
+  "/page": "app/page.js",
+  "/admin/dashboard/page": "app/admin/dashboard/page.js"
 }

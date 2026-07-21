@@ -212,6 +212,7 @@ export const CONSOLIDATED_REPORT_STATUSES = [
 
 export const FINANCE_REPORT_STATUSES = [
   "pending",
+  "forwarded_to_ceo",
   "approved",
   "rejected"
 ] as const;

@@ -33,12 +33,23 @@ const FinanceReportSchema = new Schema(
     status: {
       type: String,
       default: "pending",
-      enum: ["pending", "approved", "rejected"]
+      enum: ["pending", "forwarded_to_ceo", "approved", "rejected"]
     },
+    forwardedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    forwardedByName: { type: String, default: "" },
+    forwardedAt: { type: Date, default: null },
     approvedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     approvedByName: { type: String, default: "" },
     approvedAt: { type: Date, default: null },
-    rejectionReason: { type: String, default: "" }
+    rejectionReason: { type: String, default: "" },
+    statusHistory: [
+      {
+        status: { type: String },
+        by: { type: Schema.Types.ObjectId, ref: "User" },
+        byName: { type: String },
+        timestamp: { type: Date, default: Date.now }
+      }
+    ]
   },
   { timestamps: true }
 );
