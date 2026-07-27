@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { useEffect, useMemo, useState } from "react";
 import type { z } from "zod";
-import { CREATE_USER_ROLE_LABELS, CREATE_USER_ROLE_OPTIONS, SOFTWARE_ROLE_DESCRIPTIONS, SOFTWARE_ROLE_OPTIONS } from "@/lib/constants";
+import { CREATE_USER_ROLE_LABELS, CREATE_USER_ROLE_OPTIONS, DEPARTMENT_OPTIONS, MARKETING_SUB_TEAMS, getSkillsForDepartments } from "@/lib/constants";
 import { api } from "@/lib/api";
 import { adminCreateUserSchema } from "@/lib/validation";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,8 @@ type TeamTypeOption = {
   _id: string;
   name: string;
   showName?: string;
+  department?: string;
+  subTeams?: string[];
 };
 
 function normalizeTeamNames(teamName?: string | null, teamNames?: string[] | null) {
@@ -56,7 +58,7 @@ export function AdminAddUserForm() {
       const response = await api.get("/api/team-types");
       return response.data?.data as TeamTypeOption[];
     },
-    staleTime: 60_000
+    staleTime: 0
   });
   const teamOptions = useMemo(
     () => teamTypes ?? [],
@@ -95,8 +97,9 @@ export function AdminAddUserForm() {
       phone: "",
       empID: "",
       role: "team_member",
-      roleTypes: [SOFTWARE_ROLE_OPTIONS[0]],
+      roleTypes: [],
       teamNames: [],
+      departments: [],
       managerName: "",
       email: "",
       password: ""
@@ -106,6 +109,7 @@ export function AdminAddUserForm() {
   const selectedRole = useWatch({ control, name: "role" });
   const currentRoleTypes = useWatch({ control, name: "roleTypes" });
   const currentTeamNames = useWatch({ control, name: "teamNames" });
+  const currentDepartments = useWatch({ control, name: "departments" }) ?? [];
   const currentManagerName = useWatch({ control, name: "managerName" });
   const teamLeadOptions = managerPools?.teamLeads ?? [];
   const hodOptions = managerPools?.hods ?? [];
@@ -120,13 +124,22 @@ export function AdminAddUserForm() {
     return teamLeadOptions;
   }, [currentTeamNames, hodOptions, selectedRole, teamLeadOptions]);
 
+  const selectedDepartmentNames = useMemo(
+    () => currentDepartments.map((d) => d.name),
+    [currentDepartments]
+  );
+  const availableSkills = useMemo(
+    () => getSkillsForDepartments(selectedDepartmentNames),
+    [selectedDepartmentNames]
+  );
+
   useEffect(() => {
     if (selectedRole === "report_manager") {
       if (currentRoleTypes?.length) {
         setValue("roleTypes", []);
       }
-    } else if (!currentRoleTypes?.length) {
-      setValue("roleTypes", [SOFTWARE_ROLE_OPTIONS[0]]);
+    } else if (!currentRoleTypes?.length && selectedDepartmentNames.length > 0 && availableSkills.length > 0) {
+      setValue("roleTypes", [availableSkills[0].name as any]);
     }
 
     if (selectedRole === "hod") {
@@ -150,7 +163,7 @@ export function AdminAddUserForm() {
         setValue("managerName", firstValidTeamLead);
       }
     }
-  }, [currentManagerName, currentRoleTypes, hodOptions, managerSelectOptions, selectedRole, setValue]);
+  }, [availableSkills, currentManagerName, currentRoleTypes, hodOptions, managerSelectOptions, selectedRole, setValue]);
 
   useEffect(() => {
     if (selectedRole === "team_member") {
@@ -177,6 +190,28 @@ export function AdminAddUserForm() {
       setValue("teamNames", [availableTeamOptions[0].name]);
     }
   }, [availableTeamOptions, currentTeamNames, selectedRole, setValue]);
+
+  const toggleDepartment = (deptName: "Construction" | "Software" | "Finance" | "Marketing") => {
+    const exists = currentDepartments.some((d) => d.name === deptName);
+    let next: typeof currentDepartments;
+    if (exists) {
+      next = currentDepartments.filter((d) => d.name !== deptName);
+    } else {
+      next = [...currentDepartments, { name: deptName, subTeams: deptName === "Marketing" ? ["Physical"] : [] }];
+    }
+    setValue("departments", next);
+  };
+
+  const toggleMarketingSubTeam = (sub: "Physical" | "Digital") => {
+    const marketingIndex = currentDepartments.findIndex((d) => d.name === "Marketing");
+    if (marketingIndex === -1) return;
+    const currentSub = currentDepartments[marketingIndex].subTeams ?? [];
+    const exists = currentSub.includes(sub);
+    const nextSub = exists ? currentSub.filter((s) => s !== sub) : [...currentSub, sub];
+    const nextDepartments = [...currentDepartments];
+    nextDepartments[marketingIndex] = { name: "Marketing", subTeams: nextSub };
+    setValue("departments", nextDepartments);
+  };
 
   const onSubmit = async (values: AdminUserValues) => {
     setError(null);
@@ -211,8 +246,9 @@ export function AdminAddUserForm() {
         phone: "",
         empID: "",
         role: "team_member",
-        roleTypes: [SOFTWARE_ROLE_OPTIONS[0]],
+        roleTypes: [],
         teamNames: [],
+        departments: [],
         managerName: "",
         email: "",
         password: ""
@@ -245,13 +281,14 @@ export function AdminAddUserForm() {
       <ReportField label="Password" error={errors.password?.message}>
         <PasswordInput variant="report" placeholder="Password" {...register("password")} />
       </ReportField>
+
       <div className="md:col-span-2">
         <Controller
           control={control}
           name="teamNames"
           render={({ field }) => (
             <ReportMultiSelectCards
-              label="Team"
+              label="Team (Team Type)"
               helperText={
                 selectedRole === "team_member"
                   ? "Choose a team managed by the selected team lead."
@@ -267,6 +304,51 @@ export function AdminAddUserForm() {
             />
           )}
         />
+      </div>
+
+      <div className="md:col-span-2 space-y-2">
+        <div className="text-sm font-medium text-foreground">Departments (Assigned to User)</div>
+        <div className="text-xs text-muted-foreground mb-2">Select one or more primary departments for this user.</div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {DEPARTMENT_OPTIONS.map((deptName) => {
+            const isSelected = currentDepartments.some((d) => d.name === deptName);
+            return (
+              <Button
+                key={deptName}
+                type="button"
+                variant={isSelected ? "default" : "outline"}
+                className="justify-start text-xs h-9"
+                onClick={() => toggleDepartment(deptName)}
+              >
+                {deptName}
+              </Button>
+            );
+          })}
+        </div>
+
+        {currentDepartments.some((d) => d.name === "Marketing") && (
+          <div className="mt-3 p-3 border rounded-lg bg-muted/20 space-y-2">
+            <div className="text-xs font-semibold text-foreground">Marketing Sub-Teams</div>
+            <div className="flex gap-2">
+              {MARKETING_SUB_TEAMS.map((sub) => {
+                const marketingDept = currentDepartments.find((d) => d.name === "Marketing");
+                const isSubSelected = marketingDept?.subTeams?.includes(sub);
+                return (
+                  <Button
+                    key={sub}
+                    type="button"
+                    variant={isSubSelected ? "secondary" : "outline"}
+                    size="sm"
+                    className="text-xs h-8"
+                    onClick={() => toggleMarketingSubTeam(sub)}
+                  >
+                    {sub}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
       <ReportField label="Role" error={errors.role?.message}>
         <Controller
@@ -296,15 +378,15 @@ export function AdminAddUserForm() {
             name="roleTypes"
             render={({ field }) => (
               <ReportMultiSelectCards
-                label="Software Type"
-                helperText="Choose one or more software specialties for this user."
+                label="Skills / Specialties"
+                helperText="Select one or more skills for this user (dynamically filtered based on chosen department)."
                 error={errors.roleTypes?.message}
                 value={field.value ?? []}
                 onChange={field.onChange}
-                options={SOFTWARE_ROLE_OPTIONS.map((roleType) => ({
-                  value: roleType,
-                  label: roleType,
-                  description: SOFTWARE_ROLE_DESCRIPTIONS[roleType]
+                options={availableSkills.map((skill) => ({
+                  value: skill.name,
+                  label: skill.name,
+                  description: skill.description
                 }))}
               />
             )}

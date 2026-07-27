@@ -2,15 +2,18 @@
 
 import axios from "axios";
 import { useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
-import { ReportField, ReportInput, ReportSelect } from "@/components/forms/report-controls";
+import { ReportField, ReportInput, ReportMultiSelectCards, ReportSelect } from "@/components/forms/report-controls";
 import { api } from "@/lib/api";
+import { DEPARTMENT_OPTIONS, MARKETING_SUB_TEAMS } from "@/lib/constants";
 
 const teamTypeFormSchema = z.object({
   showName: z.string().min(2, "Enter display name"),
+  department: z.string().optional(),
+  subTeams: z.array(z.string()).default([]),
   isActive: z.boolean(),
   isDeleted: z.boolean()
 });
@@ -20,12 +23,16 @@ type TeamTypeFormValues = z.infer<typeof teamTypeFormSchema>;
 type TeamTypeRecord = TeamTypeFormValues & {
   _id: string;
   name: string;
+  department?: string;
+  subTeams?: string[];
   createdAt?: string;
   createdBy?: string;
 };
 
 const emptyValues: TeamTypeFormValues = {
   showName: "",
+  department: "",
+  subTeams: [],
   isActive: true,
   isDeleted: false
 };
@@ -48,8 +55,10 @@ export function TeamTypeForm({
 
   const {
     register,
+    control,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors, isSubmitting }
   } = useForm<TeamTypeFormValues>({
     resolver: zodResolver(teamTypeFormSchema),
@@ -57,6 +66,8 @@ export function TeamTypeForm({
     reValidateMode: "onSubmit",
     defaultValues: emptyValues
   });
+
+  const selectedDepartment = useWatch({ control, name: "department" });
 
   useEffect(() => {
     if (mode !== "edit" || !teamTypeId) return;
@@ -71,7 +82,9 @@ export function TeamTypeForm({
         const teamType = response.data?.data as TeamTypeRecord;
         setRecord(teamType);
         reset({
-          showName: teamType.showName,
+          showName: teamType.showName || teamType.name,
+          department: teamType.department ?? "",
+          subTeams: teamType.subTeams ?? [],
           isActive: teamType.isActive,
           isDeleted: teamType.isDeleted
         });
@@ -96,12 +109,18 @@ export function TeamTypeForm({
     setMessage(null);
     setError(null);
 
+    const payload = {
+      ...values,
+      department: values.department ? values.department : undefined,
+      subTeams: values.department === "Marketing" ? values.subTeams : []
+    };
+
     try {
       if (mode === "edit" && teamTypeId) {
-        await api.patch(`/api/admin/team-types/${teamTypeId}`, values);
+        await api.patch(`/api/admin/team-types/${teamTypeId}`, payload);
         setMessage("Team type updated successfully.");
       } else {
-        await api.post("/api/admin/team-types", values);
+        await api.post("/api/admin/team-types", payload);
         setMessage("Team type created successfully.");
         reset(emptyValues);
       }
@@ -120,11 +139,51 @@ export function TeamTypeForm({
   return (
     <form className="grid gap-4" onSubmit={handleSubmit(onSubmit)}>
       <ReportField label="Show name" error={errors.showName?.message}>
-        <ReportInput placeholder="Show name" {...register("showName")} />
+        <ReportInput placeholder="e.g. Finance Team, Frontend, QA" {...register("showName")} />
       </ReportField>
       <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground">
         Internal name: {internalName}
       </div>
+
+      <ReportField label="Assigned Department (Optional)" error={errors.department?.message}>
+        <ReportSelect
+          {...register("department", {
+            onChange: (e) => {
+              if (e.target.value !== "Marketing") {
+                setValue("subTeams", []);
+              }
+            }
+          })}
+        >
+          <option value="">No specific department</option>
+          {DEPARTMENT_OPTIONS.map((dept) => (
+            <option key={dept} value={dept}>
+              {dept}
+            </option>
+          ))}
+        </ReportSelect>
+      </ReportField>
+
+      {selectedDepartment === "Marketing" && (
+        <Controller
+          control={control}
+          name="subTeams"
+          render={({ field }) => (
+            <ReportMultiSelectCards
+              label="Marketing Team Types (Sub-teams)"
+              helperText="Choose team type classification for Marketing"
+              error={errors.subTeams?.message}
+              value={field.value ?? []}
+              onChange={field.onChange}
+              options={MARKETING_SUB_TEAMS.map((sub) => ({
+                value: sub,
+                label: sub
+              }))}
+            />
+          )}
+        />
+      )}
+
       <ReportField label="Status" error={errors.isActive?.message}>
         <ReportSelect {...register("isActive", { setValueAs: (value) => value === "true" })}>
           <option value="true">Active</option>
@@ -161,3 +220,4 @@ export function TeamTypeForm({
     </form>
   );
 }
+

@@ -8,23 +8,9 @@ import Notification from "@/models/Notification";
 import User from "@/models/User";
 import { logAuditEntry } from "@/lib/audit";
 import { getINRtoSARRate, convertINRtoSAR } from "@/lib/currency";
+import { FINANCE_TEAM_INTERNAL_NAME } from "@/lib/team-types";
 
-function computeTotals(data: {
-  openingBalance: number;
-  cashReceived: number;
-  cardSales: number;
-  onlinePayments: number;
-  expenses: number;
-  refunds: number;
-  pettyCash: number;
-  bankDeposit: number;
-  closingCashBalance: number;
-}) {
-  const totalIncome = data.openingBalance + data.cashReceived + data.cardSales + data.onlinePayments;
-  const totalExpenses = data.expenses + data.refunds + data.pettyCash;
-  const netBalance = totalIncome - totalExpenses;
-  return { totalIncome, totalExpenses, netBalance };
-}
+
 
 export async function POST(request: Request) {
   try {
@@ -64,9 +50,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Compute totals
-    const totals = computeTotals(parsed.data);
-
     // Fetch exchange rate
     const exchangeRate = await getINRtoSARRate();
 
@@ -74,23 +57,14 @@ export async function POST(request: Request) {
       reportDate: dayStart,
       submittedBy: user.id,
       submittedByName: user.name,
-      openingBalance: parsed.data.openingBalance,
-      cashReceived: parsed.data.cashReceived,
-      cardSales: parsed.data.cardSales,
-      onlinePayments: parsed.data.onlinePayments,
       expenses: parsed.data.expenses,
-      refunds: parsed.data.refunds,
-      pettyCash: parsed.data.pettyCash,
-      bankDeposit: parsed.data.bankDeposit,
-      closingCashBalance: parsed.data.closingCashBalance,
-      totalIncome: totals.totalIncome,
-      totalExpenses: totals.totalExpenses,
-      netBalance: totals.netBalance,
+      receipts: parsed.data.receipts,
+      payments: parsed.data.payments,
+      bankBalances: parsed.data.bankBalances,
+      cashBalance: parsed.data.cashBalance,
+      nextDayApprovals: parsed.data.nextDayApprovals,
+      summary: parsed.data.summary,
       exchangeRate,
-      closingCashBalanceSAR: convertINRtoSAR(parsed.data.closingCashBalance, exchangeRate),
-      totalIncomeSAR: convertINRtoSAR(totals.totalIncome, exchangeRate),
-      totalExpensesSAR: convertINRtoSAR(totals.totalExpenses, exchangeRate),
-      netBalanceSAR: convertINRtoSAR(totals.netBalance, exchangeRate),
       status: "pending",
       statusHistory: [
         {
@@ -107,7 +81,7 @@ export async function POST(request: Request) {
     // Create notifications for Finance HODs
     const financeHods = await User.find({
       role: "hod",
-      teamNames: "FINANCE",
+      teamNames: FINANCE_TEAM_INTERNAL_NAME,
       status: "active",
       isDeleted: false
     }).lean();
@@ -116,13 +90,13 @@ export async function POST(request: Request) {
       recipientId: hodUser._id,
       type: "finance_approval_request",
       title: "Finance Report — Pending Forward",
-      message: `${user.name} submitted a finance report for ${dayStart.toISOString().slice(0, 10)}. Closing Balance: ₹${parsed.data.closingCashBalance.toLocaleString("en-IN")}. Awaiting your approval.`,
+      message: `${user.name} submitted a finance report for ${dayStart.toISOString().slice(0, 10)}. Closing Balance: ₹${parsed.data.summary.bankBalance.toLocaleString("en-IN")}. Awaiting your approval.`,
       metadata: {
         financeReportId: String(report._id),
         reportDate: dayStart.toISOString(),
         submittedBy: user.name,
-        totalIncome: totals.totalIncome,
-        closingCashBalance: parsed.data.closingCashBalance
+        totalIncome: parsed.data.summary.totalReceipts,
+        closingCashBalance: parsed.data.summary.bankBalance
       },
       linkUrl: `/finance/${String(report._id)}`
     }));

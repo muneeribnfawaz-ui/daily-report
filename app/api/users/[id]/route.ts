@@ -155,6 +155,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     target.teamNames = parsed.data.teamNames;
     target.teamName = parsed.data.teamNames[0] ?? target.teamName;
   }
+  if (parsed.data.departments !== undefined) target.departments = parsed.data.departments;
   if (parsed.data.managerName !== undefined) target.managerName = parsed.data.managerName;
   if (parsed.data.status !== undefined) target.status = parsed.data.status;
   if (parsed.data.isActive !== undefined) target.isActive = parsed.data.isActive;

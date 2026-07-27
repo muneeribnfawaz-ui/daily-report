@@ -9,20 +9,7 @@ import { getINRtoSARRate, convertINRtoSAR } from "@/lib/currency";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-function computeTotals(data: {
-  openingBalance: number;
-  cashReceived: number;
-  cardSales: number;
-  onlinePayments: number;
-  expenses: number;
-  refunds: number;
-  pettyCash: number;
-}) {
-  const totalIncome = data.openingBalance + data.cashReceived + data.cardSales + data.onlinePayments;
-  const totalExpenses = data.expenses + data.refunds + data.pettyCash;
-  const netBalance = totalIncome - totalExpenses;
-  return { totalIncome, totalExpenses, netBalance };
-}
+
 
 export async function GET(_request: Request, context: RouteContext) {
   try {
@@ -84,26 +71,16 @@ export async function PUT(request: Request, context: RouteContext) {
     }
 
     const previous = report.toObject();
-    const totals = computeTotals(parsed.data);
     const exchangeRate = await getINRtoSARRate();
 
-    report.openingBalance = parsed.data.openingBalance;
-    report.cashReceived = parsed.data.cashReceived;
-    report.cardSales = parsed.data.cardSales;
-    report.onlinePayments = parsed.data.onlinePayments;
     report.expenses = parsed.data.expenses;
-    report.refunds = parsed.data.refunds;
-    report.pettyCash = parsed.data.pettyCash;
-    report.bankDeposit = parsed.data.bankDeposit;
-    report.closingCashBalance = parsed.data.closingCashBalance;
-    report.totalIncome = totals.totalIncome;
-    report.totalExpenses = totals.totalExpenses;
-    report.netBalance = totals.netBalance;
+    report.receipts = parsed.data.receipts;
+    report.payments = parsed.data.payments;
+    report.bankBalances = parsed.data.bankBalances;
+    report.cashBalance = parsed.data.cashBalance;
+    report.nextDayApprovals = parsed.data.nextDayApprovals;
+    report.summary = parsed.data.summary;
     report.exchangeRate = exchangeRate;
-    report.closingCashBalanceSAR = convertINRtoSAR(parsed.data.closingCashBalance, exchangeRate);
-    report.totalIncomeSAR = convertINRtoSAR(totals.totalIncome, exchangeRate);
-    report.totalExpensesSAR = convertINRtoSAR(totals.totalExpenses, exchangeRate);
-    report.netBalanceSAR = convertINRtoSAR(totals.netBalance, exchangeRate);
 
     await report.save();
 

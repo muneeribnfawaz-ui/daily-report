@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AUTH_ROLE_OPTIONS, LEAVE_DURATION_OPTIONS, LEAVE_HALF_OPTIONS, LEAVE_TYPE_OPTIONS, SOFTWARE_ROLE_OPTIONS } from "@/lib/constants";
+import { AUTH_ROLE_OPTIONS, ALL_SKILL_OPTIONS, DEPARTMENT_OPTIONS, LEAVE_DURATION_OPTIONS, LEAVE_HALF_OPTIONS, LEAVE_TYPE_OPTIONS, SOFTWARE_ROLE_OPTIONS } from "@/lib/constants";
 import { getLeaveRequestDateWindow, parseDateInputValue } from "@/lib/date-utils";
 
 const strictPasswordSchema = z
@@ -10,9 +10,12 @@ const strictPasswordSchema = z
   .regex(/[0-9]/, "Password must contain at least one number")
   .regex(/[^A-Za-z0-9]/, "Password must contain at least one special character");
 
+// Login uses a simple schema — complexity is validated server-side.
+// Using strictPasswordSchema here blocks the submit button client-side
+// when the user types a wrong password (e.g., missing special char), freezing the UI.
 export const loginSchema = z.object({
-  email: z.string().email(),
-  password: strictPasswordSchema
+  email: z.string().email("Enter a valid email address"),
+  password: z.string().min(1, "Password is required")
 });
 
 export const registerSchema = z.object({
@@ -36,8 +39,9 @@ export const adminCreateUserSchema = z.object({
   phone: z.string().min(7),
   empID: z.string().min(2),
   role: z.enum(AUTH_ROLE_OPTIONS),
-  roleTypes: z.array(z.enum(SOFTWARE_ROLE_OPTIONS)).default([]),
+  roleTypes: z.array(z.enum(ALL_SKILL_OPTIONS)).default([]),
   teamNames: z.array(z.string().min(1)).min(1),
+  departments: z.array(z.object({ name: z.enum(DEPARTMENT_OPTIONS), subTeams: z.array(z.string()).optional().default([]) })).optional().default([]),
   managerName: z.string().optional().default(""),
   email: z.string().email(),
   password: strictPasswordSchema
@@ -65,8 +69,9 @@ export const adminUpdateUserSchema = z.object({
   phone: z.string().min(7).optional(),
   empID: z.string().min(2).optional(),
   role: z.enum(AUTH_ROLE_OPTIONS).optional(),
-  roleTypes: z.array(z.enum(SOFTWARE_ROLE_OPTIONS)).optional(),
+  roleTypes: z.array(z.enum(ALL_SKILL_OPTIONS)).optional(),
   teamNames: z.array(z.string().min(1)).min(1).optional(),
+  departments: z.array(z.object({ name: z.enum(DEPARTMENT_OPTIONS), subTeams: z.array(z.string()).optional().default([]) })).optional(),
   managerName: z.string().min(1).optional(),
   email: z.string().email().optional(),
   resetPassword: z.boolean().optional(),
@@ -349,15 +354,38 @@ const numericField = z.preprocess(
   z.number().min(0, "Value must be 0 or greater")
 );
 
+const financeItemSchema = z.object({
+  particulars: z.string().min(1, "Particulars is required"),
+  amountINR: numericField,
+  amountSAR: numericField
+});
+
+const bankBalanceSchema = z.object({
+  bankName: z.string().min(1, "Bank name is required"),
+  openingBalance: numericField,
+  receipts: numericField,
+  payments: numericField,
+  closingBalance: numericField
+});
+
 export const financeReportSchema = z.object({
   reportDate: z.string().min(1, "Report date is required"),
-  openingBalance: numericField,
-  cashReceived: numericField,
-  cardSales: numericField,
-  onlinePayments: numericField,
-  expenses: numericField,
-  refunds: numericField,
-  pettyCash: numericField,
-  bankDeposit: numericField,
-  closingCashBalance: numericField
+  expenses: z.array(financeItemSchema).default([]),
+  receipts: z.array(financeItemSchema).default([]),
+  payments: z.array(financeItemSchema).default([]),
+  bankBalances: z.array(bankBalanceSchema).default([]),
+  cashBalance: z.object({
+    pettyCash: numericField,
+    total: numericField
+  }),
+  nextDayApprovals: z.array(financeItemSchema).default([]),
+  summary: z.object({
+    totalExpenses: numericField,
+    totalReceipts: numericField,
+    totalPayments: numericField,
+    bankBalance: numericField,
+    pettyCashBalance: numericField,
+    description: z.string().optional()
+  }),
+  exchangeRate: numericField
 });

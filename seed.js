@@ -59,11 +59,8 @@ const TeamTypeSchema = new mongoose.Schema(
 
 const TeamType = mongoose.models.TeamType || mongoose.model("TeamType", TeamTypeSchema);
 
-const DEFAULT_DEPARTMENTS = [
-  { name: "CONSTRUCTION", showName: "Construction" },
-  { name: "SOFTWARE", showName: "Software" },
-  { name: "FINANCE", showName: "Finance" },
-  { name: "MARKETING", showName: "Marketing", subTeams: ["Physical", "Digital"] },
+const DEFAULT_TEAM_TYPES = [
+  { name: "FINANCE_TEAM", showName: "Finance Team", department: "Finance", subTeams: [] }
 ];
 
 async function seed() {
@@ -71,15 +68,16 @@ async function seed() {
     await mongoose.connect(MONGODB_URI);
     console.log("Connected to MongoDB.");
 
-    // 1. Seed Team Types (Taxonomy)
-    console.log("Seeding departments taxonomy...");
-    for (const dept of DEFAULT_DEPARTMENTS) {
+    // 1. Seed Team Types
+    console.log("Seeding team types...");
+    for (const team of DEFAULT_TEAM_TYPES) {
       await TeamType.findOneAndUpdate(
-        { name: dept.name },
+        { name: team.name },
         {
           $set: {
-            showName: dept.showName,
-            subTeams: dept.subTeams || [],
+            showName: team.showName,
+            department: team.department,
+            subTeams: team.subTeams || [],
             isActive: true,
             isDeleted: false,
             createdBy: "System",
@@ -88,7 +86,7 @@ async function seed() {
         { upsert: true, new: true }
       );
     }
-    console.log("Departments taxonomy seeded successfully.");
+    console.log("Team types seeded successfully.");
 
     // 2. Seed Default Admin
     console.log("Seeding default admin...");

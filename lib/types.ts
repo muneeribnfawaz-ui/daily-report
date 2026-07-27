@@ -9,6 +9,7 @@ export interface SessionUser {
   role: UserRole;
   teamName?: string | null;
   teamNames?: string[] | null;
+  departments?: Array<{ name: string; subTeams: string[] }>;
   status?: string | null;
 }
 

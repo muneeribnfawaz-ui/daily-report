@@ -52,19 +52,17 @@ export function normalizeRole(role?: string | null): UserRole | null {
   return LEGACY_ROLE_ALIASES[role] ?? null;
 }
 
+export const DEPARTMENT_OPTIONS = ["Construction", "Software", "Finance", "Marketing"] as const;
+export type DepartmentName = (typeof DEPARTMENT_OPTIONS)[number];
+
+export const MARKETING_SUB_TEAMS = ["Physical", "Digital"] as const;
+export type MarketingSubTeam = (typeof MARKETING_SUB_TEAMS)[number];
+
 export const DEFAULT_ADMIN_SEED = appData.defaultAdmin;
-export const DEFAULT_TEAM_TYPE_SEEDS = TEAM_OPTIONS.map((teamName) => ({
-  name: teamName
-    .trim()
-    .replace(/[^a-zA-Z0-9]+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_|_$/g, "")
-    .toUpperCase(),
-  showName: teamName,
-  isActive: true,
-  isDeleted: false,
-  createdBy: "System"
-}));
+
+export const DEFAULT_TEAM_TYPE_SEEDS = [
+  { name: "FINANCE_TEAM", showName: "Finance Team", department: "Finance", subTeams: [], isActive: true, isDeleted: false, createdBy: "System" }
+];
 
 export type SidebarNavItem = {
   href: string;
@@ -154,24 +152,102 @@ export const SOFTWARE_ROLE_OPTIONS = [
   "Support Engineer"
 ] as const;
 
-export const SOFTWARE_ROLE_DESCRIPTIONS: Record<(typeof SOFTWARE_ROLE_OPTIONS)[number], string> = {
-  "Frontend Engineer": "Builds interactive interfaces and client-side features.",
-  "Backend Engineer": "Designs APIs, services, and data integrations.",
-  "Full Stack Engineer": "Works across both client and server layers.",
-  "Mobile Engineer": "Builds iOS and Android app experiences.",
-  "Cloud Engineer": "Owns cloud infrastructure, deployment, and reliability.",
-  "Web Developer": "Creates and maintains website experiences.",
-  "QA Engineer": "Validates functionality and prevents regressions.",
-  "DevOps Engineer": "Improves automation, delivery, and release flow.",
-  "Data Engineer": "Builds pipelines and manages data movement.",
-  "Security Engineer": "Strengthens application and platform security.",
-  "Product Manager": "Shapes priorities, roadmap, and business outcomes.",
-  "UI/UX Designer": "Designs interfaces, flows, and visual clarity.",
-  "Technical Lead": "Guides implementation and engineering decisions.",
-  "Scrum Master": "Keeps delivery flowing and removes team blockers.",
-  "Business Analyst": "Turns requirements into clear product scope.",
-  "Support Engineer": "Resolves issues and supports day-to-day operations."
+// All skills across all departments — used for schema validation
+export const ALL_SKILL_OPTIONS = [
+  // Software
+  "Frontend Engineer", "Backend Engineer", "Full Stack Engineer", "Mobile Engineer",
+  "Cloud Engineer", "Web Developer", "QA Engineer", "DevOps Engineer", "Data Engineer",
+  "Security Engineer", "Product Manager", "UI/UX Designer", "Technical Lead",
+  "Scrum Master", "Business Analyst", "Support Engineer",
+  // Construction
+  "Civil Engineer", "Structural Engineer", "Site Supervisor", "Project Manager",
+  "Safety Officer", "Quantity Surveyor", "MEP Engineer", "Foreman", "Estimator", "Architect",
+  // Finance
+  "Financial Analyst", "Accountant", "Auditor", "Payroll Specialist", "Tax Consultant",
+  "Billing Manager", "Cashier / Petty Cash Custodian", "Treasury Analyst",
+  // Marketing
+  "Content Strategist", "SEO Specialist", "Social Media Manager", "Growth Marketer",
+  "Brand Specialist", "Campaign Manager", "Performance Marketer", "Copywriter", "Field Marketer"
+] as const;
+export type AnySkillOption = (typeof ALL_SKILL_OPTIONS)[number];
+
+export type SkillOption = {
+  name: string;
+  description: string;
+  department: "Construction" | "Software" | "Finance" | "Marketing";
 };
+
+export const DEPARTMENT_SKILLS: Record<string, SkillOption[]> = {
+  Software: [
+    { name: "Frontend Engineer", description: "Builds interactive interfaces and client-side features.", department: "Software" },
+    { name: "Backend Engineer", description: "Designs APIs, services, and data integrations.", department: "Software" },
+    { name: "Full Stack Engineer", description: "Works across both client and server layers.", department: "Software" },
+    { name: "Mobile Engineer", description: "Builds iOS and Android app experiences.", department: "Software" },
+    { name: "Cloud Engineer", description: "Owns cloud infrastructure, deployment, and reliability.", department: "Software" },
+    { name: "Web Developer", description: "Creates and maintains website experiences.", department: "Software" },
+    { name: "QA Engineer", description: "Validates functionality and prevents regressions.", department: "Software" },
+    { name: "DevOps Engineer", description: "Improves automation, delivery, and release flow.", department: "Software" },
+    { name: "Data Engineer", description: "Builds pipelines and manages data movement.", department: "Software" },
+    { name: "Security Engineer", description: "Strengthens application and platform security.", department: "Software" },
+    { name: "Product Manager", description: "Shapes priorities, roadmap, and business outcomes.", department: "Software" },
+    { name: "UI/UX Designer", description: "Designs interfaces, flows, and visual clarity.", department: "Software" },
+    { name: "Technical Lead", description: "Guides implementation and engineering decisions.", department: "Software" },
+    { name: "Scrum Master", description: "Keeps delivery flowing and removes team blockers.", department: "Software" },
+    { name: "Business Analyst", description: "Turns requirements into clear product scope.", department: "Software" },
+    { name: "Support Engineer", description: "Resolves issues and supports day-to-day operations.", department: "Software" }
+  ],
+  Construction: [
+    { name: "Civil Engineer", description: "Oversees site planning, civil works, and design compliance.", department: "Construction" },
+    { name: "Structural Engineer", description: "Ensures safety and structural integrity.", department: "Construction" },
+    { name: "Site Supervisor", description: "Manages day-to-day site operations and labor crews.", department: "Construction" },
+    { name: "Project Manager", description: "Controls project timelines, budgets, and site deliverables.", department: "Construction" },
+    { name: "Safety Officer", description: "Enforces HSE standards and risk prevention protocols.", department: "Construction" },
+    { name: "Quantity Surveyor", description: "Manages material costs, estimations, and quantities.", department: "Construction" },
+    { name: "MEP Engineer", description: "Oversees Mechanical, Electrical, and Plumbing execution.", department: "Construction" },
+    { name: "Foreman", description: "Directs trade crews and daily work execution.", department: "Construction" },
+    { name: "Estimator", description: "Calculates material, labor, and equipment cost estimates.", department: "Construction" },
+    { name: "Architect", description: "Ensures architectural alignment and blueprint compliance.", department: "Construction" }
+  ],
+  Finance: [
+    { name: "Financial Analyst", description: "Analyzes financial performance, trends, and projections.", department: "Finance" },
+    { name: "Accountant", description: "Maintains financial ledgers, entries, and reconciliations.", department: "Finance" },
+    { name: "Auditor", description: "Verifies financial accuracy and internal compliance controls.", department: "Finance" },
+    { name: "Payroll Specialist", description: "Manages salary processing, compensation, and taxes.", department: "Finance" },
+    { name: "Tax Consultant", description: "Handles tax planning, filing, and regulatory compliance.", department: "Finance" },
+    { name: "Billing Manager", description: "Oversees invoicing, accounts receivable, and collections.", department: "Finance" },
+    { name: "Cashier / Petty Cash Custodian", description: "Manages daily cash handling and balance reports.", department: "Finance" },
+    { name: "Treasury Analyst", description: "Manages cash flow liquidity and banking relationships.", department: "Finance" }
+  ],
+  Marketing: [
+    { name: "Content Strategist", description: "Plans and produces content marketing initiatives.", department: "Marketing" },
+    { name: "SEO Specialist", description: "Optimizes search visibility and organic web acquisition.", department: "Marketing" },
+    { name: "Social Media Manager", description: "Drives engagement across social media channels.", department: "Marketing" },
+    { name: "Growth Marketer", description: "Focuses on user acquisition, funnels, and retention.", department: "Marketing" },
+    { name: "Brand Specialist", description: "Maintains brand identity, messaging, and positioning.", department: "Marketing" },
+    { name: "Campaign Manager", description: "Coordinates end-to-end promotional campaigns.", department: "Marketing" },
+    { name: "Performance Marketer", description: "Manages paid ads, PPC, and performance analytics.", department: "Marketing" },
+    { name: "Copywriter", description: "Crafts compelling marketing copy and messaging.", department: "Marketing" },
+    { name: "Field Marketer", description: "Executes physical marketing events and local campaigns.", department: "Marketing" }
+  ]
+};
+
+export function getSkillsForDepartments(departmentNames?: string[]): SkillOption[] {
+  if (!departmentNames || departmentNames.length === 0) {
+    return Object.values(DEPARTMENT_SKILLS).flat();
+  }
+  const skills: SkillOption[] = [];
+  const added = new Set<string>();
+  for (const dept of departmentNames) {
+    const deptSkills = DEPARTMENT_SKILLS[dept] || [];
+    for (const skill of deptSkills) {
+      if (!added.has(skill.name)) {
+        added.add(skill.name);
+        skills.push(skill);
+      }
+    }
+  }
+  return skills;
+}
 
 export const LEAVE_TYPE_OPTIONS = [
   "Casual Leave",

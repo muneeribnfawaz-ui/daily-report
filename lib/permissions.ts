@@ -1,4 +1,5 @@
 import type { SessionUser } from "@/lib/types";
+import { FINANCE_TEAM_INTERNAL_NAME } from "@/lib/team-types";
 
 export function canManageUsers(user: SessionUser | null) {
   return user?.role === "admin" || user?.role === "ceo" || user?.role === "team_lead" || user?.role === "report_manager" || user?.role === "hod";
@@ -34,13 +35,13 @@ export function canViewFinanceReport(user: SessionUser | null) {
   return (
     user?.role === "finance_team" ||
     user?.role === "ceo" ||
-    (user?.role === "hod" && user?.teamNames?.includes("FINANCE")) ||
-    (user?.role === "hod" && user?.teamName === "FINANCE")
+    (user?.role === "hod" && user?.teamNames?.includes(FINANCE_TEAM_INTERNAL_NAME)) ||
+    (user?.role === "hod" && user?.teamName === FINANCE_TEAM_INTERNAL_NAME)
   );
 }
 
 export function canForwardFinanceReport(user: SessionUser | null) {
-  return (user?.role === "hod" && (user?.teamNames?.includes("FINANCE") || user?.teamName === "FINANCE"));
+  return (user?.role === "hod" && (user?.teamNames?.includes(FINANCE_TEAM_INTERNAL_NAME) || user?.teamName === FINANCE_TEAM_INTERNAL_NAME));
 }
 
 export function canApproveFinanceReport(user: SessionUser | null) {

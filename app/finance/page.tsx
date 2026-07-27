@@ -115,7 +115,11 @@ export default async function FinanceListPage() {
                   {report.submittedByName as string}
                 </div>
                 <div className="text-sm font-semibold tabular-nums text-right">
-                  {formatCurrency((report.totalIncome as number) || 0)}
+                  {formatCurrency(
+                    ((report.summary as any)?.totalReceipts as number) ??
+                    (report.totalIncome as number) ??
+                    0
+                  )}
                 </div>
                 <div className="flex sm:justify-center">
                   <StatusBadge status={(report.status as string) || "pending"} />

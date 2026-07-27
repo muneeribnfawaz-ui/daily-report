@@ -1,13 +1,19 @@
 {
-  "/api/auth/login/route": "app/api/auth/login/route.js",
   "/api/notifications/route": "app/api/notifications/route.js",
-  "/api/finance-reports/dashboard/route": "app/api/finance-reports/dashboard/route.js",
   "/api/auth/me/route": "app/api/auth/me/route.js",
-  "/report-manager/dashboard/page": "app/report-manager/dashboard/page.js",
-  "/finance/page": "app/finance/page.js",
+  "/api/exchange-rate/route": "app/api/exchange-rate/route.js",
+  "/api/auth/logout/route": "app/api/auth/logout/route.js",
+  "/api/auth/login/route": "app/api/auth/login/route.js",
+  "/api/finance-reports/dashboard/route": "app/api/finance-reports/dashboard/route.js",
+  "/api/admin/users/route": "app/api/admin/users/route.js",
+  "/api/admin/team-types/route": "app/api/admin/team-types/route.js",
   "/login/page": "app/login/page.js",
-  "/report-manager/reports/page": "app/report-manager/reports/page.js",
+  "/dashboard/page": "app/dashboard/page.js",
+  "/finance/create/page": "app/finance/create/page.js",
+  "/finance/page": "app/finance/page.js",
   "/finance/[id]/page": "app/finance/[id]/page.js",
-  "/page": "app/page.js",
-  "/admin/dashboard/page": "app/admin/dashboard/page.js"
+  "/admin/dashboard/page": "app/admin/dashboard/page.js",
+  "/admin/settings/page": "app/admin/settings/page.js",
+  "/admin/users/page": "app/admin/users/page.js",
+  "/admin/team-types/page": "app/admin/team-types/page.js"
 }

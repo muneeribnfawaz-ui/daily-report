@@ -9,9 +9,10 @@ import type { z } from "zod";
 import {
   CREATE_USER_ROLE_LABELS,
   CREATE_USER_ROLE_OPTIONS,
-  SOFTWARE_ROLE_DESCRIPTIONS,
-  SOFTWARE_ROLE_OPTIONS,
+  DEPARTMENT_OPTIONS,
+  MARKETING_SUB_TEAMS,
   ROLE_LABELS,
+  getSkillsForDepartments,
   normalizeRole
 } from "@/lib/constants";
 import { api } from "@/lib/api";
@@ -38,6 +39,8 @@ type TeamTypeOption = {
   _id: string;
   name: string;
   showName?: string;
+  department?: string;
+  subTeams?: string[];
 };
 
 type SessionUser = {
@@ -47,6 +50,11 @@ type SessionUser = {
   role: string;
   teamName?: string | null;
   teamNames?: string[] | null;
+};
+
+type DepartmentItem = {
+  name: "Construction" | "Software" | "Finance" | "Marketing";
+  subTeams?: string[];
 };
 
 type UserRecord = {
@@ -60,6 +68,7 @@ type UserRecord = {
   roleTypes?: string[];
   teamName?: string;
   teamNames?: string[];
+  departments?: DepartmentItem[];
   managerName?: string;
   status?: "active" | "inactive" | "suspended";
   isActive?: boolean;
@@ -108,7 +117,7 @@ export function UserEditForm({
       const response = await api.get("/api/team-types");
       return response.data?.data as TeamTypeOption[];
     },
-    staleTime: 60_000
+    staleTime: 0
   });
   const teamOptions = useMemo(
     () => teamTypes ?? [],
@@ -179,6 +188,7 @@ export function UserEditForm({
       role: undefined,
       roleTypes: [],
       teamNames: [],
+      departments: [],
       managerName: "",
       email: "",
       resetPassword: false,
@@ -202,6 +212,7 @@ export function UserEditForm({
       role: normalizeRole(userData.role) ?? undefined,
       roleTypes: (userData.roleTypes ?? []) as UpdateUserValues["roleTypes"],
       teamNames: normalizeUserTeamNames(userData) as UpdateUserValues["teamNames"],
+      departments: (userData.departments ?? []) as UpdateUserValues["departments"],
       managerName: userData.managerName ?? "",
       email: userData.email ?? "",
       resetPassword: false,
@@ -219,8 +230,40 @@ export function UserEditForm({
   const selectedRole = useWatch({ control, name: "role" });
   const currentRoleTypes = useWatch({ control, name: "roleTypes" });
   const currentTeamNames = useWatch({ control, name: "teamNames" });
+  const currentDepartments = useWatch({ control, name: "departments" }) ?? [];
   const managerName = useWatch({ control, name: "managerName" });
   const resetPasswordEnabled = useWatch({ control, name: "resetPassword" });
+
+  const selectedDepartmentNames = useMemo(
+    () => currentDepartments.map((d) => d.name),
+    [currentDepartments]
+  );
+  const availableSkills = useMemo(
+    () => getSkillsForDepartments(selectedDepartmentNames),
+    [selectedDepartmentNames]
+  );
+
+  const toggleDepartment = (deptName: "Construction" | "Software" | "Finance" | "Marketing") => {
+    const exists = currentDepartments.some((d) => d.name === deptName);
+    let next: typeof currentDepartments;
+    if (exists) {
+      next = currentDepartments.filter((d) => d.name !== deptName);
+    } else {
+      next = [...currentDepartments, { name: deptName, subTeams: deptName === "Marketing" ? ["Physical"] : [] }];
+    }
+    setValue("departments", next);
+  };
+
+  const toggleMarketingSubTeam = (sub: "Physical" | "Digital") => {
+    const marketingIndex = currentDepartments.findIndex((d) => d.name === "Marketing");
+    if (marketingIndex === -1) return;
+    const currentSub = currentDepartments[marketingIndex].subTeams ?? [];
+    const exists = currentSub.includes(sub);
+    const nextSub = exists ? currentSub.filter((s) => s !== sub) : [...currentSub, sub];
+    const nextDepartments = [...currentDepartments];
+    nextDepartments[marketingIndex] = { name: "Marketing", subTeams: nextSub };
+    setValue("departments", nextDepartments);
+  };
 
   const teamLeadOptions = managerPools?.teamLeads ?? [];
   const hodOptions = managerPools?.hods ?? [];
@@ -371,7 +414,7 @@ export function UserEditForm({
           name="teamNames"
           render={({ field }) => (
             <ReportMultiSelectCards
-              label="Team"
+              label="Team (Team Type)"
               helperText={selectedRole === "team_member" ? "Choose one or more teams for this user." : "Choose one or more teams for this user."}
               error={errors.teamNames?.message}
               value={field.value ?? []}
@@ -383,6 +426,50 @@ export function UserEditForm({
             />
           )}
         />
+      </div>
+      <div className="md:col-span-2 space-y-2">
+        <div className="text-sm font-medium text-foreground">Departments (Assigned to User)</div>
+        <div className="text-xs text-muted-foreground mb-2">Select one or more primary departments for this user.</div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {DEPARTMENT_OPTIONS.map((deptName) => {
+            const isSelected = currentDepartments.some((d) => d.name === deptName);
+            return (
+              <Button
+                key={deptName}
+                type="button"
+                variant={isSelected ? "default" : "outline"}
+                className="justify-start text-xs h-9"
+                onClick={() => toggleDepartment(deptName)}
+              >
+                {deptName}
+              </Button>
+            );
+          })}
+        </div>
+
+        {currentDepartments.some((d) => d.name === "Marketing") && (
+          <div className="mt-3 p-3 border rounded-lg bg-muted/20 space-y-2">
+            <div className="text-xs font-semibold text-foreground">Marketing Sub-Teams</div>
+            <div className="flex gap-2">
+              {MARKETING_SUB_TEAMS.map((sub) => {
+                const marketingDept = currentDepartments.find((d) => d.name === "Marketing");
+                const isSubSelected = marketingDept?.subTeams?.includes(sub);
+                return (
+                  <Button
+                    key={sub}
+                    type="button"
+                    variant={isSubSelected ? "secondary" : "outline"}
+                    size="sm"
+                    className="text-xs h-8"
+                    onClick={() => toggleMarketingSubTeam(sub)}
+                  >
+                    {sub}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
       <ReportField label="Role" error={errors.role?.message}>
         {canEditRole ? (
@@ -398,8 +485,8 @@ export function UserEditForm({
 
                   if (nextRole === "report_manager") {
                     setValue("roleTypes", []);
-                  } else if (!currentRoleTypes?.length) {
-                    setValue("roleTypes", [SOFTWARE_ROLE_OPTIONS[0]]);
+                  } else if (!currentRoleTypes?.length && selectedDepartmentNames.length > 0 && availableSkills.length > 0) {
+                    setValue("roleTypes", [availableSkills[0].name as any]);
                   }
 
                   if (!canEditManagerName) return;
@@ -438,15 +525,15 @@ export function UserEditForm({
             name="roleTypes"
             render={({ field }) => (
               <ReportMultiSelectCards
-                label="Software Type"
-                helperText="Choose one or more software specialties for this user."
+                label="Skills / Specialties"
+                helperText="Select one or more skills for this user (dynamically filtered based on chosen department)."
                 error={errors.roleTypes?.message}
                 value={field.value ?? []}
                 onChange={field.onChange}
-                options={SOFTWARE_ROLE_OPTIONS.map((roleType) => ({
-                  value: roleType,
-                  label: roleType,
-                  description: SOFTWARE_ROLE_DESCRIPTIONS[roleType]
+                options={availableSkills.map((skill) => ({
+                  value: skill.name,
+                  label: skill.name,
+                  description: skill.description
                 }))}
               />
             )}

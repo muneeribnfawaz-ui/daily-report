@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
-import { FINANCE_REPORT_FIELDS } from "@/lib/constants";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,35 +11,37 @@ import {
   Check,
   X,
   Loader2,
-  TrendingUp,
-  TrendingDown,
-  DollarSign,
-  ArrowRightLeft,
   Clock,
-  User
+  User,
+  ArrowRightLeft
 } from "lucide-react";
+
+type FinanceItem = { particulars: string; amountINR: number; amountSAR: number; _id?: string };
+type BankBalance = { bankName: string; openingBalance: number; receipts: number; payments: number; closingBalance: number; _id?: string };
 
 type FinanceReportData = {
   _id: string;
   reportDate: string;
   submittedByName: string;
-  openingBalance: number;
-  cashReceived: number;
-  cardSales: number;
-  onlinePayments: number;
-  expenses: number;
-  refunds: number;
-  pettyCash: number;
-  bankDeposit: number;
-  closingCashBalance: number;
-  totalIncome: number;
-  totalExpenses: number;
-  netBalance: number;
+  
+  expenses: FinanceItem[];
+  receipts: FinanceItem[];
+  payments: FinanceItem[];
+  bankBalances: BankBalance[];
+  cashBalance: { pettyCash: number; total: number };
+  nextDayApprovals: FinanceItem[];
+  
+  summary: {
+    totalExpenses: number;
+    totalReceipts: number;
+    totalPayments: number;
+    bankBalance: number;
+    pettyCashBalance: number;
+    description: string;
+  };
+  
   exchangeRate: number;
-  closingCashBalanceSAR: number;
-  totalIncomeSAR: number;
-  totalExpensesSAR: number;
-  netBalanceSAR: number;
+  
   status: string;
   approvedByName?: string;
   approvedAt?: string;
@@ -122,9 +123,39 @@ export function FinanceReportDetail({ report, canApprove, canForward = false, ca
     }
   };
 
-  const getFieldValue = (key: string): number => {
-    return (report as unknown as Record<string, number>)[key] ?? 0;
-  };
+  const renderTable = (title: string, items: FinanceItem[] = []) => (
+    <div className="overflow-hidden rounded-xl border border-cardBorder bg-card shadow-soft mb-6">
+      <div className="border-b bg-gradient-to-r from-slate-900 to-slate-800 px-4 py-3 text-white">
+        <h3 className="font-semibold">{title}</h3>
+      </div>
+      <div className="grid grid-cols-[2fr_1fr_1fr] gap-2 px-4 py-2 bg-muted/30 text-sm font-semibold border-b">
+        <div>Particulars</div>
+        <div className="text-right">Amount (INR)</div>
+        <div className="text-right">Amount (Riyal)</div>
+      </div>
+      {items.length === 0 && (
+        <div className="p-4 text-center text-sm text-muted-foreground">No records</div>
+      )}
+      {items.map((item, idx) => (
+        <div key={idx} className="grid grid-cols-[2fr_1fr_1fr] gap-2 px-4 py-2 items-center border-b last:border-0 text-sm">
+          <div>{item.particulars}</div>
+          <div className="text-right tabular-nums">{formatCurrency(item.amountINR)}</div>
+          <div className="text-right tabular-nums text-muted-foreground">{formatCurrency(item.amountSAR, "SAR")}</div>
+        </div>
+      ))}
+      {items.length > 0 && (
+        <div className="grid grid-cols-[2fr_1fr_1fr] gap-2 px-4 py-3 bg-muted/10 font-bold items-center text-sm">
+          <div>Total</div>
+          <div className="text-right tabular-nums text-primary">
+            {formatCurrency(items.reduce((sum, i) => sum + i.amountINR, 0))}
+          </div>
+          <div className="text-right tabular-nums text-muted-foreground">
+            {formatCurrency(items.reduce((sum, i) => sum + i.amountSAR, 0), "SAR")}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -138,34 +169,21 @@ export function FinanceReportDetail({ report, canApprove, canForward = false, ca
             <StatusBadge status={report.status} />
           </div>
           <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <User className="h-3.5 w-3.5" />
-              {report.submittedByName}
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Clock className="h-3.5 w-3.5" />
-              {formatDate(report.createdAt)}
-            </span>
+            <span className="flex items-center gap-1.5"><User className="h-3.5 w-3.5" />{report.submittedByName}</span>
+            <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" />{formatDate(report.createdAt)}</span>
           </div>
         </div>
         <div className="flex items-center gap-2">
           {canEdit && report.status === "pending" && (
-            <Button variant="outline" onClick={() => router.push(`/finance/${report._id}/edit`)}>
-              Edit Report
-            </Button>
+            <Button variant="outline" onClick={() => router.push(`/finance/${report._id}/edit`)}>Edit Report</Button>
           )}
           <Button variant="outline" onClick={handleDownloadPdf} disabled={isDownloading}>
-            {isDownloading ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <FileDown className="mr-2 h-4 w-4" />
-            )}
+            {isDownloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileDown className="mr-2 h-4 w-4" />}
             Generate PDF
           </Button>
         </div>
       </div>
 
-      {/* Approval Info */}
       {report.status === "approved" && report.approvedByName && (
         <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/50 px-4 py-3 dark:border-emerald-800 dark:bg-emerald-950/30">
           <Check className="h-5 w-5 text-emerald-600" />
@@ -185,83 +203,9 @@ export function FinanceReportDetail({ report, canApprove, canForward = false, ca
               {report.approvedAt && <span className="text-muted-foreground"> on {formatDate(report.approvedAt)}</span>}
             </div>
           </div>
-          {report.rejectionReason && (
-            <p className="pl-8 text-sm text-rose-600 dark:text-rose-400">Reason: {report.rejectionReason}</p>
-          )}
+          {report.rejectionReason && <p className="pl-8 text-sm text-rose-600 dark:text-rose-400">Reason: {report.rejectionReason}</p>}
         </div>
       )}
-
-      {/* Finance Table — Read Only */}
-      <div className="overflow-hidden rounded-xl border border-cardBorder bg-card shadow-soft">
-        <div className="grid grid-cols-[1fr_1fr_1fr] gap-0 border-b bg-gradient-to-r from-slate-900 to-slate-800 px-4 py-3.5 text-white dark:from-slate-800 dark:to-slate-700">
-          <div className="text-sm font-semibold tracking-wide">Particular</div>
-          <div className="text-sm font-semibold tracking-wide text-right">Amount (INR)</div>
-          <div className="text-sm font-semibold tracking-wide text-right flex items-center justify-end gap-1.5">
-            <ArrowRightLeft className="h-3.5 w-3.5 opacity-60" />
-            Amount (SAR)
-          </div>
-        </div>
-
-        {FINANCE_REPORT_FIELDS.map((field, idx) => {
-          const value = getFieldValue(field.key);
-          const sarValue = value * (report.exchangeRate || 0);
-          const isClosing = field.key === "closingCashBalance";
-
-          return (
-            <div
-              key={field.key}
-              className={`grid grid-cols-[1fr_1fr_1fr] gap-0 items-center border-b px-4 py-3 ${
-                idx % 2 === 0 ? "bg-card" : "bg-muted/30"
-              } ${isClosing ? "bg-gradient-to-r from-primary/5 to-transparent" : ""}`}
-            >
-              <div className="flex items-center gap-2">
-                {field.group === "income" && <TrendingUp className="h-3.5 w-3.5 text-success shrink-0" />}
-                {field.group === "expense" && <TrendingDown className="h-3.5 w-3.5 text-danger shrink-0" />}
-                {field.group === "neutral" && <DollarSign className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-                <span className={`text-sm ${isClosing ? "font-semibold" : ""}`}>{field.label}</span>
-              </div>
-              <div className={`text-right font-semibold tabular-nums ${isClosing ? "text-lg text-primary" : ""}`}>
-                {formatCurrency(value)}
-              </div>
-              <div className="text-right text-sm text-muted-foreground tabular-nums">
-                {formatCurrency(sarValue, "SAR")}
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Totals */}
-        <div className="divide-y bg-gradient-to-b from-muted/20 to-muted/5">
-          <div className="grid grid-cols-[1fr_1fr_1fr] gap-0 px-4 py-3">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-success" />
-              <span className="text-sm font-bold text-success">Total Income</span>
-            </div>
-            <div className="text-right font-bold text-success tabular-nums">{formatCurrency(report.totalIncome)}</div>
-            <div className="text-right text-sm text-muted-foreground tabular-nums">{formatCurrency(report.totalIncomeSAR, "SAR")}</div>
-          </div>
-
-          <div className="grid grid-cols-[1fr_1fr_1fr] gap-0 px-4 py-3">
-            <div className="flex items-center gap-2">
-              <TrendingDown className="h-4 w-4 text-danger" />
-              <span className="text-sm font-bold text-danger">Total Expenses</span>
-            </div>
-            <div className="text-right font-bold text-danger tabular-nums">{formatCurrency(report.totalExpenses)}</div>
-            <div className="text-right text-sm text-muted-foreground tabular-nums">{formatCurrency(report.totalExpensesSAR, "SAR")}</div>
-          </div>
-
-          <div className="grid grid-cols-[1fr_1fr_1fr] gap-0 px-4 py-3">
-            <div className="flex items-center gap-2">
-              <DollarSign className="h-4 w-4" />
-              <span className="text-sm font-bold">Net Balance</span>
-            </div>
-            <div className={`text-right font-bold tabular-nums ${report.netBalance >= 0 ? "text-success" : "text-danger"}`}>
-              {formatCurrency(report.netBalance)}
-            </div>
-            <div className="text-right text-sm text-muted-foreground tabular-nums">{formatCurrency(report.netBalanceSAR, "SAR")}</div>
-          </div>
-        </div>
-      </div>
 
       {/* Exchange Rate */}
       <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/30 px-4 py-2.5 text-xs text-muted-foreground">
@@ -269,7 +213,170 @@ export function FinanceReportDetail({ report, canApprove, canForward = false, ca
         <span>Exchange Rate: 1 INR = {(report.exchangeRate || 0).toFixed(4)} SAR</span>
       </div>
 
-      {/* Approval Actions */}
+      {/* Tables */}
+      {renderTable("Expenses", report.expenses)}
+      {renderTable("Receipts", report.receipts)}
+      {renderTable("Payments", report.payments)}
+
+      {/* Bank Balances */}
+      <div className="overflow-hidden rounded-xl border border-cardBorder bg-card shadow-soft mb-6">
+        <div className="border-b bg-gradient-to-r from-slate-900 to-slate-800 px-4 py-3 text-white">
+          <h3 className="font-semibold">Bank Balance</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <div className="grid grid-cols-[1.5fr_1fr_1fr_1fr_1fr] gap-2 px-4 py-2 bg-muted/30 text-sm font-semibold border-b min-w-[600px]">
+            <div>Bank Name</div>
+            <div className="text-right">Opening Bal</div>
+            <div className="text-right">Receipts</div>
+            <div className="text-right">Payments</div>
+            <div className="text-right">Closing Bal</div>
+          </div>
+          {report.bankBalances?.length === 0 && (
+            <div className="p-4 text-center text-sm text-muted-foreground">No bank accounts</div>
+          )}
+          {report.bankBalances?.map((bank, idx) => (
+            <div key={idx} className="grid grid-cols-[1.5fr_1fr_1fr_1fr_1fr] gap-2 px-4 py-2 items-center border-b last:border-0 text-sm min-w-[600px]">
+              <div>{bank.bankName}</div>
+              <div className="text-right tabular-nums">{formatCurrency(bank.openingBalance)}</div>
+              <div className="text-right tabular-nums">{formatCurrency(bank.receipts)}</div>
+              <div className="text-right tabular-nums">{formatCurrency(bank.payments)}</div>
+              <div className="text-right tabular-nums font-semibold">{formatCurrency(bank.closingBalance)}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Cash Balance */}
+      <div className="overflow-hidden rounded-xl border border-cardBorder bg-card shadow-soft mb-6">
+        <div className="border-b bg-gradient-to-r from-slate-900 to-slate-800 px-4 py-3 text-white">
+          <h3 className="font-semibold">Cash Balance</h3>
+        </div>
+        <div className="grid grid-cols-2 gap-4 p-4">
+          <div>
+            <label className="text-sm font-semibold text-foreground mb-1 block">Petty Cash (INR)</label>
+            <div className="text-sm tabular-nums">{formatCurrency(report.cashBalance?.pettyCash || 0)}</div>
+          </div>
+          <div>
+            <label className="text-sm font-semibold text-foreground mb-1 block">Total (INR)</label>
+            <div className="h-10 flex items-center font-bold text-lg text-primary tabular-nums">
+              {formatCurrency(report.cashBalance?.total || 0)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Next Day Approval Required (Only show if exists) */}
+      {report.nextDayApprovals?.length > 0 && (
+        <div className="mb-6">
+          {renderTable("Next Day Approval Required", report.nextDayApprovals)}
+          
+          {/* CEO Approval section for next day items */}
+          {canApprove && report.status === "forwarded_to_ceo" && (
+            <div className="space-y-4 rounded-xl border border-blue-200 bg-blue-50/50 p-5 shadow-soft dark:border-blue-800 dark:bg-blue-950/30">
+              <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-200">Next Day Approval Required - Actions</h3>
+              <p className="text-xs text-blue-700 dark:text-blue-300">The Finance Team has requested approval for the next day's particulars.</p>
+              
+              {showRejectForm ? (
+                <div className="space-y-3">
+                  <Textarea
+                    placeholder="Enter rejection reason (optional)..."
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    className="min-h-[80px]"
+                  />
+                  <div className="flex gap-2">
+                    <Button variant="destructive" disabled={approvalMutation.isPending} onClick={() => approvalMutation.mutate({ action: "reject", reason: rejectReason })}>
+                      {approvalMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <X className="mr-2 h-4 w-4" />} Confirm Reject
+                    </Button>
+                    <Button variant="outline" onClick={() => setShowRejectForm(false)} disabled={approvalMutation.isPending}>Cancel</Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-3">
+                  <Button onClick={() => approvalMutation.mutate({ action: "approve" })} disabled={approvalMutation.isPending} className="bg-emerald-600 hover:bg-emerald-700">
+                    {approvalMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />} Approve All
+                  </Button>
+                  <Button variant="destructive" onClick={() => setShowRejectForm(true)} disabled={approvalMutation.isPending}>
+                    <X className="mr-2 h-4 w-4" /> Reject
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Summary */}
+      <div className="overflow-hidden rounded-xl border border-cardBorder bg-card shadow-soft mb-6">
+        <div className="border-b bg-gradient-to-r from-slate-900 to-slate-800 px-4 py-3 text-white">
+          <h3 className="font-semibold">Summary</h3>
+        </div>
+        <div className="grid grid-cols-[1.5fr_1fr_2fr] gap-4 p-4 bg-muted/10 items-start">
+          <div className="space-y-3">
+            <div className="flex justify-between border-b pb-1">
+              <span className="text-sm">Total Expenses</span>
+              <span className="font-semibold tabular-nums text-danger">{formatCurrency(report.summary?.totalExpenses || 0)}</span>
+            </div>
+            <div className="flex justify-between border-b pb-1">
+              <span className="text-sm">Total Receipts</span>
+              <span className="font-semibold tabular-nums text-success">{formatCurrency(report.summary?.totalReceipts || 0)}</span>
+            </div>
+            <div className="flex justify-between border-b pb-1">
+              <span className="text-sm">Total Payments</span>
+              <span className="font-semibold tabular-nums text-danger">{formatCurrency(report.summary?.totalPayments || 0)}</span>
+            </div>
+            <div className="flex justify-between border-b pb-1">
+              <span className="text-sm">Bank Balance</span>
+              <span className="font-semibold tabular-nums text-primary">{formatCurrency(report.summary?.bankBalance || 0)}</span>
+            </div>
+            <div className="flex justify-between pb-1">
+              <span className="text-sm">Petty Cash Balance</span>
+              <span className="font-semibold tabular-nums">{formatCurrency(report.summary?.pettyCashBalance || 0)}</span>
+            </div>
+          </div>
+          <div></div>
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-semibold">Description</label>
+            <div className="text-sm text-muted-foreground whitespace-pre-wrap min-h-[100px]">
+              {report.summary?.description || "No description provided."}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Standard Approval Actions if no Next Day Approvals exist */}
+      {(!report.nextDayApprovals || report.nextDayApprovals.length === 0) && canApprove && report.status === "forwarded_to_ceo" && (
+        <div className="space-y-4 rounded-xl border border-cardBorder bg-card p-5 shadow-soft mt-6">
+          <h3 className="text-sm font-semibold">Approval Actions</h3>
+          {showRejectForm ? (
+            <div className="space-y-3">
+              <Textarea
+                placeholder="Enter rejection reason (optional)..."
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                className="min-h-[80px]"
+              />
+              <div className="flex gap-2">
+                <Button variant="destructive" disabled={approvalMutation.isPending} onClick={() => approvalMutation.mutate({ action: "reject", reason: rejectReason })}>
+                  {approvalMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <X className="mr-2 h-4 w-4" />} Confirm Reject
+                </Button>
+                <Button variant="outline" onClick={() => setShowRejectForm(false)} disabled={approvalMutation.isPending}>Cancel</Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-3">
+              <Button onClick={() => approvalMutation.mutate({ action: "approve" })} disabled={approvalMutation.isPending} className="bg-emerald-600 hover:bg-emerald-700">
+                {approvalMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />} Approve Report
+              </Button>
+              <Button variant="destructive" onClick={() => setShowRejectForm(true)} disabled={approvalMutation.isPending}>
+                <X className="mr-2 h-4 w-4" /> Reject
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Forward Action */}
       {canForward && report.status === "pending" && (
         <div className="space-y-4 rounded-xl border border-cardBorder bg-card p-5 shadow-soft mt-6">
           <h3 className="text-sm font-semibold">Forward to CEO</h3>
@@ -281,66 +388,6 @@ export function FinanceReportDetail({ report, canApprove, canForward = false, ca
             {approvalMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
             Forward to CEO
           </Button>
-          {approvalMutation.isError && (
-            <div className="text-sm text-destructive mt-2">
-              {(approvalMutation.error as Error).message || "Action failed"}
-            </div>
-          )}
-        </div>
-      )}
-
-      {canApprove && report.status === "forwarded_to_ceo" && (
-        <div className="space-y-4 rounded-xl border border-cardBorder bg-card p-5 shadow-soft mt-6">
-          <h3 className="text-sm font-semibold">Approval Actions</h3>
-
-          {showRejectForm ? (
-            <div className="space-y-3">
-              <Textarea
-                placeholder="Enter rejection reason (optional)..."
-                value={rejectReason}
-                onChange={(e) => setRejectReason(e.target.value)}
-                className="min-h-[80px]"
-              />
-              <div className="flex gap-2">
-                <Button
-                  variant="destructive"
-                  disabled={approvalMutation.isPending}
-                  onClick={() => approvalMutation.mutate({ action: "reject", reason: rejectReason })}
-                >
-                  {approvalMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <X className="mr-2 h-4 w-4" />}
-                  Confirm Reject
-                </Button>
-                <Button variant="outline" onClick={() => setShowRejectForm(false)} disabled={approvalMutation.isPending}>
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex gap-3">
-              <Button
-                onClick={() => approvalMutation.mutate({ action: "approve" })}
-                disabled={approvalMutation.isPending}
-                className="bg-emerald-600 hover:bg-emerald-700"
-              >
-                {approvalMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
-                Approve
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={() => setShowRejectForm(true)}
-                disabled={approvalMutation.isPending}
-              >
-                <X className="mr-2 h-4 w-4" />
-                Reject
-              </Button>
-            </div>
-          )}
-
-          {approvalMutation.isError && (
-            <div className="text-sm text-destructive mt-2">
-              {(approvalMutation.error as Error).message || "Action failed"}
-            </div>
-          )}
         </div>
       )}
     </div>

@@ -18,10 +18,10 @@ export async function GET(request: Request) {
     await connectToDatabase();
     
     // Find the most recently submitted finance report
-    const latestReport = await FinanceReport.findOne()
+    const latestReport = (await FinanceReport.findOne()
       .sort({ reportDate: -1, createdAt: -1 })
       .select("closingCashBalance reportDate")
-      .lean();
+      .lean()) as { closingCashBalance?: number; reportDate?: string } | null;
 
     return NextResponse.json({ 
       success: true, 

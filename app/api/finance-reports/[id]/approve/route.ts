@@ -3,6 +3,7 @@ import { connectToDatabase } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { canApproveFinanceReport, canForwardFinanceReport } from "@/lib/permissions";
 import FinanceReport from "@/models/FinanceReport";
+import User from "@/models/User";
 import Notification from "@/models/Notification";
 import { logAuditEntry } from "@/lib/audit";
 

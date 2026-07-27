@@ -1,35 +1,46 @@
 import { Schema, models, model } from "mongoose";
 
+const FinanceItemSchema = new Schema({
+  particulars: { type: String, required: true },
+  amountINR: { type: Number, required: true, default: 0 },
+  amountSAR: { type: Number, required: true, default: 0 }
+}, { _id: false });
+
+const BankBalanceSchema = new Schema({
+  bankName: { type: String, required: true },
+  openingBalance: { type: Number, required: true, default: 0 },
+  receipts: { type: Number, required: true, default: 0 },
+  payments: { type: Number, required: true, default: 0 },
+  closingBalance: { type: Number, required: true, default: 0 }
+}, { _id: false });
+
 const FinanceReportSchema = new Schema(
   {
     reportDate: { type: Date, required: true },
     submittedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     submittedByName: { type: String, required: true },
 
-    // Financial fields
-    openingBalance: { type: Number, default: 0 },
-    cashReceived: { type: Number, default: 0 },
-    cardSales: { type: Number, default: 0 },
-    onlinePayments: { type: Number, default: 0 },
-    expenses: { type: Number, default: 0 },
-    refunds: { type: Number, default: 0 },
-    pettyCash: { type: Number, default: 0 },
-    bankDeposit: { type: Number, default: 0 },
-    closingCashBalance: { type: Number, default: 0 },
+    expenses: { type: [FinanceItemSchema], default: [] },
+    receipts: { type: [FinanceItemSchema], default: [] },
+    payments: { type: [FinanceItemSchema], default: [] },
+    bankBalances: { type: [BankBalanceSchema], default: [] },
+    cashBalance: {
+      pettyCash: { type: Number, default: 0 },
+      total: { type: Number, default: 0 }
+    },
+    nextDayApprovals: { type: [FinanceItemSchema], default: [] },
 
-    // Computed totals (stored for query efficiency)
-    totalIncome: { type: Number, default: 0 },
-    totalExpenses: { type: Number, default: 0 },
-    netBalance: { type: Number, default: 0 },
+    summary: {
+      totalExpenses: { type: Number, default: 0 },
+      totalReceipts: { type: Number, default: 0 },
+      totalPayments: { type: Number, default: 0 },
+      bankBalance: { type: Number, default: 0 },
+      pettyCashBalance: { type: Number, default: 0 },
+      description: { type: String, default: "" }
+    },
 
-    // Currency conversion
     exchangeRate: { type: Number, default: 0 },
-    closingCashBalanceSAR: { type: Number, default: 0 },
-    totalIncomeSAR: { type: Number, default: 0 },
-    totalExpensesSAR: { type: Number, default: 0 },
-    netBalanceSAR: { type: Number, default: 0 },
 
-    // Approval workflow
     status: {
       type: String,
       default: "pending",

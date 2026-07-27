@@ -16,6 +16,7 @@ type FreshSessionUserRecord = {
   role?: string | null;
   teamName?: string | null;
   teamNames?: string[] | null;
+  departments?: Array<{ name: string; subTeams?: string[] }> | null;
   status?: string | null;
 };
 
@@ -56,6 +57,7 @@ async function getFreshSessionUser(sessionUser: SessionUser) {
     role: normalizeRole(user.role) ?? "team_member",
     teamName: user.teamName,
     teamNames: user.teamNames ?? [],
+    departments: (user.departments ?? []) as Array<{ name: string; subTeams: string[] }>,
     status: user.status
   } satisfies SessionUser;
 }

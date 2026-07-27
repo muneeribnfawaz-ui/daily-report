@@ -132,8 +132,8 @@ export function DailyReportForm() {
   }, [defaultTeamName, setValue]);
 
   const resolvedSelectedTeam = selectedTeam || defaultTeamName;
-  const isFinanceTeam = resolvedSelectedTeam === FINANCE_TEAM_NAME;
-  const isConstructionTeam = resolvedSelectedTeam === "CONSTRUCTION";
+  const isFinanceTeam = (currentUser?.departments ?? []).some((d: any) => d.name === "Finance");
+  const isConstructionTeam = (currentUser?.departments ?? []).some((d: any) => d.name === "Construction");
 
   const { data: teamMeetingUpdates } = useQuery({
     queryKey: ["team-meeting-updates", resolvedSelectedTeam, selectedReportDate],

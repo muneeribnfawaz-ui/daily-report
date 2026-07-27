@@ -34,15 +34,14 @@ export default async function FinanceEditPage({ params }: PageProps) {
   const serializedReport = {
     _id: String(report._id),
     reportDate: report.reportDate ? new Date(report.reportDate).toISOString().slice(0, 10) : "",
-    openingBalance: (report.openingBalance as number) || 0,
-    cashReceived: (report.cashReceived as number) || 0,
-    cardSales: (report.cardSales as number) || 0,
-    onlinePayments: (report.onlinePayments as number) || 0,
-    expenses: (report.expenses as number) || 0,
-    refunds: (report.refunds as number) || 0,
-    pettyCash: (report.pettyCash as number) || 0,
-    bankDeposit: (report.bankDeposit as number) || 0,
-    closingCashBalance: (report.closingCashBalance as number) || 0,
+    expenses: Array.isArray(report.expenses) ? report.expenses : [],
+    receipts: Array.isArray(report.receipts) ? report.receipts : [],
+    payments: Array.isArray(report.payments) ? report.payments : [],
+    bankBalances: Array.isArray(report.bankBalances) ? report.bankBalances : [],
+    cashBalance: report.cashBalance || { pettyCash: 0, total: 0 },
+    nextDayApprovals: Array.isArray(report.nextDayApprovals) ? report.nextDayApprovals : [],
+    summary: report.summary || { totalExpenses: 0, totalReceipts: 0, totalPayments: 0, bankBalance: 0, pettyCashBalance: 0, description: "" },
+    exchangeRate: (report.exchangeRate as number) || 0,
   };
 
   return (

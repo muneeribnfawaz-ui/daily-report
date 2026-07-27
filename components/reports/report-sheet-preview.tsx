@@ -193,7 +193,7 @@ function ReportCard({ report }: { report: ReportSheetEntry }) {
         <DetailRow label="Blockers" value={report.blockers} />
         <DetailRow label="Required Clarification" value={report.requiredClarification} />
       </div>
-      {report.teamName === "CONSTRUCTION" ? <ConstructionReportPreview report={report} /> : null}
+      <ConstructionReportPreview report={report} />
 
       {report.nextDayApprovalItems?.length ? (
         <div className="border-t border-slate-200 bg-amber-50/60 px-4 py-3">
