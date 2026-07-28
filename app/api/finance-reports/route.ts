@@ -81,7 +81,12 @@ export async function POST(request: Request) {
     // Create notifications for Finance HODs
     const financeHods = await User.find({
       role: "hod",
-      teamNames: FINANCE_TEAM_INTERNAL_NAME,
+      $or: [
+        { teamNames: FINANCE_TEAM_INTERNAL_NAME },
+        { teamName: FINANCE_TEAM_INTERNAL_NAME },
+        { "departments.name": "Finance" },
+        { "departments.name": FINANCE_TEAM_INTERNAL_NAME }
+      ],
       status: "active",
       isDeleted: false
     }).lean();

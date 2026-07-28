@@ -9,7 +9,8 @@ const NotificationSchema = new Schema(
       enum: [
         "finance_approval_request",
         "finance_approved",
-        "finance_rejected"
+        "finance_rejected",
+        "finance_forwarded"
       ]
     },
     title: { type: String, required: true },

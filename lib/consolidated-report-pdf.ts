@@ -159,6 +159,101 @@ export function buildConsolidatedReportHtml(data: ConsolidatedReportPdfData) {
                       ` : ""}
                     </div>
                     ${(() => {
+                      const items = (report as unknown as { constructionWorkPlan?: Array<{ activity: string; location: string; unit: string; plannedQuantity: string; executedQuantity: string; completionPercentage: string; remarks: string }> }).constructionWorkPlan;
+                      if (!items?.length) return "";
+                      return `
+                        <div class="approval-section">
+                          <div class="approval-title" style="color: #1E3A5F">Construction Work Plan</div>
+                          <table class="approval-table">
+                            <thead>
+                              <tr>
+                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Activity</th>
+                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Location</th>
+                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Unit</th>
+                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Plan Qty</th>
+                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Exec Qty</th>
+                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Done %</th>
+                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Remarks</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              ${items.map((item) => `
+                                <tr>
+                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.activity)}</td>
+                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.location)}</td>
+                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.unit)}</td>
+                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.plannedQuantity)}</td>
+                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.executedQuantity)}</td>
+                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.completionPercentage)}</td>
+                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.remarks)}</td>
+                                </tr>
+                              `).join("")}
+                            </tbody>
+                          </table>
+                        </div>
+                      `;
+                    })()}
+                    ${(() => {
+                      const items = (report as unknown as { constructionMaterialUtilization?: Array<{ material: string; unit: string; openingStock: string; received: string; closingStock: string }> }).constructionMaterialUtilization;
+                      if (!items?.length) return "";
+                      return `
+                        <div class="approval-section">
+                          <div class="approval-title" style="color: #1E3A5F">Material Utilization</div>
+                          <table class="approval-table">
+                            <thead>
+                              <tr>
+                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Material</th>
+                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Unit</th>
+                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Open Stock</th>
+                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Received</th>
+                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Close Stock</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              ${items.map((item) => `
+                                <tr>
+                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.material)}</td>
+                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.unit)}</td>
+                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.openingStock)}</td>
+                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.received)}</td>
+                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.closingStock)}</td>
+                                </tr>
+                              `).join("")}
+                            </tbody>
+                          </table>
+                        </div>
+                      `;
+                    })()}
+                    ${(() => {
+                      const items = (report as unknown as { constructionTomorrowWorkPlan?: Array<{ activity: string; location: string; unit: string; plannedQuantity: string }> }).constructionTomorrowWorkPlan;
+                      if (!items?.length) return "";
+                      return `
+                        <div class="approval-section">
+                          <div class="approval-title" style="color: #1E3A5F">Tomorrow's Plan</div>
+                          <table class="approval-table">
+                            <thead>
+                              <tr>
+                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Activity</th>
+                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Location</th>
+                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Unit</th>
+                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Plan Qty</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              ${items.map((item) => `
+                                <tr>
+                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.activity)}</td>
+                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.location)}</td>
+                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.unit)}</td>
+                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.plannedQuantity)}</td>
+                                </tr>
+                              `).join("")}
+                            </tbody>
+                          </table>
+                        </div>
+                      `;
+                    })()}
+                    ${(() => {
                       const items = (report as unknown as { nextDayApprovalItems?: Array<{ particulars: string; amountINR: number; amountRiyal: number; reason: string; review: string; approval: string }> }).nextDayApprovalItems;
                       if (!items?.length) return "";
                       return `

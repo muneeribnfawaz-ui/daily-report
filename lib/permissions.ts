@@ -36,12 +36,13 @@ export function canViewFinanceReport(user: SessionUser | null) {
     user?.role === "finance_team" ||
     user?.role === "ceo" ||
     (user?.role === "hod" && user?.teamNames?.includes(FINANCE_TEAM_INTERNAL_NAME)) ||
-    (user?.role === "hod" && user?.teamName === FINANCE_TEAM_INTERNAL_NAME)
+    (user?.role === "hod" && user?.teamName === FINANCE_TEAM_INTERNAL_NAME) ||
+    (user?.role === "hod" && user?.departments?.some((d) => d.name === "Finance" || d.name === FINANCE_TEAM_INTERNAL_NAME))
   );
 }
 
 export function canForwardFinanceReport(user: SessionUser | null) {
-  return (user?.role === "hod" && (user?.teamNames?.includes(FINANCE_TEAM_INTERNAL_NAME) || user?.teamName === FINANCE_TEAM_INTERNAL_NAME));
+  return (user?.role === "hod" && (user?.teamNames?.includes(FINANCE_TEAM_INTERNAL_NAME) || user?.teamName === FINANCE_TEAM_INTERNAL_NAME || user?.departments?.some((d) => d.name === "Finance" || d.name === FINANCE_TEAM_INTERNAL_NAME)));
 }
 
 export function canApproveFinanceReport(user: SessionUser | null) {

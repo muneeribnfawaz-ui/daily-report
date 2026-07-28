@@ -17,6 +17,10 @@ type ReportLike = {
   leaveType?: string;
   leaveReason?: string;
   leaveReviewedByName?: string | null;
+  constructionWorkPlan?: Array<{ activity: string; location: string; unit: string; plannedQuantity: string; executedQuantity: string; completionPercentage: string; remarks: string; }>;
+  constructionMaterialUtilization?: Array<{ material: string; unit: string; openingStock: string; received: string; closingStock: string; }>;
+  constructionTomorrowWorkPlan?: Array<{ activity: string; location: string; unit: string; plannedQuantity: string; }>;
+  nextDayApprovalItems?: Array<{ particulars: string; amountINR: number; amountRiyal: number; reason: string; review: string; approval: string; }>;
 };
 
 type TextValue = string | number | Date | null | undefined;
@@ -114,6 +118,49 @@ function drawField(doc: PDFKit.PDFDocument, label: string, value: TextValue, x: 
   return height;
 }
 
+function drawTable(
+  doc: PDFKit.PDFDocument,
+  title: string,
+  columns: { header: string; key: string; align?: "left" | "right" | "center"; width: number }[],
+  data: any[],
+  x: number,
+  y: number,
+  width: number
+) {
+  if (!data || data.length === 0) return 0;
+  let cursorY = y;
+  const rowHeight = 20;
+
+  // Title
+  doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(10).text(title, x, cursorY);
+  cursorY += 16;
+
+  // Headers
+  doc.roundedRect(x, cursorY, width, rowHeight, 4).fill(COLORS.navy);
+  doc.fillColor("#FFFFFF").font("Helvetica-Bold").fontSize(8);
+  let currentX = x + 8;
+  for (const col of columns) {
+    doc.text(col.header, currentX, cursorY + 6, { width: col.width, align: col.align || "left" });
+    currentX += col.width;
+  }
+  cursorY += rowHeight;
+
+  // Rows
+  for (let i = 0; i < data.length; i++) {
+    const item = data[i];
+    const bgColor = i % 2 === 0 ? COLORS.panel : COLORS.soft;
+    doc.rect(x, cursorY, width, rowHeight).fill(bgColor).strokeColor(COLORS.line).lineWidth(0.5).stroke();
+    doc.fillColor(COLORS.ink).font("Helvetica").fontSize(8);
+    currentX = x + 8;
+    for (const col of columns) {
+      doc.text(toText(item[col.key]), currentX, cursorY + 6, { width: col.width, align: col.align || "left" });
+      currentX += col.width;
+    }
+    cursorY += rowHeight;
+  }
+  return cursorY - y + 8; // return total height used + 8px padding
+}
+
 function renderReportPdfContent(doc: PDFKit.PDFDocument, options: ReportPdfOptions) {
   const pageWidth = doc.page.width;
   const contentWidth = pageWidth - PDF_PAGE_MARGIN_PT * 2;
@@ -172,7 +219,14 @@ function renderReportPdfContent(doc: PDFKit.PDFDocument, options: ReportPdfOptio
         ...(report.attachmentLink ? [["Attachment Link", report.attachmentLink] as [string, TextValue]] : [])
       ] as Array<[string, TextValue]>;
       const fieldHeights = fields.map(([, value]) => Math.max(34, textHeight(doc, toText(value).trim() || "-", cardWidth - 178, 9) + 19));
-      const bodyHeight = 62 + fieldHeights.reduce((sum, height) => sum + height + 8, 0) + (report.leaveStatus ? 28 : 0);
+      
+      let extraHeight = 0;
+      if (report.constructionWorkPlan?.length) extraHeight += 36 + report.constructionWorkPlan.length * 20;
+      if (report.constructionMaterialUtilization?.length) extraHeight += 36 + report.constructionMaterialUtilization.length * 20;
+      if (report.constructionTomorrowWorkPlan?.length) extraHeight += 36 + report.constructionTomorrowWorkPlan.length * 20;
+      if (report.nextDayApprovalItems?.length) extraHeight += 36 + report.nextDayApprovalItems.length * 20;
+
+      const bodyHeight = 62 + fieldHeights.reduce((sum, height) => sum + height + 8, 0) + (report.leaveStatus ? 28 : 0) + extraHeight;
       ensureSpace(doc, Math.min(bodyHeight + 20, doc.page.height - PDF_PAGE_MARGIN_PT * 2));
 
       const y = doc.y;
@@ -213,6 +267,59 @@ function renderReportPdfContent(doc: PDFKit.PDFDocument, options: ReportPdfOptio
           .font("Helvetica-Bold")
           .fontSize(9)
           .text(leaveText, cardX + 16, cursorY, { width: cardWidth - 32 });
+        cursorY += 28;
+      }
+
+      const tableW = cardWidth - 28;
+      const tableX = cardX + 14;
+
+      if (report.constructionWorkPlan?.length) {
+        cursorY += 8;
+        const used = drawTable(doc, "Construction Work Plan", [
+          { header: "Activity", key: "activity", width: tableW * 0.25 },
+          { header: "Loc", key: "location", width: tableW * 0.15 },
+          { header: "Unit", key: "unit", width: tableW * 0.1 },
+          { header: "Plan Qty", key: "plannedQuantity", width: tableW * 0.15 },
+          { header: "Exec Qty", key: "executedQuantity", width: tableW * 0.15 },
+          { header: "Done %", key: "completionPercentage", width: tableW * 0.1 },
+          { header: "Remarks", key: "remarks", width: tableW * 0.1 }
+        ], report.constructionWorkPlan, tableX, cursorY, tableW);
+        cursorY += used;
+      }
+
+      if (report.constructionMaterialUtilization?.length) {
+        cursorY += 8;
+        const used = drawTable(doc, "Material Utilization", [
+          { header: "Material", key: "material", width: tableW * 0.3 },
+          { header: "Unit", key: "unit", width: tableW * 0.1 },
+          { header: "Open Stock", key: "openingStock", width: tableW * 0.2 },
+          { header: "Received", key: "received", width: tableW * 0.2 },
+          { header: "Close Stock", key: "closingStock", width: tableW * 0.2 }
+        ], report.constructionMaterialUtilization, tableX, cursorY, tableW);
+        cursorY += used;
+      }
+
+      if (report.constructionTomorrowWorkPlan?.length) {
+        cursorY += 8;
+        const used = drawTable(doc, "Tomorrow's Plan", [
+          { header: "Activity", key: "activity", width: tableW * 0.4 },
+          { header: "Location", key: "location", width: tableW * 0.25 },
+          { header: "Unit", key: "unit", width: tableW * 0.1 },
+          { header: "Plan Qty", key: "plannedQuantity", width: tableW * 0.25 }
+        ], report.constructionTomorrowWorkPlan, tableX, cursorY, tableW);
+        cursorY += used;
+      }
+
+      if (report.nextDayApprovalItems?.length) {
+        cursorY += 8;
+        const used = drawTable(doc, "Next Day Approvals", [
+          { header: "Particulars", key: "particulars", width: tableW * 0.3 },
+          { header: "INR", key: "amountINR", width: tableW * 0.15, align: "right" },
+          { header: "SAR", key: "amountRiyal", width: tableW * 0.15, align: "right" },
+          { header: "Reason", key: "reason", width: tableW * 0.2 },
+          { header: "Approval", key: "approval", width: tableW * 0.2 }
+        ], report.nextDayApprovalItems, tableX, cursorY, tableW);
+        cursorY += used;
       }
 
       doc.y = y + bodyHeight + 18;
