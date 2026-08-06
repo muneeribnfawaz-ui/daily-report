@@ -30,7 +30,6 @@ const LeaveRequestSchema = new Schema(
 );
 
 LeaveRequestSchema.index({ employeeId: 1, fromDate: 1, toDate: 1, leaveType: 1 });
-LeaveRequestSchema.index({ leaveNumber: 1 }, { unique: true, sparse: true });
 
 if (process.env.NODE_ENV !== "production" && models.LeaveRequest) {
   delete models.LeaveRequest;

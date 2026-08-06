@@ -11,11 +11,11 @@ import { SessionUser } from './types';
 import { FINANCE_TEAM_INTERNAL_NAME } from './team-types';
 
 describe('permissions', () => {
-  const admin: SessionUser = { id: '1', role: 'admin', name: 'Admin', teamName: 'Admin', employeeId: '1' };
-  const ceo: SessionUser = { id: '2', role: 'ceo', name: 'CEO', teamName: 'Exec', employeeId: '2' };
-  const hodFinance: SessionUser = { id: '3', role: 'hod', name: 'HOD', teamName: FINANCE_TEAM_INTERNAL_NAME, teamNames: [FINANCE_TEAM_INTERNAL_NAME], employeeId: '3' };
-  const financeMember: SessionUser = { id: '4', role: 'finance_team', name: 'Finance', teamName: FINANCE_TEAM_INTERNAL_NAME, employeeId: '4' };
-  const regularUser: SessionUser = { id: '5', role: 'user', name: 'User', teamName: 'Tech', employeeId: '5' };
+  const admin: SessionUser = { id: '1', email: 'admin@example.com', role: 'admin', name: 'Admin', teamName: 'Admin' };
+  const ceo: SessionUser = { id: '2', email: 'ceo@example.com', role: 'ceo', name: 'CEO', teamName: 'Exec' };
+  const hodFinance: SessionUser = { id: '3', email: 'hod@example.com', role: 'hod', name: 'HOD', teamName: FINANCE_TEAM_INTERNAL_NAME, teamNames: [FINANCE_TEAM_INTERNAL_NAME] };
+  const financeMember: SessionUser = { id: '4', email: 'finance@example.com', role: 'finance_team', name: 'Finance', teamName: FINANCE_TEAM_INTERNAL_NAME };
+  const regularUser: SessionUser = { id: '5', email: 'user@example.com', role: 'team_member', name: 'User', teamName: 'Tech' };
 
   describe('canManageUsers', () => {
     it('allows admin and ceo', () => {

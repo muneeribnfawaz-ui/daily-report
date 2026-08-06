@@ -18,9 +18,17 @@ Next.js 15 + TypeScript scaffold for employee daily reports, manager review work
 2. Install dependencies
 3. Run `npm run dev`
 
-## Seed Default Admin
+## Seed Default Admin & Initial Login
 
-Run `npm run seed:admin` to create the initial MongoDB database and the default admin account.
+Run `npm run seed:admin` to create the initial MongoDB database and the default admin account. 
+
+### Fresh Project Login Credentials
+Once the database is seeded and the server is running (`npm run dev`), you can log into the system with the following default administrator credentials:
+
+- **Email**: `admin@gmail.com`
+- **Password**: `Admin@123@`
+
+*(It is highly recommended to change this password or add your own admin account once you log in).*
 
 ## Notes
 
