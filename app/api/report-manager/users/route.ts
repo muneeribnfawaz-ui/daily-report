@@ -143,6 +143,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, message: `Team leads can only assign users to their selected team: ${invalidTeamLeadTeamName}` }, { status: 403 });
   }
 
+  if (user.role === "team_lead") {
+    const userDepts = user.departments?.map((d) => d.name) ?? [];
+    const submittedDepts = parsed.data.departments?.map((d) => d.name) ?? [];
+    const invalidDept = submittedDepts.find((dept) => !userDepts.includes(dept));
+    if (invalidDept) {
+      return NextResponse.json({ success: false, message: `Team leads can only assign users to their own departments. Invalid department: ${invalidDept}` }, { status: 403 });
+    }
+  }
+
   const selectedManager =
     user.role === "team_lead"
       ? { teamName: user.teamName, teamNames: user.teamNames }
@@ -184,6 +193,7 @@ export async function POST(request: Request) {
     roleTypes: parsed.data.roleTypes,
     teamName: resolvedTeamNames[0] ?? "",
     teamNames: resolvedTeamNames,
+    departments: parsed.data.departments ?? [],
     managerName: nextManagerName ?? "",
     status: "active",
     isActive: true,

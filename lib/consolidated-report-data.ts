@@ -3,7 +3,7 @@ import DailyReport from "@/models/DailyReport";
 import User from "@/models/User";
 import { getActiveLeaveRequestsForRange, toInclusiveDateRange, type ActiveLeaveRequest } from "@/lib/leave-requests";
 import type { ReportSheetEntry, ReportSheetTeamGroup } from "@/components/reports/report-sheet-preview";
-import { getActiveTeamTypeShowNameMap, getFinanceTeamInternalNames } from "@/lib/team-types";
+import { getActiveTeamTypeShowNameMap, getFinanceTeamInternalNames, getTeamNamesByDepartment } from "@/lib/team-types";
 
 function collectDescendantUserNames(
   users: Array<{ name?: string | null; managerName?: string | null }>,
@@ -99,7 +99,8 @@ export async function getConsolidatedReportDetail(
   userName: string,
   role: string,
   teamName?: string | null,
-  reportGroup?: "finance" | "operations" | "all"
+  reportGroup?: "finance" | "operations" | "all",
+  department?: string
 ) {
   await connectToDatabase();
   const teamTypeShowNameMap = await getActiveTeamTypeShowNameMap();
@@ -107,6 +108,20 @@ export async function getConsolidatedReportDetail(
   // Resolve which internal names belong to the Finance group.
   const financeTeamNames = await getFinanceTeamInternalNames();
   const financeTeamNameSet = new Set(financeTeamNames);
+
+  let departmentTeamNamesSet: Set<string> | null = null;
+  if (department && department !== "All") {
+    const departmentTeamNames = await getTeamNamesByDepartment(department);
+    if (departmentTeamNames.length === 0) {
+      return {
+        date,
+        reportCount: 0,
+        teamCount: 0,
+        teamGroups: []
+      };
+    }
+    departmentTeamNamesSet = new Set(departmentTeamNames);
+  }
 
   const allUsers = await User.find({}).lean();
   const userRoleById = new Map<string, string | null>();
@@ -153,6 +168,11 @@ export async function getConsolidatedReportDetail(
     conditions.push({ teamName: { $nin: financeTeamNames } });
   }
 
+  // If a department is specified, only include reports for teams in that department
+  if (departmentTeamNamesSet) {
+    conditions.push({ teamName: { $in: Array.from(departmentTeamNamesSet) } });
+  }
+
   const filter = conditions.length <= 1 ? conditions[0] ?? {} : { $and: conditions };
   const reports = (await DailyReport.find(filter).sort({ reportDate: -1, createdAt: -1 }).lean()) as unknown as Array<
     ReportSheetEntry & { employeeId: unknown }
@@ -173,9 +193,11 @@ export async function getConsolidatedReportDetail(
     dateTo: date
   });
 
-  // Filter out Finance leave requests
+  // Filter out Finance leave requests and any not in the selected department
   const filteredLeaveRequests = leaveRequests.filter((lr) => {
-    return !financeTeamNameSet.has(lr.teamName);
+    if (financeTeamNameSet.has(lr.teamName)) return false;
+    if (departmentTeamNamesSet && !departmentTeamNamesSet.has(lr.teamName)) return false;
+    return true;
   });
   const leaveByEmployeeId = new Map<string, ActiveLeaveRequest>();
   const leaveMembersByTeam = new Map<
@@ -243,6 +265,9 @@ export async function getConsolidatedReportDetail(
 
       // Finance is explicitly excluded from standard consolidated reports.
       if (financeTeamNameSet.has(teamKey)) continue;
+
+      // Exclude teams not in the selected department.
+      if (departmentTeamNamesSet && !departmentTeamNamesSet.has(teamKey)) continue;
 
       const current = notSharedMembersByTeam.get(teamKey) ?? [];
       if (!current.some((item) => item.employeeId === employeeId)) {

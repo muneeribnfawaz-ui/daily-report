@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { DashboardPageHeader } from "@/components/dashboard/ui";
@@ -24,12 +25,14 @@ export default async function AdminConsolidatedReportDetailPage({
           title="Consolidated Report Preview"
           description="This screen shows the full consolidated report preview for a selected date, with a PDF download option."
         />
-        <ConsolidatedReportPreviewScreen
-          endpoint="/api/consolidated-reports"
-          date={date}
-          backHref="/admin/consolidated-reports"
-          title="Consolidated Report Preview"
-        />
+        <Suspense fallback={<div className="text-sm text-muted-foreground">Loading preview configuration...</div>}>
+          <ConsolidatedReportPreviewScreen
+            endpoint="/api/consolidated-reports"
+            date={date}
+            backHref="/admin/consolidated-reports"
+            title="Consolidated Report Preview"
+          />
+        </Suspense>
       </div>
     </AppShell>
   );

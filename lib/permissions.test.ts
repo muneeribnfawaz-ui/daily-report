@@ -6,9 +6,12 @@ import {
   canViewFinanceReport,
   canForwardFinanceReport,
   canApproveFinanceReport,
+  canCreateFinanceReport,
+  canEditFinanceReport
 } from './permissions';
 import { SessionUser } from './types';
-import { FINANCE_TEAM_INTERNAL_NAME } from './team-types';
+import { getFinanceTeamInternalNames } from './team-types';
+import { FINANCE_TEAM_INTERNAL_NAME } from './constants';
 
 describe('permissions', () => {
   const admin: SessionUser = { id: '1', email: 'admin@example.com', role: 'admin', name: 'Admin', teamName: 'Admin' };
@@ -16,6 +19,7 @@ describe('permissions', () => {
   const hodFinance: SessionUser = { id: '3', email: 'hod@example.com', role: 'hod', name: 'HOD', teamName: FINANCE_TEAM_INTERNAL_NAME, teamNames: [FINANCE_TEAM_INTERNAL_NAME] };
   const financeMember: SessionUser = { id: '4', email: 'finance@example.com', role: 'finance_team', name: 'Finance', teamName: FINANCE_TEAM_INTERNAL_NAME };
   const regularUser: SessionUser = { id: '5', email: 'user@example.com', role: 'team_member', name: 'User', teamName: 'Tech' };
+  const reportManager: SessionUser = { id: '6', email: 'rm@example.com', role: 'report_manager', name: 'Report Manager', teamName: 'Management', departments: [{ name: 'Finance' }] };
 
   describe('canManageUsers', () => {
     it('allows admin and ceo', () => {
@@ -46,6 +50,14 @@ describe('permissions', () => {
 
     it('denies regular user to view finance reports', () => {
       expect(canViewFinanceReport(regularUser)).toBe(false);
+    });
+
+    it('allows report_manager to view finance reports but not create or edit them', () => {
+      expect(canViewFinanceReport(reportManager)).toBe(true);
+      
+      // Even if they are in the Finance department, report managers should be blocked from creating or editing
+      expect(canCreateFinanceReport(reportManager)).toBe(false);
+      expect(canEditFinanceReport(reportManager)).toBe(false);
     });
 
     it('allows finance hod to forward finance report', () => {

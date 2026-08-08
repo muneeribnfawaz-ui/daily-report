@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { Route } from "next";
 import { useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Download, ArrowLeft, FileText, Building2 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -59,12 +60,12 @@ function groupReportsByTeam(reports: ReportListItem[]): ReportSheetTeamGroup[] {
 }
 
 /** Fetches consolidated report data for a given group from the API. */
-function useGroupReport(endpoint: string, date: string, group: ReportGroup) {
+function useGroupReport(endpoint: string, date: string, group: ReportGroup, department?: string) {
   return useQuery({
-    queryKey: [endpoint, "detail", date, group],
+    queryKey: [endpoint, "detail", date, group, department],
     enabled: Boolean(date),
     queryFn: async () => {
-      const response = await api.get(endpoint, { params: { date, group } });
+      const response = await api.get(endpoint, { params: { date, group, department: department && department !== "All" ? department : undefined } });
       const payload = response.data?.data as ConsolidatedDayReport | ReportListItem[] | undefined;
       if (!payload) return null;
 
@@ -107,17 +108,30 @@ export function ConsolidatedReportPreviewScreen({
   const previewRef = useRef<HTMLDivElement | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
 
-  const activeQuery = useGroupReport(endpoint, date, "operations");
+  const searchParams = useSearchParams();
+  const department = searchParams.get("department") ?? "All";
+
+  const activeQuery = useGroupReport(endpoint, date, "operations", department);
   const report = activeQuery.data;
   const previewGroups = report?.teamGroups ?? [];
   const dateLabel = date ? formatDateOnly(date) : "";
   const config = GROUP_CONFIG.operations;
+  
+  const displayDepartment = department !== "All" ? department : "Operations";
+  const pdfFilename = `${displayDepartment.toLowerCase()}-consolidated-${date}.pdf`;
 
   const handleDownloadPdf = async () => {
     try {
       setIsDownloading(true);
+      
+      const queryParams = new URLSearchParams({
+        date,
+        group: activeGroup,
+        ...(department !== "All" && { department })
+      });
+
       const response = await fetch(
-        `/api/consolidated-reports/pdf?date=${encodeURIComponent(date)}&group=${activeGroup}`,
+        `/api/consolidated-reports/pdf?${queryParams.toString()}`,
         { credentials: "include" }
       );
 
@@ -127,7 +141,7 @@ export function ConsolidatedReportPreviewScreen({
       const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = objectUrl;
-      link.download = `operations-consolidated-${date}.pdf`;
+      link.download = pdfFilename;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -187,7 +201,7 @@ export function ConsolidatedReportPreviewScreen({
       ) : (
         <div ref={previewRef} className="pdf-export-root">
           <ReportSheetPreview
-            title={`${config.label} Team Progress Report`}
+            title={`${displayDepartment} Team Progress Report`}
             dateLabel={dateLabel}
             teamGroups={previewGroups}
             subtitle={`${report.reportCount} reports · ${previewGroups.length} teams`}

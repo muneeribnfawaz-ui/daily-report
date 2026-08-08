@@ -8,7 +8,7 @@ import Notification from "@/models/Notification";
 import User from "@/models/User";
 import { logAuditEntry } from "@/lib/audit";
 import { getINRtoSARRate, convertINRtoSAR } from "@/lib/currency";
-import { FINANCE_TEAM_INTERNAL_NAME } from "@/lib/team-types";
+import { FINANCE_TEAM_INTERNAL_NAME } from "@/lib/constants";
 
 
 

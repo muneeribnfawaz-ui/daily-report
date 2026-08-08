@@ -11,6 +11,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { useSession } from "@/hooks/use-session";
+import { canSeeFinanceTab } from "@/lib/permissions";
 
 function clearBrowserSessionState() {
   window.localStorage.clear();
@@ -39,7 +40,14 @@ export function AppShell({
   const resolvedRole = sessionUser?.role ?? role ?? "team_member";
   const displayName = sessionUser?.name?.trim() || "User";
   const displayEmail = sessionUser?.email?.trim() || "";
-  const items = SIDEBAR_NAV_ITEMS_BY_ROLE[resolvedRole];
+  let items = [...SIDEBAR_NAV_ITEMS_BY_ROLE[resolvedRole]];
+  const hasFinanceTab = items.some((i) => i.href === "/finance");
+  if (canSeeFinanceTab(sessionUser) && !hasFinanceTab) {
+    items.splice(1, 0, { href: "/finance", label: "Finance" });
+  } else if (!canSeeFinanceTab(sessionUser) && hasFinanceTab) {
+    items = items.filter((i) => i.href !== "/finance");
+  }
+
   const pathname = usePathname();
   const router = useRouter();
   const queryClient = useQueryClient();

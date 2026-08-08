@@ -113,16 +113,22 @@ export function AdminAddUserForm() {
   const currentManagerName = useWatch({ control, name: "managerName" });
   const teamLeadOptions = managerPools?.teamLeads ?? [];
   const hodOptions = managerPools?.hods ?? [];
-  const availableTeamOptions = teamOptions;
   const managerSelectOptions = useMemo(() => {
     if (selectedRole === "hod") return [{ _id: "admin", name: "Admin" }];
     if (selectedRole === "team_lead" || selectedRole === "report_manager") return hodOptions;
-    if (selectedRole === "team_member") {
-      if (!currentTeamNames.length) return [];
-      return teamLeadOptions.filter((manager) => managerMatchesTeams(manager, currentTeamNames));
-    }
+    if (selectedRole === "team_member") return teamLeadOptions;
     return teamLeadOptions;
-  }, [currentTeamNames, hodOptions, selectedRole, teamLeadOptions]);
+  }, [hodOptions, selectedRole, teamLeadOptions]);
+
+  const availableTeamOptions = useMemo(() => {
+    if (selectedRole === "team_member") {
+      const selectedManager = teamLeadOptions.find((m) => m.name === currentManagerName);
+      if (!selectedManager) return [];
+      const managerTeams = normalizeTeamNames(selectedManager.teamName ?? null, selectedManager.teamNames ?? null);
+      return teamOptions.filter((team) => managerTeams.includes(team.name));
+    }
+    return teamOptions;
+  }, [selectedRole, teamLeadOptions, currentManagerName, teamOptions]);
 
   const selectedDepartmentNames = useMemo(
     () => currentDepartments.map((d) => d.name),
@@ -164,6 +170,17 @@ export function AdminAddUserForm() {
       }
     }
   }, [availableSkills, currentManagerName, currentRoleTypes, hodOptions, managerSelectOptions, selectedRole, setValue]);
+
+  useEffect(() => {
+    // Clear invalid role types when available skills change
+    if (currentRoleTypes && currentRoleTypes.length > 0) {
+      const validSkillNames = availableSkills.map((s) => s.name);
+      const filteredRoleTypes = currentRoleTypes.filter((rt) => validSkillNames.includes(rt));
+      if (filteredRoleTypes.length !== currentRoleTypes.length) {
+        setValue("roleTypes", filteredRoleTypes as AdminUserValues["roleTypes"]);
+      }
+    }
+  }, [availableSkills, currentRoleTypes, setValue]);
 
   useEffect(() => {
     if (selectedRole === "team_member") {
@@ -217,10 +234,7 @@ export function AdminAddUserForm() {
     setError(null);
     setMessage(null);
 
-    const resolvedManagerName =
-      values.role === "team_member"
-        ? managerSelectOptions.find((manager) => manager.name === values.managerName)?.name ?? managerSelectOptions[0]?.name ?? values.managerName
-        : values.managerName;
+    const resolvedManagerName = values.managerName;
 
     const parsed = adminCreateUserSchema.safeParse(values);
     if (!parsed.success) {
@@ -281,6 +295,19 @@ export function AdminAddUserForm() {
       <ReportField label="Password" error={errors.password?.message}>
         <PasswordInput variant="report" placeholder="Password" {...register("password")} />
       </ReportField>
+
+      {selectedRole !== "ceo" && selectedRole !== "admin" ? (
+        <ReportField className="md:col-span-2" label={selectedRole === "team_member" ? "Team Lead" : "Manager"} error={errors.managerName?.message}>
+          <ReportSelect {...register("managerName")}>
+            <option value="">{selectedRole === "team_member" ? "Select team lead" : "Select manager"}</option>
+            {managerSelectOptions.map((manager) => (
+              <option key={manager._id} value={manager.name}>
+                {manager.name}
+              </option>
+            ))}
+          </ReportSelect>
+        </ReportField>
+      ) : null}
 
       <div className="md:col-span-2">
         <Controller
@@ -393,18 +420,7 @@ export function AdminAddUserForm() {
           />
         </div>
       ) : null}
-      {selectedRole !== "ceo" && selectedRole !== "admin" ? (
-        <ReportField className="md:col-span-2" label={selectedRole === "team_member" ? "Team Lead" : "Manager"} error={errors.managerName?.message}>
-          <ReportSelect {...register("managerName")}>
-            <option value="">{selectedRole === "team_member" ? "Select team lead" : "Select manager"}</option>
-            {managerSelectOptions.map((manager) => (
-              <option key={manager._id} value={manager.name}>
-                {manager.name}
-              </option>
-            ))}
-          </ReportSelect>
-        </ReportField>
-      ) : null}
+
       {error ? <p className="text-sm text-danger md:col-span-2">{error}</p> : null}
       {message ? <p className="text-sm text-success md:col-span-2">{message}</p> : null}
       <Button className="md:col-span-2 w-fit" type="submit" disabled={isSubmitting}>

@@ -50,6 +50,7 @@ describe("Validation Schemas & Bug Finding", () => {
         empID: "EMP01",
         roleTypes: ["Web Developer"],
         teamNames: ["Software"],
+        departments: [{ name: "Software", subTeams: [] }],
         email: "jane@example.com",
         password: "StrongPassword123!"
       };
@@ -64,6 +65,32 @@ describe("Validation Schemas & Bug Finding", () => {
       // Missing manager for ceo should succeed
       const ceoRes = adminCreateUserSchema.safeParse({ ...baseEmployee, role: "ceo", managerName: "" });
       expect(ceoRes.success).toBe(true);
+    });
+
+    it("enforces that the departments array is not empty", () => {
+      const baseEmployee = {
+        firstName: "Jane",
+        lastName: "Doe",
+        phone: "1234567890",
+        empID: "EMP01",
+        role: "team_member",
+        roleTypes: ["Web Developer"],
+        teamNames: ["Software"],
+        managerName: "John Doe",
+        email: "jane@example.com",
+        password: "StrongPassword123!"
+      };
+
+      // Empty departments should fail
+      const emptyDeptRes = adminCreateUserSchema.safeParse({ ...baseEmployee, departments: [] });
+      expect(emptyDeptRes.success).toBe(false);
+      if (!emptyDeptRes.success) {
+        expect(emptyDeptRes.error.issues.some(i => i.message.includes("Select at least one department"))).toBe(true);
+      }
+
+      // Valid departments should succeed
+      const validDeptRes = adminCreateUserSchema.safeParse({ ...baseEmployee, departments: [{ name: "Software", subTeams: [] }] });
+      expect(validDeptRes.success).toBe(true);
     });
 
     it("detects password mismatch during user update reset", () => {

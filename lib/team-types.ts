@@ -1,8 +1,7 @@
 import { connectToDatabase } from "@/lib/db";
 import TeamType from "@/models/TeamType";
 
-/** The internal `name` stored in TeamType / DailyReport.teamName for the Finance team. */
-export const FINANCE_TEAM_INTERNAL_NAME = "FINANCE_TEAM";
+import { FINANCE_TEAM_INTERNAL_NAME } from "@/lib/constants";
 
 export function formatTeamTypeShowName(teamType: any) {
   const existingShowName = teamType.showName?.trim();
@@ -49,5 +48,11 @@ export async function isValidTeamTypeName(teamName: string) {
 export async function getFinanceTeamInternalNames(): Promise<string[]> {
   await connectToDatabase();
   const teamTypes = await TeamType.find({ name: FINANCE_TEAM_INTERNAL_NAME, isDeleted: false }).lean();
+  return teamTypes.map((t) => t.name as string);
+}
+
+export async function getTeamNamesByDepartment(department: string): Promise<string[]> {
+  await connectToDatabase();
+  const teamTypes = await TeamType.find({ department, isDeleted: false }).lean();
   return teamTypes.map((t) => t.name as string);
 }

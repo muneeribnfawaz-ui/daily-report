@@ -1,5 +1,7 @@
 import appData from "@/config/app-data.json";
 
+export const FINANCE_TEAM_INTERNAL_NAME = "FINANCE_TEAM";
+
 export const APP_NAME = "Daily Report Management System";
 
 /** The internal team-type name for the Finance team (also in lib/team-types.ts for server use). */
@@ -21,7 +23,7 @@ export const AUTH_ROLE_OPTIONS = appData.authRoleOptions as unknown as readonly 
 export type UserRole = (typeof AUTH_ROLE_OPTIONS)[number];
 export const USER_ROLES = AUTH_ROLE_OPTIONS;
 
-export const CREATE_USER_ROLE_OPTIONS = appData.createUserRoleOptions as unknown as readonly ["ceo", "finance_team", "team_lead", "report_manager", "hod", "team_member"];
+export const CREATE_USER_ROLE_OPTIONS = appData.createUserRoleOptions as unknown as readonly ["ceo", "team_lead", "report_manager", "hod", "team_member"];
 
 export const ROLE_LABELS: Record<UserRole, string> = {
   admin: "Admin",
@@ -35,7 +37,6 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 
 export const CREATE_USER_ROLE_LABELS: Record<(typeof CREATE_USER_ROLE_OPTIONS)[number], string> = {
   ceo: "CEO",
-  finance_team: "Finance Team",
   team_lead: "Team Lead",
   report_manager: "Report Manager",
   hod: "HOD",
@@ -233,7 +234,7 @@ export const DEPARTMENT_SKILLS: Record<string, SkillOption[]> = {
 
 export function getSkillsForDepartments(departmentNames?: string[]): SkillOption[] {
   if (!departmentNames || departmentNames.length === 0) {
-    return Object.values(DEPARTMENT_SKILLS).flat();
+    return [];
   }
   const skills: SkillOption[] = [];
   const added = new Set<string>();

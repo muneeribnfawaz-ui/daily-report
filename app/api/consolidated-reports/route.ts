@@ -3,6 +3,7 @@ import { connectToDatabase } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { getConsolidatedReportDetail } from "@/lib/consolidated-report-data";
 import DailyReport from "@/models/DailyReport";
+import { getFinanceTeamInternalNames, getTeamNamesByDepartment } from "@/lib/team-types";
 
 function toDateKey(value: Date | string) {
   return new Date(value).toISOString().slice(0, 10);
@@ -22,15 +23,37 @@ export async function GET(request: Request) {
     return g === "finance" ? "finance" : g === "operations" ? "operations" : g === "all" ? "all" : undefined;
   })();
 
+  const department = url.searchParams.get("department") ?? undefined;
+
   // Finance consolidated reports are restricted to admin, ceo, and hod only.
-  if (requestedGroup === "finance" && user.role !== "admin" && user.role !== "ceo" && user.role !== "hod") {
+  if (
+    (requestedGroup === "finance" || department === "Finance") &&
+    user.role !== "admin" &&
+    user.role !== "ceo" &&
+    user.role !== "hod"
+  ) {
     return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
   }
 
   await connectToDatabase();
 
   if (!date) {
-    const reports = await DailyReport.find({}).sort({ reportDate: -1, createdAt: -1 }).lean();
+    const filter: Record<string, any> = {};
+
+    if (department && department !== "All") {
+      const deptTeams = await getTeamNamesByDepartment(department);
+      if (deptTeams.length === 0) {
+        return NextResponse.json({ success: true, data: [] });
+      }
+      filter.teamName = { $in: deptTeams };
+    } else {
+      const financeTeams = await getFinanceTeamInternalNames();
+      if (financeTeams.length > 0) {
+        filter.teamName = { $nin: financeTeams };
+      }
+    }
+
+    const reports = await DailyReport.find(filter).sort({ reportDate: -1, createdAt: -1 }).lean();
     const byDate = new Map<
       string,
       {
@@ -64,7 +87,8 @@ export async function GET(request: Request) {
     user.name,
     user.role,
     user.teamName,
-    requestedGroup
+    requestedGroup,
+    department
   );
 
   return NextResponse.json({

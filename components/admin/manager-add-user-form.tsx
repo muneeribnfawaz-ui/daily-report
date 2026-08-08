@@ -174,12 +174,25 @@ export function ManagerAddUserForm() {
   );
   const availableTeamOptions = useMemo(() => {
     if (isTeamLead) {
-      if (!currentUserTeamNames.length) return teamOptions;
-      return teamOptions.filter((team) => currentUserTeamNames.includes(team.name));
+      const allowedTeamNames = currentUser?.teamNames ?? [];
+      const allowedTeamName = currentUser?.teamName;
+      const allAllowed = [...allowedTeamNames];
+      if (allowedTeamName && !allAllowed.includes(allowedTeamName)) {
+        allAllowed.push(allowedTeamName);
+      }
+      if (!allAllowed.length) return teamOptions;
+      return teamOptions.filter((team) => allAllowed.includes(team.name));
     }
 
     return teamOptions;
-  }, [currentUserTeamNames, isTeamLead, teamOptions]);
+  }, [currentUser?.teamName, currentUser?.teamNames, isTeamLead, teamOptions]);
+
+  const allowedDepartments = useMemo(() => {
+    if (isTeamLead) {
+      return currentUser?.departments?.map(d => d.name) ?? [];
+    }
+    return DEPARTMENT_OPTIONS;
+  }, [isTeamLead, currentUser?.departments]);
 
   const managerSelectOptions = useMemo(() => {
     if (isTeamLead) return [];
@@ -225,6 +238,17 @@ export function ManagerAddUserForm() {
       }
     }
   }, [currentManagerName, currentUser, isTeamLead, managerSelectOptions, selectedRole, setValue]);
+
+  useEffect(() => {
+    // Clear invalid role types when available skills change
+    if (currentRoleTypes && currentRoleTypes.length > 0) {
+      const validSkillNames = availableSkills.map((s) => s.name);
+      const filteredRoleTypes = currentRoleTypes.filter((rt) => validSkillNames.includes(rt));
+      if (filteredRoleTypes.length !== currentRoleTypes.length) {
+        setValue("roleTypes", filteredRoleTypes as CreateUserValues["roleTypes"]);
+      }
+    }
+  }, [availableSkills, currentRoleTypes, setValue]);
 
   useEffect(() => {
     if (selectedRole === "report_manager") {
@@ -392,7 +416,7 @@ export function ManagerAddUserForm() {
         <div className="text-sm font-medium text-foreground">Departments (Assigned to User)</div>
         <div className="text-xs text-muted-foreground mb-2">Select one or more primary departments for this user.</div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {DEPARTMENT_OPTIONS.map((deptName) => {
+          {allowedDepartments.map((deptName) => {
             const isSelected = currentDepartments.some((d) => d.name === deptName);
             return (
               <Button
@@ -400,12 +424,15 @@ export function ManagerAddUserForm() {
                 type="button"
                 variant={isSelected ? "default" : "outline"}
                 className="justify-start text-xs h-9"
-                onClick={() => toggleDepartment(deptName)}
+                onClick={() => toggleDepartment(deptName as any)}
               >
                 {deptName}
               </Button>
             );
           })}
+          {allowedDepartments.length === 0 && (
+             <div className="text-sm text-muted-foreground col-span-2 sm:col-span-4">No departments available.</div>
+          )}
         </div>
 
         {currentDepartments.some((d) => d.name === "Marketing") && (

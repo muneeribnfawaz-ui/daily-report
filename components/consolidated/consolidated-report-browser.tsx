@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import { useQuery } from "@tanstack/react-query";
@@ -8,6 +8,8 @@ import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Select } from "@/components/ui/select";
+import { DEPARTMENT_OPTIONS } from "@/lib/constants";
 
 type ConsolidatedReportSummaryItem = {
   date: string;
@@ -32,10 +34,14 @@ export function ConsolidatedReportBrowser({
   endpoint: string;
   detailBaseHref: string;
 }) {
+  const [department, setDepartment] = useState<string>("All");
+
   const summaryQuery = useQuery({
-    queryKey: [endpoint, "summary"],
+    queryKey: [endpoint, "summary", department],
     queryFn: async () => {
-      const response = await api.get(endpoint);
+      const response = await api.get(endpoint, {
+        params: department !== "All" ? { department } : {}
+      });
       return response.data?.data as ConsolidatedReportSummaryItem[];
     }
   });
@@ -46,9 +52,29 @@ export function ConsolidatedReportBrowser({
     <div className="space-y-6">
       <Card className="border-none shadow-none">
         <CardContent className="space-y-4 p-0 px-4 pb-4 dark:px-0 dark:pb-0">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm text-muted-foreground">Consolidated reports by date</div>
-            <Badge variant="soft">{summaryReports.length} date{summaryReports.length === 1 ? "" : "s"}</Badge>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="text-sm text-muted-foreground">Consolidated reports by date</div>
+              <Badge variant="soft">{summaryReports.length} date{summaryReports.length === 1 ? "" : "s"}</Badge>
+            </div>
+            <div className="flex items-center gap-2">
+              <label htmlFor="department-filter" className="text-sm text-muted-foreground whitespace-nowrap">
+                Department:
+              </label>
+              <Select
+                id="department-filter"
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                className="w-full sm:w-[180px]"
+              >
+                <option value="All">All Departments</option>
+                {DEPARTMENT_OPTIONS.map((dept) => (
+                  <option key={dept} value={dept}>
+                    {dept}
+                  </option>
+                ))}
+              </Select>
+            </div>
           </div>
 
           <div className="overflow-hidden rounded-xl border border-cardBorder pb-2">
@@ -81,7 +107,7 @@ export function ConsolidatedReportBrowser({
                       </div>
                     </div>
                     <Button asChild size="sm" className="h-8">
-                      <Link href={`${detailBaseHref}/${report.date}` as Route}>View Preview</Link>
+                      <Link href={`${detailBaseHref}/${report.date}${department !== "All" ? `?department=${department}` : ""}` as Route}>View Preview</Link>
                     </Button>
                   </div>
                 ))

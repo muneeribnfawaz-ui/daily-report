@@ -120,7 +120,7 @@ export async function POST(request: Request) {
     teamName: primaryTeam,
     teamNames: parsed.data.teamNames,
     departments: parsed.data.departments ?? [],
-    managerName: parsed.data.managerName ?? "",
+    managerName: parsed.data.role === "admin" || parsed.data.role === "ceo" ? "" : parsed.data.managerName ?? "",
     status: "active",
     isActive: true,
     isDeleted: false,

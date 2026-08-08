@@ -45,22 +45,27 @@ export async function GET(request: Request) {
   const reportGroup: "finance" | "operations" | "all" =
     groupParam === "finance" ? "finance" : groupParam === "all" ? "all" : "operations";
 
+  const department = url.searchParams.get("department") ?? undefined;
+
   // Finance consolidated reports are restricted to admin, ceo, and hod only.
-  if (reportGroup === "finance" && user.role !== "admin" && user.role !== "ceo" && user.role !== "hod") {
+  if (
+    (reportGroup === "finance" || department === "Finance") &&
+    user.role !== "admin" &&
+    user.role !== "ceo" &&
+    user.role !== "hod"
+  ) {
     return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
   }
 
   const isFinance = reportGroup === "finance";
-  const reportTitle = isFinance
-    ? `Finance Consolidated Report - ${date}`
-    : `Operations Consolidated Report - ${date}`;
-  const downloadFilename = isFinance
-    ? `finance-consolidated-${date}.pdf`
-    : `operations-consolidated-${date}.pdf`;
+  const displayDepartment = department && department !== "All" ? department : isFinance ? "Finance" : "Operations";
+  
+  const reportTitle = `${displayDepartment} Consolidated Report - ${date}`;
+  const downloadFilename = `${displayDepartment.toLowerCase()}-consolidated-${date}.pdf`;
 
   let stage = "loading report data";
   try {
-    const data = await getConsolidatedReportDetail(date, user.name, user.role, user.teamName, reportGroup);
+    const data = await getConsolidatedReportDetail(date, user.name, user.role, user.teamName, reportGroup, department);
     stage = "building report HTML";
     const html = buildConsolidatedReportHtml({
       date: data.date,

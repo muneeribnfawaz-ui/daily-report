@@ -141,27 +141,6 @@ export function UserEditForm({
   const canEditRole = currentRole === "admin" || currentRole === "hod" || currentRole === "ceo";
   const canEditEmail = currentRole === "admin" || currentRole === "ceo";
   const canResetPassword = currentRole === "admin" || currentRole === "hod" || currentRole === "ceo";
-  const availableTeamOptions = useMemo(() => {
-    if (currentRole !== "team_lead") return teamOptions;
-    if (!currentUserTeamNames.length) return [];
-    return teamOptions.filter((team) => currentUserTeamNames.includes(team.name));
-  }, [currentRole, currentUserTeamNames, teamOptions]);
-
-  const { data: managerPools } = useQuery<ManagerPools>({
-    queryKey: ["user-edit-manager-pools"],
-    enabled: canEditManagerName,
-    queryFn: async () => {
-      const [teamLeadResponse, hodResponse] = await Promise.all([
-        api.get("/api/admin/users", { params: { role: "team_lead" } }),
-        api.get("/api/admin/users", { params: { role: "hod" } })
-      ]);
-      return {
-        teamLeads: (teamLeadResponse.data?.data ?? []) as ManagerOption[],
-        hods: (hodResponse.data?.data ?? []) as ManagerOption[]
-      };
-    }
-  });
-
   const { data: userData, isLoading, isError } = useQuery<UserRecord>({
     queryKey: ["user-edit", userId],
     queryFn: async () => {
@@ -227,11 +206,44 @@ export function UserEditForm({
     setShowResetPassword(false);
   }, [reset, userData]);
 
+  const managerName = useWatch({ control, name: "managerName" });
   const selectedRole = useWatch({ control, name: "role" });
+
+  const { data: managerPools } = useQuery<ManagerPools>({
+    queryKey: ["user-edit-manager-pools"],
+    enabled: canEditManagerName,
+    queryFn: async () => {
+      const [teamLeadResponse, hodResponse] = await Promise.all([
+        api.get("/api/admin/users", { params: { role: "team_lead" } }),
+        api.get("/api/admin/users", { params: { role: "hod" } })
+      ]);
+      return {
+        teamLeads: (teamLeadResponse.data?.data ?? []) as ManagerOption[],
+        hods: (hodResponse.data?.data ?? []) as ManagerOption[]
+      };
+    }
+  });
+
+  const teamLeadOptions = managerPools?.teamLeads ?? [];
+  const hodOptions = managerPools?.hods ?? [];
+
+  const availableTeamOptions = useMemo(() => {
+    if (currentRole === "team_lead") {
+      if (!currentUserTeamNames.length) return [];
+      return teamOptions.filter((team) => currentUserTeamNames.includes(team.name));
+    }
+    if (selectedRole === "team_member" && managerName) {
+      const selectedManager = teamLeadOptions.find((m) => m.name === managerName);
+      if (!selectedManager) return [];
+      const managerTeams = normalizeTeamNames(selectedManager.teamName ?? null, selectedManager.teamNames ?? null);
+      return teamOptions.filter((team) => managerTeams.includes(team.name));
+    }
+    return teamOptions;
+  }, [currentRole, currentUserTeamNames, selectedRole, teamLeadOptions, managerName, teamOptions]);
+
   const currentRoleTypes = useWatch({ control, name: "roleTypes" });
   const currentTeamNames = useWatch({ control, name: "teamNames" });
   const currentDepartments = useWatch({ control, name: "departments" }) ?? [];
-  const managerName = useWatch({ control, name: "managerName" });
   const resetPasswordEnabled = useWatch({ control, name: "resetPassword" });
 
   const selectedDepartmentNames = useMemo(
@@ -265,19 +277,24 @@ export function UserEditForm({
     setValue("departments", nextDepartments);
   };
 
-  const teamLeadOptions = managerPools?.teamLeads ?? [];
-  const hodOptions = managerPools?.hods ?? [];
   const managerSelectOptions = useMemo(() => {
     if (!canEditManagerName) return [];
     if (selectedRole === "hod") return [{ _id: "admin", name: "Admin" }];
     if (selectedRole === "team_lead" || selectedRole === "report_manager") return hodOptions;
-    if (selectedRole === "team_member") {
-      const selectedTeams = currentTeamNames ?? [];
-      if (!selectedTeams.length) return [];
-      return teamLeadOptions.filter((manager) => managerMatchesTeams(manager, selectedTeams));
-    }
+    if (selectedRole === "team_member") return teamLeadOptions;
     return teamLeadOptions;
-  }, [canEditManagerName, currentTeamNames, hodOptions, selectedRole, teamLeadOptions]);
+  }, [canEditManagerName, hodOptions, selectedRole, teamLeadOptions]);
+
+  useEffect(() => {
+    // Clear invalid role types when available skills change
+    if (currentRoleTypes && currentRoleTypes.length > 0) {
+      const validSkillNames = availableSkills.map((s) => s.name);
+      const filteredRoleTypes = currentRoleTypes.filter((rt) => validSkillNames.includes(rt));
+      if (filteredRoleTypes.length !== currentRoleTypes.length) {
+        setValue("roleTypes", filteredRoleTypes as UpdateUserValues["roleTypes"]);
+      }
+    }
+  }, [availableSkills, currentRoleTypes, setValue]);
 
   useEffect(() => {
     if (!availableTeamOptions.length) return;
@@ -287,14 +304,20 @@ export function UserEditForm({
       return;
     }
 
-    if (currentRole !== "team_lead") return;
-
-    const allowedTeamNames = new Set(availableTeamOptions.map((team) => team.name));
-    const filteredTeamNames = currentTeamNames.filter((teamName) => allowedTeamNames.has(teamName));
-    if (filteredTeamNames.length !== currentTeamNames.length) {
-      setValue("teamNames", filteredTeamNames.length ? filteredTeamNames : [availableTeamOptions[0].name]);
+    if (currentRole === "team_lead") {
+      const allowedTeamNames = new Set(availableTeamOptions.map((team) => team.name));
+      const filteredTeamNames = currentTeamNames.filter((teamName) => allowedTeamNames.has(teamName));
+      if (filteredTeamNames.length !== currentTeamNames.length) {
+        setValue("teamNames", filteredTeamNames.length ? filteredTeamNames : [availableTeamOptions[0].name]);
+      }
+    } else if (selectedRole === "team_member") {
+      const allowedTeamNames = new Set(availableTeamOptions.map((team) => team.name));
+      const filteredTeamNames = currentTeamNames.filter((teamName) => allowedTeamNames.has(teamName));
+      if (filteredTeamNames.length !== currentTeamNames.length) {
+        setValue("teamNames", filteredTeamNames.length ? filteredTeamNames : availableTeamOptions[0] ? [availableTeamOptions[0].name] : []);
+      }
     }
-  }, [availableTeamOptions, currentRole, currentTeamNames, setValue]);
+  }, [availableTeamOptions, currentRole, currentTeamNames, selectedRole, setValue]);
 
   useEffect(() => {
     if (!canEditManagerName || selectedRole !== "team_member") return;
@@ -318,10 +341,7 @@ export function UserEditForm({
     const normalizedTeamNames = Array.from(
       new Set((values.teamNames ?? []).map((teamName) => teamName.trim()).filter(Boolean))
     );
-    const resolvedManagerName =
-      values.role === "team_member"
-        ? managerSelectOptions.find((manager) => manager.name === values.managerName)?.name ?? managerSelectOptions[0]?.name ?? values.managerName
-        : values.managerName;
+    const resolvedManagerName = values.managerName;
 
     const payload = {
       ...values,
@@ -437,8 +457,9 @@ export function UserEditForm({
               <Button
                 key={deptName}
                 type="button"
+                disabled
                 variant={isSelected ? "default" : "outline"}
-                className="justify-start text-xs h-9"
+                className="justify-start text-xs h-9 disabled:opacity-70 disabled:cursor-not-allowed"
                 onClick={() => toggleDepartment(deptName)}
               >
                 {deptName}
@@ -458,9 +479,10 @@ export function UserEditForm({
                   <Button
                     key={sub}
                     type="button"
+                    disabled
                     variant={isSubSelected ? "secondary" : "outline"}
                     size="sm"
-                    className="text-xs h-8"
+                    className="text-xs h-8 disabled:opacity-70 disabled:cursor-not-allowed"
                     onClick={() => toggleMarketingSubTeam(sub)}
                   >
                     {sub}

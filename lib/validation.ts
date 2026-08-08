@@ -41,7 +41,7 @@ export const adminCreateUserSchema = z.object({
   role: z.enum(AUTH_ROLE_OPTIONS),
   roleTypes: z.array(z.enum(ALL_SKILL_OPTIONS)).default([]),
   teamNames: z.array(z.string().min(1)).min(1),
-  departments: z.array(z.object({ name: z.enum(DEPARTMENT_OPTIONS), subTeams: z.array(z.string()).optional().default([]) })).optional().default([]),
+  departments: z.array(z.object({ name: z.enum(DEPARTMENT_OPTIONS), subTeams: z.array(z.string()).optional().default([]) })).min(1, "Select at least one department"),
   managerName: z.string().optional().default(""),
   email: z.string().email(),
   password: strictPasswordSchema
@@ -71,7 +71,7 @@ export const adminUpdateUserSchema = z.object({
   role: z.enum(AUTH_ROLE_OPTIONS).optional(),
   roleTypes: z.array(z.enum(ALL_SKILL_OPTIONS)).optional(),
   teamNames: z.array(z.string().min(1)).min(1).optional(),
-  departments: z.array(z.object({ name: z.enum(DEPARTMENT_OPTIONS), subTeams: z.array(z.string()).optional().default([]) })).optional(),
+  departments: z.array(z.object({ name: z.enum(DEPARTMENT_OPTIONS), subTeams: z.array(z.string()).optional().default([]) })).min(1, "Select at least one department").optional(),
   managerName: z.string().min(1).optional(),
   email: z.string().email().optional(),
   resetPassword: z.boolean().optional(),
