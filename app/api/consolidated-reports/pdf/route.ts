@@ -1,0 +1,122 @@
+import { NextResponse } from "next/server";
+import { getCurrentUser } from "@/lib/auth";
+import { getConsolidatedReportDetail } from "@/lib/consolidated-report-data";
+import { buildConsolidatedReportHtml } from "@/lib/consolidated-report-pdf";
+import { renderPdfFromHtml } from "@/lib/browser-pdf";
+import type { SessionUser } from "@/lib/types";
+
+import { canViewFinanceReport } from "@/lib/permissions";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function serializeError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    };
+  }
+
+  return {
+    name: "UnknownError",
+    message: String(error)
+  };
+}
+
+export async function GET(request: Request) {
+  let user: SessionUser | null;
+  try {
+    user = await getCurrentUser();
+    if (!user || (user.role !== "team_lead" && user.role !== "report_manager" && user.role !== "hod" && user.role !== "admin" && user.role !== "ceo" && user.role !== "finance_team")) {
+      return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
+    }
+  } catch (error) {
+    console.error("Failed to read current user for consolidated report PDF", { error });
+    return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
+  }
+
+  const url = new URL(request.url);
+  const date = url.searchParams.get("date");
+  const rawGroup = url.searchParams.get("group");
+  const department = url.searchParams.get("department") ?? undefined;
+  
+  let workspaceId = url.searchParams.get("workspaceId");
+  if (!workspaceId) {
+    workspaceId = user.workspaceId;
+  }
+  if (!workspaceId) {
+    return new NextResponse("Workspace ID is required", { status: 400 });
+  }
+
+  if (!date) {
+    return new NextResponse("Missing date parameter", { status: 400 });
+  }
+
+  const groupParam = url.searchParams.get("group");
+  const reportGroup: "finance" | "operations" | "all" =
+    groupParam === "finance" ? "finance" : groupParam === "all" ? "all" : "operations";
+
+
+  const isFinanceRequested = reportGroup === "finance" || department === "Finance";
+  const isUserEnrolledInFinance = user.departments?.some((d) => d.name === "Finance");
+
+  if (isFinanceRequested) {
+    const isAuthorizedForFinance =
+      user.role === "ceo" ||
+      user.role === "admin" ||
+      user.role === "hod" ||
+      user.role === "finance_team" ||
+      Boolean(isUserEnrolledInFinance) ||
+      canViewFinanceReport(user);
+
+    if (!isAuthorizedForFinance) {
+      return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
+    }
+  }
+
+  const isFinance = reportGroup === "finance";
+  const displayDepartment = department && department !== "All" ? department : isFinance ? "Finance" : "Operations";
+  
+  const reportTitle = `${displayDepartment} Consolidated Report - ${date}`;
+  const downloadFilename = `${displayDepartment.toLowerCase()}-consolidated-${date}.pdf`;
+
+  let stage = "loading report data";
+  try {
+    const data = await getConsolidatedReportDetail(date, user.name, user.role, user.teamName, reportGroup, department, workspaceId);
+    stage = "building report HTML";
+    const html = buildConsolidatedReportHtml({
+      date: data.date,
+      reportCount: data.reportCount,
+      teamCount: data.teamCount,
+      teamGroups: data.teamGroups,
+      title: reportTitle,
+      generatedBy: user.name,
+      subtitle: `${data.reportCount} reports · ${data.teamCount} teams`
+    });
+
+    stage = "rendering PDF";
+    const buffer = await renderPdfFromHtml(html);
+
+    return new Response(new Uint8Array(buffer), {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="${downloadFilename}"`
+      }
+    });
+  } catch (error) {
+    const serializedError = serializeError(error);
+    console.error("Failed to generate consolidated report PDF", {
+      date,
+      stage,
+      userId: user.id,
+      error: serializedError
+    });
+
+    return NextResponse.json(
+      { success: false, message: "Failed to generate consolidated report PDF" },
+      { status: 500 }
+    );
+  }
+}
