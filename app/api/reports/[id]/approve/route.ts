@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import DailyReport from "@/models/DailyReport";
-import Notification from "@/models/Notification";
 import { logAuditEntry } from "@/lib/audit";
 
-import WorkspaceMember from "@/models/WorkspaceMember";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -14,8 +11,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   const { id } = await Promise.resolve(params);
-  await connectToDatabase();
-  const report = await DailyReport.findById(id);
+    const report = await db.dailyReport.findUnique({ where: { id: String(id) } });
 
   if (!report) {
     return NextResponse.json({ success: false, message: "Report not found" }, { status: 404 });
@@ -25,7 +21,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ success: false, message: "You cannot review or verify your own report." }, { status: 400 });
   }
 
-  const authorMember = await WorkspaceMember.findOne({ userId: report.employeeId, status: "active", isActive: true }).lean() as any;
+  const authorMember = await db.workspaceMember.findFirst({ where: { userId: report.employeeId, status: "active", isActive: true } }) as any;
   const authorRole = authorMember?.role || "team_member";
 
   if (user.role === "team_lead" || user.role === "report_manager") {
@@ -61,25 +57,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ success: false, message: "Please provide a rejection reason or review notes." }, { status: 400 });
   }
 
-  const previousState = report.toObject();
+  const previousState = report;
 
-  if (action === "approve") {
-    report.status = "approved";
-    report.approvedBy = user.id;
-    report.approvedAt = new Date();
-    report.rejectionReason = "";
-  } else {
-    report.status = "rejected";
-    report.rejectionReason = rejectionReason || reviewNotes;
-  }
-
-  report.reviewNotes = reviewNotes;
-  report.reviewedBy = user.id;
-  report.reviewedByName = user.name;
-  report.reviewedAt = new Date();
-  report.verificationLevel = user.role;
-
-  await report.save();
+  const updatedReport = await db.dailyReport.update({
+    where: { id: report.id },
+    data: {
+      status: action === "approve" ? "approved" : "rejected",
+      approvedBy: action === "approve" ? user.id : undefined,
+      approvedAt: action === "approve" ? new Date() : undefined,
+      rejectionReason: action === "approve" ? "" : (rejectionReason || reviewNotes),
+      reviewNotes,
+      reviewedBy: user.id,
+      reviewedByName: user.name,
+      reviewedAt: new Date(),
+      verificationLevel: user.role
+    }
+  });
 
   // Create audit log
   await logAuditEntry({
@@ -88,21 +81,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     userName: user.name,
     reportId: id,
     oldValue: previousState,
-    newValue: report.toObject()
+    newValue: updatedReport
   });
 
-  // Create notification for employee
   if (String(report.employeeId) !== user.id) {
-    await Notification.create({
-      recipientId: report.employeeId,
-      type: action === "approve" ? "report_verified" : "report_rejected",
-      title: action === "approve" ? "Daily Report Verified" : "Daily Report Rejected",
-      message: action === "approve"
-        ? `Your report for ${new Date(report.reportDate).toLocaleDateString()} was verified by ${user.name} (${user.role.toUpperCase()}).${reviewNotes ? ` Notes: "${reviewNotes}"` : ""}`
-        : `Your report for ${new Date(report.reportDate).toLocaleDateString()} was rejected by ${user.name}. Reason: "${rejectionReason || reviewNotes}"`,
-      linkUrl: `/daily-report/my-reports`
+    await db.notification.create({
+      data: {
+        recipientId: report.employeeId,
+        type: action === "approve" ? "report_verified" : "report_rejected",
+        title: action === "approve" ? "Daily Report Verified" : "Daily Report Rejected",
+        message: action === "approve"
+          ? `Your report for ${new Date(report.reportDate).toLocaleDateString()} was verified by ${user.name} (${user.role.toUpperCase()}).${reviewNotes ? ` Notes: "${reviewNotes}"` : ""}`
+          : `Your report for ${new Date(report.reportDate).toLocaleDateString()} was rejected by ${user.name}. Reason: "${rejectionReason || reviewNotes}"`,
+        linkUrl: `/daily-report/my-reports`
+      }
     });
   }
 
-  return NextResponse.json({ success: true, data: report });
+  return NextResponse.json({ success: true, data: updatedReport });
 }

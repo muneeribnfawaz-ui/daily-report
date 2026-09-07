@@ -1,5 +1,4 @@
-import LeaveRequest from "@/models/LeaveRequest";
-import User from "@/models/User";
+import db from "@/lib/db";
 
 export type ActiveLeaveRequest = {
   employeeId: string;
@@ -36,27 +35,32 @@ export async function getActiveLeaveRequestsForRange({
   if (!employeeIds.length) return [] as ActiveLeaveRequest[];
 
   const { start, end } = toInclusiveDateRange(dateFrom, dateTo);
-  const leaveRequests = await LeaveRequest.find({
-    employeeId: { $in: employeeIds },
-    status: { $in: ["pending_tl", "forwarded_to_hod", "approved"] },
-    fromDate: { $lte: end },
-    toDate: { $gte: start }
-  })
-    .sort({ updatedAt: -1, createdAt: -1 })
-    .lean();
+  const leaveRequests = await db.leaveRequest.findMany({
+    where: {
+      employeeId: { in: employeeIds },
+      status: { in: ["pending_tl", "forwarded_to_hod", "approved"] },
+      fromDate: { lte: end },
+      toDate: { gte: start }
+    },
+    orderBy: [
+      { updatedAt: 'desc' },
+      { createdAt: 'desc' }
+    ]
+  });
 
   const reviewerIds = Array.from(
     new Set(
       leaveRequests
-        .flatMap((leaveRequest) => [leaveRequest.tlReviewedBy, leaveRequest.hodReviewedBy])
+        .flatMap((leaveRequest: any) => [leaveRequest.tlReviewedBy, leaveRequest.hodReviewedBy])
         .filter(Boolean)
         .map((value) => String(value))
     )
   );
-  const reviewers = reviewerIds.length ? await User.find({ _id: { $in: reviewerIds } }).lean() : [];
+  
+  const reviewers = reviewerIds.length ? await db.user.findMany({ where: { id: { in: reviewerIds } } }) : [];
   const reviewerMap = new Map<string, { name?: string | null; role?: string | null }>();
   for (const reviewer of reviewers) {
-    reviewerMap.set(String(reviewer._id), { name: reviewer.name, role: reviewer.role });
+    reviewerMap.set(String(reviewer.id), { name: reviewer.name, role: reviewer.role });
   }
 
   return leaveRequests.map((leaveRequest) => ({

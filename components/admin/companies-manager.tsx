@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import type { Route } from "next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Building2, Plus, Edit2, CheckCircle, XCircle, Search, Loader2 } from "lucide-react";
+import { Building2, Plus, Edit2, CheckCircle, XCircle, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useSelectedCompany } from "@/hooks/use-selected-company";
 import { useSession } from "@/hooks/use-session";
@@ -24,29 +25,21 @@ type CompanyItem = {
 
 export function CompaniesManager() {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const selectedCompanyId = useSelectedCompany();
   const { data: sessionUser } = useSession();
-  const isAdmin = sessionUser?.role === "admin";
+  const isCeo = sessionUser?.role === "ceo";
+  const createHref = isCeo ? "/ceo/companies/create" : "/admin/companies/create";
+  const getEditHref = (id: string) => isCeo ? `/ceo/companies/${id}/edit` : `/admin/companies/${id}/edit`;
+
   const [search, setSearch] = useState("");
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   useEffect(() => {
     if (searchParams.get("create") === "true" || searchParams.get("action") === "create") {
-      setIsCreateOpen(true);
+      router.push(createHref as Route);
     }
-  }, [searchParams]);
-
-  const [editingCompany, setEditingCompany] = useState<CompanyItem | null>(null);
-
-  // Form State
-  const [name, setName] = useState("");
-  const [code, setCode] = useState("");
-  const [type, setType] = useState<"ceo" | "company">("company");
-  const [description, setDescription] = useState("");
-  const [isActive, setIsActive] = useState(true);
-
-  const [formError, setFormError] = useState<string | null>(null);
+  }, [searchParams, router, createHref]);
 
   const activeCeoId = selectedCompanyId || "all";
 
@@ -62,30 +55,7 @@ export function CompaniesManager() {
     }
   });
 
-  const createMutation = useMutation({
-    mutationFn: async (payload: { name: string; code?: string; type: "ceo" | "company"; description?: string; isActive: boolean }) => {
-      const res = await fetch(`/api/admin/companies?ceoId=${activeCeoId}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-workspace-id": activeCeoId
-        },
-        body: JSON.stringify(payload)
-      });
-      const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.message || "Failed to create company");
-      return json.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-companies"] });
-      resetForm();
-    },
-    onError: (err: Error) => {
-      setFormError(err.message);
-    }
-  });
-
-  const updateMutation = useMutation({
+  const toggleStatusMutation = useMutation({
     mutationFn: async ({ id, payload }: { id: string; payload: Partial<CompanyItem> }) => {
       const res = await fetch(`/api/admin/companies/${id}`, {
         method: "PUT",
@@ -98,66 +68,11 @@ export function CompaniesManager() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-companies"] });
-      resetForm();
-    },
-    onError: (err: Error) => {
-      setFormError(err.message);
     }
   });
 
-  const resetForm = () => {
-    setName("");
-    setCode("");
-    setType("company");
-    setDescription("");
-    setIsActive(true);
-    setFormError(null);
-    setIsCreateOpen(false);
-    setEditingCompany(null);
-  };
-
-  const handleOpenCreate = () => {
-    resetForm();
-    setIsCreateOpen(true);
-  };
-
-  const handleOpenEdit = (comp: CompanyItem) => {
-    resetForm();
-    setEditingCompany(comp);
-    setName(comp.name);
-    setCode(comp.code || "");
-    setType(comp.type || "company");
-    setDescription(comp.description || "");
-    setIsActive(comp.isActive);
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
-
-    if (!name.trim()) {
-      setFormError("Company name is required");
-      return;
-    }
-
-    if (editingCompany) {
-      updateMutation.mutate({
-        id: editingCompany._id,
-        payload: { name: name.trim(), code: code.trim(), type, description: description.trim(), isActive }
-      });
-    } else {
-      createMutation.mutate({
-        name: name.trim(),
-        code: code.trim(),
-        type,
-        description: description.trim(),
-        isActive
-      });
-    }
-  };
-
   const handleToggleStatus = (comp: CompanyItem) => {
-    updateMutation.mutate({
+    toggleStatusMutation.mutate({
       id: comp._id,
       payload: { isActive: !comp.isActive }
     });
@@ -168,8 +83,6 @@ export function CompaniesManager() {
     (c.code && c.code.toLowerCase().includes(search.toLowerCase())) ||
     (c.description && c.description.toLowerCase().includes(search.toLowerCase()))
   );
-
-  const isSaving = createMutation.isPending || updateMutation.isPending;
 
   return (
     <div className="space-y-6">
@@ -184,126 +97,12 @@ export function CompaniesManager() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <Button onClick={handleOpenCreate} size="sm">
-          <Plus className="mr-2 h-4 w-4" /> Add Company
+        <Button asChild size="sm">
+          <Link href={createHref as Route}>
+            <Plus className="mr-2 h-4 w-4" /> Add Company
+          </Link>
         </Button>
       </div>
-
-      {/* Modal / Inline Form Card */}
-      {(isCreateOpen || editingCompany) && (
-        <div className="rounded-xl border border-cardBorder bg-card p-5 shadow-soft">
-          <div className="flex items-center justify-between border-b pb-3 mb-4">
-            <h3 className="text-lg font-semibold tracking-tight">
-              {editingCompany ? `Edit Company: ${editingCompany.name}` : "Create New Company"}
-            </h3>
-            <Button variant="ghost" size="sm" onClick={resetForm}>
-              Cancel
-            </Button>
-          </div>
-
-          {formError && (
-            <div className="mb-4 rounded-lg bg-rose-50 p-3 text-sm font-medium text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
-              {formError}
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label htmlFor="companyName" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Company Name <span className="text-rose-500">*</span>
-                </label>
-                <Input
-                  id="companyName"
-                  placeholder="e.g. MIF Technology Ltd"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                />
-              </div>
-              <div>
-                <label htmlFor="companyCode" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Company Code (Optional)
-                </label>
-                <Input
-                  id="companyCode"
-                  placeholder="e.g. MIFT"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                />
-              </div>
-            </div>
-
-            {isAdmin && (
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Workspace Type
-                </label>
-                <div className="flex items-center gap-6 pt-1">
-                  <label className="flex items-center gap-2 text-sm font-medium text-foreground cursor-pointer">
-                    <input
-                      type="radio"
-                      name="workspaceType"
-                      value="company"
-                      checked={type === "company"}
-                      onChange={() => setType("company")}
-                      className="h-4 w-4 text-primary focus:ring-primary"
-                    />
-                    <span>Company Workspace</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm font-medium text-foreground cursor-pointer">
-                    <input
-                      type="radio"
-                      name="workspaceType"
-                      value="ceo"
-                      checked={type === "ceo"}
-                      onChange={() => setType("ceo")}
-                      className="h-4 w-4 text-primary focus:ring-primary"
-                    />
-                    <span>CEO Workspace</span>
-                  </label>
-                </div>
-              </div>
-            )}
-
-            <div>
-              <label htmlFor="companyDesc" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Description (Optional)
-              </label>
-              <Textarea
-                id="companyDesc"
-                rows={2}
-                placeholder="Enter details about this organization or entity..."
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-            </div>
-
-            <div className="flex items-center gap-2 pt-1">
-              <input
-                type="checkbox"
-                id="isActiveToggle"
-                checked={isActive}
-                onChange={(e) => setIsActive(e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-              />
-              <label htmlFor="isActiveToggle" className="text-sm font-medium text-foreground cursor-pointer">
-                Active Organization Status
-              </label>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t">
-              <Button type="button" variant="outline" size="sm" onClick={resetForm} disabled={isSaving}>
-                Cancel
-              </Button>
-              <Button type="submit" size="sm" disabled={isSaving}>
-                {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                {editingCompany ? "Update Company" : "Create Company"}
-              </Button>
-            </div>
-          </form>
-        </div>
-      )}
 
       {/* Companies List */}
       <div className="overflow-hidden rounded-xl border border-cardBorder bg-card shadow-soft">
@@ -337,13 +136,9 @@ export function CompaniesManager() {
                         {comp.code}
                       </Badge>
                     )}
-                    {comp.type === "ceo" ? (
+                    {comp.type === "ceo" && (
                       <Badge variant="soft" className="bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300">
                         CEO Workspace
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-xs text-muted-foreground">
-                        Company Workspace
                       </Badge>
                     )}
                     {comp.isActive ? (
@@ -365,13 +160,16 @@ export function CompaniesManager() {
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
-                  <Button variant="outline" size="sm" onClick={() => handleOpenEdit(comp)}>
-                    <Edit2 className="mr-1.5 h-3.5 w-3.5" /> Edit
+                  <Button asChild variant="outline" size="sm">
+                    <Link href={getEditHref(comp._id) as Route}>
+                      <Edit2 className="mr-1.5 h-3.5 w-3.5" /> Edit
+                    </Link>
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => handleToggleStatus(comp)}
+                    disabled={toggleStatusMutation.isPending}
                     className={comp.isActive ? "text-rose-600 hover:text-rose-700 hover:bg-rose-50" : "text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"}
                   >
                     {comp.isActive ? "Deactivate" : "Activate"}

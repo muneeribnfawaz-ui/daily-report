@@ -5,9 +5,11 @@ type EditableReport = {
   reportDate?: unknown;
   isLocked?: unknown;
   editAccessGranted?: unknown;
+  employeeId?: unknown;
 };
 
 type EditActor = {
+  id?: string | null;
   role?: string | null;
 };
 
@@ -35,13 +37,13 @@ export function isReportDateToday(reportDate?: string | Date | null, now = new D
 
 export function canEditDailyReport(report: EditableReport, actor?: EditActor, now = new Date()) {
   if (report.isLocked) return false;
-  const reportDate = report.reportDate instanceof Date || typeof report.reportDate === "string" ? report.reportDate : null;
-  if (actor?.role === "team_member") {
-    return Boolean(report.editAccessGranted);
+  if (actor?.role === "ceo") return false;
+  if (actor?.role === "hod" && actor.id && report.employeeId && String(report.employeeId) !== String(actor.id)) {
+    return false;
   }
-
-  if (actor?.role === "team_lead") {
-    return isReportDateToday(reportDate, now) || Boolean(report.editAccessGranted);
+  const reportDate = report.reportDate instanceof Date || typeof report.reportDate === "string" ? report.reportDate : null;
+  if (actor?.role === "team_member" || actor?.role === "report_manager") {
+    return Boolean(report.editAccessGranted);
   }
 
   return isReportDateToday(reportDate, now) || Boolean(report.editAccessGranted);

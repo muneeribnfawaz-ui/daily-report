@@ -14,24 +14,25 @@ export default async function CeoUsersPage() {
   }
 
   return (
-    <AppShell title="User Management" role={user.role}>
+    <AppShell title="Employees" role={user.role}>
       <div className="space-y-6">
         <DashboardPageHeader
           eyebrow="Access Control"
-          title="Users"
-          description="View the current user directory and create staff profiles."
+          title="Employees"
+          description="View the current employee directory and create staff profiles."
           actions={
             <div className="flex flex-wrap gap-2">
               <Button asChild>
-                <Link href="/ceo/users/create">Add User</Link>
-              </Button>
-              <Button asChild variant="outline">
-                <Link href="/ceo/team-types">Team Types</Link>
+                <Link href="/ceo/users/create">Add Employee</Link>
               </Button>
             </div>
           }
         />
-        <AdminUserList />
+        <AdminUserList
+          editBaseHref="/ceo/users"
+          viewBaseHref="/ceo/users"
+          reportBaseHref="/ceo/reports"
+        />
       </div>
     </AppShell>
   );

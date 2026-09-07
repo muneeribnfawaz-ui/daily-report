@@ -7,7 +7,8 @@ import { getCurrentUser } from "@/lib/auth";
 
 export default async function TopLevelUsersPage() {
   const user = await getCurrentUser();
-  if (!user || (user.role !== "team_lead" && user.role !== "report_manager" && user.role !== "hod" && user.role !== "admin" && user.role !== "ceo")) {
+  if (!user || (user.role !== "team_lead" && user.role !== "hod" && user.role !== "admin" && user.role !== "ceo")) {
+    if (user?.role === "report_manager") redirect("/reports");
     redirect("/login");
   }
 

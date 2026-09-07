@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AUTH_ROLE_OPTIONS, ALL_SKILL_OPTIONS, DEPARTMENT_OPTIONS, LEAVE_DURATION_OPTIONS, LEAVE_HALF_OPTIONS, LEAVE_TYPE_OPTIONS, SOFTWARE_ROLE_OPTIONS } from "@/lib/constants";
+import { AUTH_ROLE_OPTIONS, ALL_SKILL_OPTIONS, DEPARTMENT_OPTIONS, LEAVE_DURATION_OPTIONS, LEAVE_HALF_OPTIONS, LEAVE_TYPE_OPTIONS, SOFTWARE_ROLE_OPTIONS, PAYMENT_MODES } from "@/lib/constants";
 import { getLeaveRequestDateWindow, parseDateInputValue } from "@/lib/date-utils";
 
 const strictPasswordSchema = z
@@ -14,7 +14,7 @@ const strictPasswordSchema = z
 // Using strictPasswordSchema here blocks the submit button client-side
 // when the user types a wrong password (e.g., missing special char), freezing the UI.
 export const loginSchema = z.object({
-  email: z.string().email("Enter a valid email address"),
+  email: z.string().min(1, "Email is required").email("Enter a valid email address"),
   password: z.string().min(1, "Password is required")
 });
 
@@ -33,6 +33,16 @@ export const adminCreateReportManagerSchema = z.object({
   teamName: z.string().min(1)
 });
 
+export const tenDigitPhoneSchema = z
+  .string()
+  .transform((val) => val.replace(/[\s-]/g, ""))
+  .refine((val) => /^\d{10}$/.test(val), {
+    message: "Phone number must be exactly 10 digits"
+  })
+  .refine((val) => !/^(?:0{10}|1{10}|2{10}|3{10}|4{10}|5{10}|6{10}|7{10}|8{10}|9{10}|1234567890)$/.test(val), {
+    message: "Sequential or repetitive dummy numbers are not allowed"
+  });
+
 export const adminCreateUserSchema = z.object({
   firstName: z
     .string()
@@ -45,15 +55,7 @@ export const adminCreateUserSchema = z.object({
     .refine((val) => !val || /^[a-zA-Z\s'-]+$/.test(val), {
       message: "Last name must contain only letters"
     }),
-  phone: z
-    .string()
-    .transform((val) => val.replace(/[\s-]/g, ""))
-    .refine((val) => /^(?:\+91|91|0)?[6-9]\d{9}$/.test(val), {
-      message: "Enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9"
-    })
-    .refine((val) => !/^(?:0{10}|1{10}|2{10}|3{10}|4{10}|5{10}|6{10}|7{10}|8{10}|9{10}|1234567890)$/.test(val.replace(/^(?:\+91|91|0)/, "")), {
-      message: "Sequential or repetitive dummy numbers are not allowed"
-    }),
+  phone: tenDigitPhoneSchema,
   empID: z.string().min(2, "Employee ID is required"),
   workspaceId: z.string().optional().default(""),
   role: z.enum(AUTH_ROLE_OPTIONS),
@@ -64,7 +66,7 @@ export const adminCreateUserSchema = z.object({
   email: z.string().email("Valid email address is required"),
   password: strictPasswordSchema
 }).superRefine((data, ctx) => {
-  if (data.role !== "report_manager" && data.role !== "ceo" && data.role !== "admin" && data.roleTypes.length === 0) {
+  if (data.role !== "report_manager" && data.role !== "ceo" && data.role !== "admin" && data.role !== "hod" && data.roleTypes.length === 0) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["roleTypes"],
@@ -80,11 +82,11 @@ export const adminCreateUserSchema = z.object({
     });
   }
 
-  if (data.role !== "ceo" && data.teamNames.length === 0) {
+  if ((data.role === "team_lead" || data.role === "team_member") && data.teamNames.length === 0) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["teamNames"],
-      message: "Select at least one team"
+      message: "Select at least one team type"
     });
   }
 
@@ -119,7 +121,13 @@ export const clientCreateUserSchema = adminCreateUserSchema.extend({
 
 export const adminUpdateUserSchema = z.object({
   firstName: z.string().min(2).optional(),
-  lastName: z.string().min(2).optional(),
+  lastName: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .refine((val) => !val || /^[a-zA-Z\s'-]+$/.test(val), {
+      message: "Last name must contain only letters"
+    }),
   phone: z.string().min(7).optional(),
   empID: z.string().min(2).optional(),
   workspaceId: z.string().optional(),
@@ -134,7 +142,7 @@ export const adminUpdateUserSchema = z.object({
     if (typeof value !== "string") return value;
     const trimmed = value.trim();
     return trimmed === "" ? undefined : trimmed;
-  }, z.string().min(8).optional()),
+  }, strictPasswordSchema.optional()),
   confirmPassword: z.preprocess((value) => {
     if (typeof value !== "string") return value;
     const trimmed = value.trim();
@@ -146,7 +154,7 @@ export const adminUpdateUserSchema = z.object({
   isAdminActive: z.boolean().optional(),
   isEmailActivated: z.boolean().optional()
 }).superRefine((data, ctx) => {
-  if (data.role && data.role !== "report_manager" && data.role !== "ceo" && data.role !== "admin" && data.roleTypes && data.roleTypes.length === 0) {
+  if (data.role && data.role !== "report_manager" && data.role !== "ceo" && data.role !== "admin" && data.role !== "hod" && data.roleTypes && data.roleTypes.length === 0) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["roleTypes"],
@@ -154,11 +162,11 @@ export const adminUpdateUserSchema = z.object({
     });
   }
 
-  if (data.role && data.role !== "ceo" && data.teamNames && data.teamNames.length === 0) {
+  if (data.role && (data.role === "team_lead" || data.role === "team_member") && data.teamNames && data.teamNames.length === 0) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["teamNames"],
-      message: "Select at least one team"
+      message: "Select at least one team type"
     });
   }
 
@@ -207,7 +215,13 @@ export const adminUpdateUserSchema = z.object({
 
 export const profileUpdateSchema = z.object({
   firstName: z.string().min(2, "First name is required"),
-  lastName: z.string().min(2, "Last name is required"),
+  lastName: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .refine((val) => !val || /^[a-zA-Z\s'-]+$/.test(val), {
+      message: "Last name must contain only letters"
+    }),
   dateOfBirth: z.preprocess((value) => {
     if (typeof value !== "string") return value;
     const trimmed = value.trim();
@@ -217,7 +231,7 @@ export const profileUpdateSchema = z.object({
     if (typeof value !== "string") return value;
     const trimmed = value.trim();
     return trimmed === "" ? undefined : trimmed;
-  }, z.string().min(7, "Second mobile number must be at least 7 digits").optional()),
+  }, tenDigitPhoneSchema.optional()),
   oldPassword: z.preprocess((value) => {
     if (typeof value !== "string") return value;
     const trimmed = value.trim();
@@ -325,6 +339,55 @@ export const dailyReportSchema = z.object({
     location: z.string().optional().default(""),
     unit: z.string().optional().default(""),
     plannedQuantity: z.string().optional().default("")
+  })).optional().default([]),
+  
+  // Marketing Report Fields
+  marketingSelfItems: z.array(z.object({
+    date: z.string().optional().default(""),
+    executiveName: z.string().min(1, "Executive Name is required"),
+    clientName: z.string().min(1, "Client Name is required"),
+    companyName: z.string().min(1, "Company Name is required"),
+    clientType: z.string().min(1, "Client Type is required"),
+    mobileNo: z.string().regex(/^\+?[0-9\s\-()]{7,25}$/, "Invalid phone number format"),
+    location: z.string().min(1, "Location is required"),
+    referredBy: z.string().min(1, "Referred By is required"),
+    discussionSummary: z.string().min(1, "Discussion Summary is required"),
+    interestLevel: z.string().min(1, "Interest Level is required"),
+    followUpDate: z.string().min(1, "Follow-up Date is required").refine((val) => {
+      const selected = new Date(val);
+      if (isNaN(selected.getTime())) return false;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return selected > today;
+    }, { message: "Follow-up date must be greater than today's date" }),
+    status: z.string().min(1, "Status is required"),
+    remarks: z.string().optional().default("")
+  })).optional().default([]),
+  
+  marketingClientItems: z.array(z.object({
+    date: z.string().optional().default(""),
+    executiveName: z.string().min(1, "Executive Name is required"),
+    clientName: z.string().min(1, "Client Name is required"),
+    companyName: z.string().min(1, "Company Name is required"),
+    clientType: z.string().min(1, "Client Type is required"),
+    contactPerson: z.string().min(1, "Contact Person is required"),
+    mobileNo: z.string().regex(/^\+?[0-9\s\-()]{7,25}$/, "Invalid phone number format"),
+    email: z.string().email("Invalid email format"),
+    projectType: z.string().min(1, "Project Type is required"),
+    requirementDiscussed: z.string().min(1, "Requirement Discussed is required"),
+    projectStage: z.string().min(1, "Project Stage is required"),
+    decisionMaker: z.string().min(1, "Decision Maker is required"),
+    interestLevel: z.string().min(1, "Interest Level is required"),
+    nextAction: z.string().min(1, "Next Action is required"),
+    followUpDate: z.string().min(1, "Follow-up Date is required").refine((val) => {
+      const selected = new Date(val);
+      if (isNaN(selected.getTime())) return false;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return selected > today;
+    }, { message: "Follow-up date must be greater than today's date" }),
+    status: z.string().min(1, "Status is required"),
+    remarks: z.string().optional().default("")
   })).optional().default([])
 });
 
@@ -438,7 +501,21 @@ const financeItemSchema = z.object({
   particulars: z.string().min(1, "Particulars is required"),
   description: z.string().optional().default(""),
   amountINR: numericField,
-  amountSAR: numericField
+  amountSAR: numericField,
+  priority: z.enum(["low", "medium", "high", "urgent"]).optional().default("medium"),
+  bankName: z.string().optional().default(""),
+  bankAccountId: z.string().optional().nullable(),
+  paymentMode: z.enum(PAYMENT_MODES).or(z.literal("")).optional().default(""),
+  revisedAmountINR: z.preprocess(
+    (v) => (v === "" || v === undefined || v === null ? null : Number(v)),
+    z.number().nullable().optional()
+  ),
+  revisedAmountSAR: z.preprocess(
+    (v) => (v === "" || v === undefined || v === null ? null : Number(v)),
+    z.number().nullable().optional()
+  ),
+  revisionReference: z.string().optional().default(""),
+  approval: z.enum(["pending", "approved", "rejected"]).optional().default("pending")
 });
 
 const bankBalanceSchema = z.object({
@@ -450,7 +527,7 @@ const bankBalanceSchema = z.object({
 });
 
 export const financeReportSchema = z.object({
-  workspaceId: z.string().optional(),
+  workspaceId: z.string().optional().nullable(),
   reportDate: z.string().min(1, "Report date is required"),
   expenses: z.array(financeItemSchema).default([]),
   receipts: z.array(financeItemSchema).default([]),
@@ -472,11 +549,34 @@ export const financeReportSchema = z.object({
   exchangeRate: numericField
 });
 
-export const workspaceSchema = z.object({
+export const baseWorkspaceSchema = z.object({
   name: z.string().min(2, "Workspace name must be at least 2 characters"),
   code: z.string().optional().default(""),
   type: z.enum(["ceo", "company"]).optional().default("company"),
+  ownerWorkspaceId: z.string().optional(),
   description: z.string().optional().default(""),
-  isActive: z.boolean().optional().default(true)
+  isActive: z.boolean().optional().default(true),
+  cin: z.string().optional().default(""),
+  registrationNumber: z.string().optional().default(""),
+  address: z.string().optional().default("")
 });
 
+export const workspaceSchema = baseWorkspaceSchema.superRefine((data, ctx) => {
+  if (data.type === "company" && data.ownerWorkspaceId !== undefined && (!data.ownerWorkspaceId || data.ownerWorkspaceId.trim() === "")) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["ownerWorkspaceId"],
+      message: "Owner workspace is mandatory for company workspaces"
+    });
+  }
+});
+
+export const workspaceUpdateSchema = baseWorkspaceSchema.partial().superRefine((data, ctx) => {
+  if (data.type === "company" && data.ownerWorkspaceId !== undefined && (!data.ownerWorkspaceId || data.ownerWorkspaceId.trim() === "")) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["ownerWorkspaceId"],
+      message: "Owner workspace is mandatory for company workspaces"
+    });
+  }
+});

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import DailyReport from "@/models/DailyReport";
 import { logAuditEntry } from "@/lib/audit";
 import { canEditDailyReport } from "@/lib/report-edit-access";
 
@@ -14,8 +13,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { id } = await params;
   const body = await request.json().catch(() => ({}));
 
-  await connectToDatabase();
-  const report = await DailyReport.findById(id);
+    const report = await db.dailyReport.findUnique({ where: { id: String(id) } });
   if (!report) {
     return NextResponse.json({ success: false, message: "Report not found" }, { status: 404 });
   }
@@ -32,10 +30,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ success: true, data: report, message: "Edit access is already available." });
   }
 
-  report.editAccessRequested = true;
-  report.editAccessRequestReason = typeof body.reason === "string" ? body.reason.trim() : "";
-  report.editAccessRequestedAt = new Date();
-  await report.save();
+  const updatedReport = await db.dailyReport.update({
+    where: { id: report.id },
+    data: {
+      editAccessRequested: true,
+      editAccessRequestReason: typeof body.reason === "string" ? body.reason.trim() : "",
+      editAccessRequestedAt: new Date()
+    }
+  });
 
   await logAuditEntry({
     action: "Report Edit Requested",
@@ -44,9 +46,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     reportId: id,
     newValue: {
       editAccessRequested: true,
-      editAccessRequestReason: report.editAccessRequestReason
+      editAccessRequestReason: updatedReport.editAccessRequestReason
     }
   });
 
-  return NextResponse.json({ success: true, data: report, message: "Edit request sent to your team lead." });
+  return NextResponse.json({ success: true, data: updatedReport, message: "Edit request sent to your team lead." });
 }

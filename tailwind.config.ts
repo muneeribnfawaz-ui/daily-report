@@ -11,6 +11,13 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        brand: {
+          deep: "#290004",
+          accent: "#D08E3E",
+          accentHover: "#EFAC4C",
+          bg: "#F7F4F2",
+          card: "#FFFFFF"
+        },
         border: "rgb(var(--border) / <alpha-value>)",
         input: "rgb(var(--input) / <alpha-value>)",
         ring: "rgb(var(--ring) / <alpha-value>)",

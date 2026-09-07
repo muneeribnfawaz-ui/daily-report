@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { canViewFinanceReport } from "@/lib/permissions";
-import FinanceReport from "@/models/FinanceReport";
 import { buildFinanceReportPdfBuffer } from "@/lib/finance-pdf";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -22,27 +21,35 @@ export async function GET(_request: Request, context: RouteContext) {
     }
 
     const { id } = await context.params;
-    await connectToDatabase();
-    const report = await FinanceReport.findById(id).lean() as LeanDoc | null;
+        const report = await db.financeReport.findUnique({
+          where: { id: String(id) },
+          include: { items: true, bankBalances: true }
+        }) as LeanDoc | null;
 
     if (!report) {
       return NextResponse.json({ success: false, message: "Finance report not found" }, { status: 404 });
     }
 
+    const items = (report.items as any[]) || [];
+    const expensesTotal = items.filter(i => i.type === "expense" || i.type === "payment").reduce((s, i) => s + (i.amountINR || 0), 0);
+    const receiptsTotal = items.filter(i => i.type === "receipt").reduce((s, i) => s + (i.amountINR || 0), 0);
+    const paymentsTotal = items.filter(i => i.type === "payment").reduce((s, i) => s + (i.amountINR || 0), 0);
+    const bankBalanceTotal = (report.bankBalances as any[] || []).reduce((s, b) => s + (b.closingBalance || 0), 0);
+
     const pdfBuffer = await buildFinanceReportPdfBuffer({
       reportDate: report.reportDate as Date,
       submittedByName: report.submittedByName as string,
-      expenses: (report.expenses as any[]) || [],
-      receipts: (report.receipts as any[]) || [],
-      payments: (report.payments as any[]) || [],
+      expenses: items.filter(i => i.type === "expense"),
+      receipts: items.filter(i => i.type === "receipt"),
+      payments: items.filter(i => i.type === "payment"),
       bankBalances: (report.bankBalances as any[]) || [],
-      cashBalance: (report.cashBalance as any) || { pettyCash: 0, total: 0 },
-      nextDayApprovals: (report.nextDayApprovals as any[]) || [],
-      summary: (report.summary as any) || {
-        totalExpenses: 0,
-        totalReceipts: 0,
-        totalPayments: 0,
-        bankBalance: 0,
+      cashBalance: { pettyCash: 0, total: 0 },
+      nextDayApprovals: items.filter(i => i.type === "next_day"),
+      summary: {
+        totalExpenses: expensesTotal,
+        totalReceipts: receiptsTotal,
+        totalPayments: paymentsTotal,
+        bankBalance: bankBalanceTotal,
         pettyCashBalance: 0,
         description: ""
       },

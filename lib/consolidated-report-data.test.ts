@@ -22,3 +22,4 @@ describe("Consolidated Report Data & Utilities", () => {
     });
   });
 });
+

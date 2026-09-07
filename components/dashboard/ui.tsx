@@ -15,8 +15,8 @@ export function DashboardPageHeader({
   return (
     <div className="flex flex-col gap-4 border-b pb-6 lg:flex-row lg:items-end lg:justify-between">
       <div className="space-y-2">
-        {eyebrow ? <div className="text-xs font-semibold uppercase tracking-[0.35em] text-muted-foreground">{eyebrow}</div> : null}
-        <h1 className="text-3xl font-semibold tracking-tight lg:text-4xl">{title}</h1>
+        {eyebrow ? <div className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">{eyebrow}</div> : null}
+        <h1 className="text-3xl font-semibold tracking-tight lg:text-4xl text-textPrimary">{title}</h1>
         <p className="max-w-2xl text-sm text-muted-foreground lg:text-base">{description}</p>
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}

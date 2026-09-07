@@ -88,7 +88,7 @@ const DailyReportSchema = new Schema(
   { timestamps: true }
 );
 
-DailyReportSchema.index({ workspaceId: 1, employeeId: 1, reportDate: 1 }, { unique: true });
+DailyReportSchema.index({ workspaceId: 1, employeeId: 1, teamName: 1, reportDate: 1 }, { unique: true });
 
 if (process.env.NODE_ENV !== "production" && models.DailyReport) {
   delete models.DailyReport;

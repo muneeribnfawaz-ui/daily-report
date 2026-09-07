@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import User from "@/models/User";
-import WorkspaceMember from "@/models/WorkspaceMember";
 import { adminCreateUserSchema } from "@/lib/validation";
 import { hashPassword } from "@/lib/auth";
 import { getActiveTeamTypeNames, getActiveTeamTypeShowNameMap } from "@/lib/team-types";
@@ -10,7 +8,6 @@ import { getUserTeamLabel, sortUsersForDirectory } from "@/lib/user-directory-so
 import { ApiResponse } from "@/lib/api-response";
 import { authorizeApi } from "@/lib/api-auth";
 
-import TeamType from "@/models/TeamType";
 
 function normalizeTeamNames(teamName?: string | null, teamNames?: string[] | null) {
   const values = [teamName, ...(teamNames ?? [])]
@@ -21,7 +18,7 @@ function normalizeTeamNames(teamName?: string | null, teamNames?: string[] | nul
 }
 
 export async function GET(request: Request) {
-  const auth = await authorizeApi(["admin", "ceo"]);
+  const auth = await authorizeApi(["admin", "ceo", "hod", "report_manager", "team_lead"]);
   if (!auth.authorized) return auth.response;
   const user = auth.user;
 
@@ -29,6 +26,7 @@ export async function GET(request: Request) {
   const search = url.searchParams.get("search")?.trim();
   const role = url.searchParams.get("role");
   const status = url.searchParams.get("status");
+  const department = url.searchParams.get("department");
   let workspaceId = url.searchParams.get("workspaceId") || request.headers.get("x-workspace-id");
   if (!workspaceId && user.role !== "admin" && role !== "ceo") {
     workspaceId = user.workspaceId;
@@ -37,25 +35,55 @@ export async function GET(request: Request) {
     return ApiResponse.validationError("workspaceId is required");
   }
 
-  await connectToDatabase();
-  const teamTypeShowNameMap = await getActiveTeamTypeShowNameMap();
+    const teamTypeShowNameMap = await getActiveTeamTypeShowNameMap();
 
   const filter: Record<string, any> = {};
   if (role) filter.role = role;
   if (status) filter.status = status;
+  if (department && department !== "all" && department !== "All") {
+    const matchingTeamTypes = await db.teamType.findMany({
+      where: {
+        isDeleted: false,
+        OR: [
+          { name: department },
+          { showName: department },
+          { department: department },
+          { name: { equals: department, mode: "insensitive" } },
+          { showName: { equals: department, mode: "insensitive" } }
+        ]
+      },
+      select: { name: true, showName: true }
+    });
+
+    const matchedNames = new Set<string>([department]);
+    for (const tt of matchingTeamTypes) {
+      if (tt.name) matchedNames.add(tt.name);
+      if (tt.showName) matchedNames.add(tt.showName);
+    }
+    const matchedNamesList = Array.from(matchedNames);
+
+    filter.OR = [
+      { teamName: { in: matchedNamesList } },
+      { teamNames: { hasSome: matchedNamesList } },
+      { departments: { some: { name: { equals: department, mode: "insensitive" } } } }
+    ];
+  }
 
   if (user.role !== "admin") {
-    const memberships = await WorkspaceMember.find({
-      userId: user.id,
-      status: "active",
-      isActive: true
-    }).select("workspaceId").lean() as any[];
+    const memberships = await db.workspaceMember.findMany({
+      where: {
+        userId: user.id,
+        status: "active",
+        isActive: true
+      },
+      select: { workspaceId: true }
+    });
     const allowedWorkspaceIds = memberships.map(m => String(m.workspaceId));
 
     if (workspaceId && workspaceId !== "all") {
       filter.workspaceId = allowedWorkspaceIds.includes(workspaceId) ? workspaceId : "non_existent_id";
     } else {
-      filter.workspaceId = { $in: allowedWorkspaceIds };
+      filter.workspaceId = { in: allowedWorkspaceIds };
     }
   } else {
     if (workspaceId && workspaceId !== "all") {
@@ -63,30 +91,39 @@ export async function GET(request: Request) {
     }
   }
 
-  // We find WorkspaceMembers and populate the User document
-  const members = await WorkspaceMember.find(filter).populate("userId").sort({ createdAt: -1 }).lean() as any[];
+  // We find WorkspaceMembers and include the User document
+  const members = await db.workspaceMember.findMany({
+    where: filter,
+    include: { user: true, departments: true },
+    orderBy: { createdAt: 'desc' }
+  });
 
   // Fetch global executive users (admin, ceo) who do not have WorkspaceMember records
   // Only display them for Admin users, since CEO only sees their own workspace items.
   const executiveFilter: Record<string, unknown> = {
-    role: { $in: ["admin", "ceo"] },
-    isDeleted: { $ne: true }
+    role: { in: ["admin", "ceo"] },
+    isDeleted: false
   };
   if (role && (role === "admin" || role === "ceo")) {
     executiveFilter.role = role;
   }
   const executiveUsers = (user.role === "admin" && (!workspaceId || workspaceId === "all") && (!role || role === "admin" || role === "ceo"))
-    ? await User.find(executiveFilter).lean() as any[]
+    ? await db.user.findMany({ where: executiveFilter })
     : [];
 
-  const memberUserIds = new Set(members.map(m => String(m.userId?._id || m.userId)));
+  const memberUserIds = new Set(members.map(m => String(m.userId)));
+
+  const validTeamNames = await getActiveTeamTypeNames();
 
   // Flatten the member and user data for the frontend
   const users = members.map(m => {
-    const u = m.userId || {};
+    const u = m.user || ({} as any);
+    const filteredTeamNames = (m.teamNames || []).filter((name) => validTeamNames.includes(name));
+    const primaryTeamName = validTeamNames.includes(m.teamName) ? m.teamName : (filteredTeamNames[0] || null);
+
     return {
-      _id: u._id,
-      memberId: m._id,
+      _id: u.id,
+      memberId: m.id,
       name: u.name,
       firstName: u.firstName,
       lastName: u.lastName,
@@ -96,8 +133,8 @@ export async function GET(request: Request) {
       empID: m.empID,
       role: m.role || u.role,
       roleTypes: m.roleTypes || [],
-      teamName: m.departments?.[0]?.name || null,
-      teamNames: m.departments?.map((d: any) => d.name) || [],
+      teamName: primaryTeamName,
+      teamNames: filteredTeamNames,
       departments: m.departments || [],
       managerName: m.managerName || "",
       status: m.status || "active",
@@ -106,10 +143,10 @@ export async function GET(request: Request) {
   });
 
   for (const execUser of executiveUsers) {
-    if (!memberUserIds.has(String(execUser._id))) {
+    if (!memberUserIds.has(String(execUser.id))) {
       users.push({
-        _id: execUser._id,
-        memberId: execUser._id,
+        _id: execUser.id,
+        memberId: execUser.id,
         name: execUser.name,
         firstName: execUser.firstName || "",
         lastName: execUser.lastName || "",
@@ -139,7 +176,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await authorizeApi(["admin", "ceo"]);
+  const auth = await authorizeApi(["admin", "ceo", "hod", "report_manager", "team_lead"]);
   if (!auth.authorized) return auth.response;
   const user = auth.user;
 
@@ -149,29 +186,33 @@ export async function POST(request: Request) {
     return ApiResponse.validationError("Invalid user payload", parsed.error.format());
   }
 
-  await connectToDatabase();
   const validTeamNames = await getActiveTeamTypeNames();
-  const existingUser = await User.findOne({ email: parsed.data.email.toLowerCase() }).lean();
+  const existingUser = await db.user.findFirst({ where: { email: parsed.data.email.toLowerCase() } });
   if (existingUser) {
     return ApiResponse.error("A user with this email already exists", 2002, 409);
   }
 
-  const existingPhone = await User.findOne({ phone: parsed.data.phone }).lean();
+  const existingPhone = await db.user.findFirst({ where: { phone: parsed.data.phone } });
   if (existingPhone) {
     return ApiResponse.error("A user with this phone number already exists", 2003, 409);
   }
 
   let allowedTeamNames = validTeamNames;
   if (parsed.data.role === "team_member" && parsed.data.managerName) {
-    const managerUser = await User.findOne({ name: parsed.data.managerName }).lean();
+    const managerUser = await db.user.findFirst({ where: { name: parsed.data.managerName } });
     if (managerUser) {
-      const managerMember = await WorkspaceMember.findOne({
-        userId: (managerUser as any)._id,
-        role: { $in: ["team_lead", "report_manager", "hod", "admin"] }
-      }).lean() as any;
+      const managerMember = await db.workspaceMember.findFirst({
+        where: {
+          userId: managerUser.id,
+          role: { in: ["team_lead", "report_manager", "hod", "admin"] }
+        },
+        include: { departments: true }
+      });
       if (managerMember?.departments?.length) {
         const deptNames = managerMember.departments.map((d: any) => d.name);
-        const deptTeams = await TeamType.find({ department: { $in: deptNames }, isActive: true, isDeleted: false }).lean();
+        const deptTeams = await db.teamType.findMany({ 
+          where: { department: { in: deptNames }, isActive: true, isDeleted: false }
+        });
         allowedTeamNames = deptTeams.map((t: any) => t.name);
       }
     }
@@ -194,22 +235,32 @@ export async function POST(request: Request) {
   const password = await hashPassword(parsed.data.password);
   const fullName = `${parsed.data.firstName} ${parsed.data.lastName}`.trim();
   
-  if (parsed.data.role === "admin" && user.role !== "admin") {
-    return ApiResponse.forbidden("Only Administrators can create an Admin account.");
-  }
+  const roleHierarchy: Record<string, number> = {
+    "admin": 100,
+    "ceo": 90,
+    "hod": 80,
+    "report_manager": 70,
+    "team_lead": 60,
+    "team_member": 50
+  };
 
-  if (parsed.data.role === "ceo" && user.role !== "admin") {
-    return ApiResponse.forbidden("Only Administrators can create a CEO account.");
+  const creatorRank = roleHierarchy[user.role] || 0;
+  const targetRank = roleHierarchy[parsed.data.role] || 0;
+
+  if (creatorRank <= targetRank && user.role !== "admin") {
+    return ApiResponse.forbidden(`Your role (${user.role}) is not authorized to create a ${parsed.data.role} account.`);
   }
 
   // Enforce workspace-level scoping for CEO users
   if (user.role === "ceo" && parsed.data.role !== "ceo" && parsed.data.workspaceId) {
-    const hasMembership = await WorkspaceMember.findOne({
-      userId: user.id,
-      workspaceId: parsed.data.workspaceId,
-      status: "active",
-      isActive: true
-    }).lean();
+    const hasMembership = await db.workspaceMember.findFirst({
+      where: {
+        userId: user.id,
+        workspaceId: parsed.data.workspaceId,
+        status: "active",
+        isActive: true
+      }
+    });
     if (!hasMembership) {
       return ApiResponse.forbidden("You do not have access to manage this workspace.");
     }
@@ -218,50 +269,60 @@ export async function POST(request: Request) {
   const isExecutive = parsed.data.role === "admin" || parsed.data.role === "ceo";
 
   // 1. Create global User
-  const newUser = await User.create({
-    name: fullName,
-    firstName: parsed.data.firstName,
-    lastName: parsed.data.lastName,
-    phone: parsed.data.phone,
-    email: parsed.data.email.toLowerCase(),
-    password,
-    role: parsed.data.role,
-    isDeleted: false,
-    isAdminActive: isExecutive,
-    isEmailActivated: false
+  const newUser = await db.user.create({
+    data: {
+      name: fullName,
+      firstName: parsed.data.firstName,
+      lastName: parsed.data.lastName,
+      phone: parsed.data.phone,
+      email: parsed.data.email.toLowerCase(),
+      password,
+      role: parsed.data.role,
+      isDeleted: false,
+      isAdminActive: isExecutive,
+      isEmailActivated: false
+    }
   });
 
   let targetWorkspaceId = parsed.data.workspaceId;
 
   // Auto-create workspace for CEO
   if (parsed.data.role === "ceo") {
-    const { default: Workspace } = await import("@/models/Workspace");
     const workspaceName = `${fullName} CEO Workspace`.trim();
-    const newWorkspace = await Workspace.create({
-      name: workspaceName,
-      type: "ceo",
-      isActive: true,
-      createdBy: user.id
+    const newWorkspace = await db.workspace.create({
+      data: {
+        name: workspaceName,
+        type: "ceo",
+        isActive: true,
+        createdBy: user.id
+      }
     });
-    targetWorkspaceId = newWorkspace._id.toString();
+    targetWorkspaceId = newWorkspace.id;
   }
 
   // 2. Create WorkspaceMember if workspaceId is provided or auto-created
   if (targetWorkspaceId && targetWorkspaceId.trim() !== "") {
-    const newMember = await WorkspaceMember.create({
-      userId: newUser._id,
-      workspaceId: targetWorkspaceId,
-      empID: parsed.data.empID || "EMP",
-      role: parsed.data.role,
-      roleTypes: parsed.data.roleTypes ?? [],
-      departments: parsed.data.departments ?? [],
-      managerName: parsed.data.managerName ?? "",
-      status: "active",
-      isActive: true
+    const newMember = await db.workspaceMember.create({
+      data: {
+        userId: newUser.id,
+        workspaceId: targetWorkspaceId,
+        empID: parsed.data.empID || "EMP",
+        role: parsed.data.role,
+        roleTypes: parsed.data.roleTypes ?? [],
+        teamNames: parsed.data.teamNames ?? [],
+        teamName: parsed.data.teamNames?.[0] || "",
+        departments: {
+          create: parsed.data.departments?.map((d: any) => ({ name: d.name, subTeams: d.subTeams })) || []
+        },
+        managerName: parsed.data.managerName ?? "",
+        status: "active",
+        isActive: true
+      },
+      include: { departments: true }
     });
 
-    return ApiResponse.created({ ...newUser.toObject(), ...newMember.toObject() }, "User created successfully");
+    return ApiResponse.created({ ...newUser, ...newMember }, "User created successfully");
   }
 
-  return ApiResponse.created(newUser.toObject(), "User created successfully");
+  return ApiResponse.created(newUser, "User created successfully");
 }

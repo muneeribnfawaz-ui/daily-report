@@ -8,6 +8,7 @@ export type FinanceItemPdf = {
   description?: string;
   amountINR: number;
   amountSAR: number;
+  priority?: string;
 };
 
 export type BankBalancePdf = {
@@ -108,13 +109,16 @@ function renderTableItems(
     }
 
     // Total row matching UI preview
-    const totalINR = items.reduce((sum, i) => sum + (i.amountINR || 0), 0);
-    const totalSAR = items.reduce((sum, i) => sum + (i.amountSAR || 0), 0);
+    const isReceiptsTable = title === "Receipts";
+    const filteredItems = isReceiptsTable ? items.filter(i => i.particulars !== "Bank to Cash") : items;
+    const totalINR = filteredItems.reduce((sum, i) => sum + (i.amountINR || 0), 0);
+    const totalSAR = filteredItems.reduce((sum, i) => sum + (i.amountSAR || 0), 0);
     ensureSpace(doc, rowHeight);
     const totalY = doc.y;
     doc.rect(tableX, totalY, contentWidth, rowHeight).fill(COLORS.soft).strokeColor(COLORS.line).lineWidth(0.5).stroke();
     doc.fillColor(COLORS.navy).font("Helvetica-Bold").fontSize(9);
-    doc.text("Total", tableX + 8, totalY + 5, { width: colParticular - 8 });
+    const totalLabel = isReceiptsTable && items.some(i => i.particulars === "Bank to Cash") ? "Total (Excl. Cash Transfer)" : "Total";
+    doc.text(totalLabel, tableX + 8, totalY + 5, { width: colParticular - 8 });
     doc.fillColor(COLORS.blue).text(formatINRPdf(totalINR), tableX + colParticular, totalY + 5, { width: colINR - 8, align: "right" });
     doc.fillColor(COLORS.muted).text(formatSAR(totalSAR), tableX + colParticular + colINR, totalY + 5, { width: colSAR - 8, align: "right" });
     doc.y = totalY + rowHeight;

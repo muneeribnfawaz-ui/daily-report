@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, Search, Edit2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,8 @@ import { Button } from "@/components/ui/button";
 import { TeamTypeForm } from "@/components/admin/team-type-form";
 
 type TeamTypeRecord = {
-  _id: string;
+  id: string;
+  _id?: string;
   name: string;
   showName?: string;
   department?: string;
@@ -27,11 +28,32 @@ export function TeamTypesManager() {
   const [search, setSearch] = useState("");
   const [activeModal, setActiveModal] = useState<"create" | "edit" | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [selectedDept, setSelectedDept] = useState<string>("all");
+
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("daily_report_selected_department");
+      if (stored) setSelectedDept(stored);
+    }
+    const handleDeptChange = (e: Event) => {
+      const customEvent = e as CustomEvent<string>;
+      if (customEvent.detail) {
+        setSelectedDept(customEvent.detail);
+      }
+    };
+    window.addEventListener("department-changed", handleDeptChange);
+    return () => window.removeEventListener("department-changed", handleDeptChange);
+  }, []);
 
   const { data, isLoading, isError } = useQuery<TeamTypeRecord[]>({
-    queryKey: ["admin-team-types"],
+    queryKey: ["admin-team-types", selectedDept],
     queryFn: async () => {
-      const response = await api.get("/api/admin/team-types");
+      const response = await api.get("/api/admin/team-types", {
+        params: { department: selectedDept, includeInactive: "true" }
+      });
       return (response.data?.data as TeamTypeRecord[]) ?? [];
     },
     refetchOnMount: "always",
@@ -60,6 +82,16 @@ export function TeamTypesManager() {
     queryClient.invalidateQueries({ queryKey: ["admin-team-types"] });
     queryClient.invalidateQueries({ queryKey: ["team-types"] });
   };
+
+  if (!isMounted) {
+    return (
+      <Card className="border-none shadow-none">
+        <CardContent className="space-y-4 p-0 px-4 pb-4 dark:px-0 dark:pb-0">
+          <div className="px-4 py-6 text-sm text-muted-foreground">Loading team types...</div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="border-none shadow-none">
@@ -107,7 +139,7 @@ export function TeamTypesManager() {
               <div className="px-4 py-6 text-sm text-muted-foreground">No team types found.</div>
             ) : (
               visibleTeamTypes.map((teamType) => (
-                <div key={teamType._id} className="grid grid-cols-12 items-center gap-3 px-4 py-4 text-sm">
+                <div key={teamType.id || teamType._id} className="grid grid-cols-12 items-center gap-3 px-4 py-4 text-sm">
                   <div className="col-span-3 font-medium">
                     <div>{teamType.showName || teamType.name}</div>
                   </div>
@@ -140,7 +172,7 @@ export function TeamTypesManager() {
                       variant="ghost"
                       size="sm"
                       onClick={() => {
-                        setEditingId(teamType._id);
+                        setEditingId(teamType.id || teamType._id || null);
                         setActiveModal("edit");
                       }}
                     >

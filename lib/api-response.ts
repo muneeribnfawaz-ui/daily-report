@@ -15,6 +15,7 @@ export interface ApiResponseOptions<T = any> {
   data?: T;
   pagination?: PaginationMeta;
   httpStatus?: number;
+  encryptedData?: string;
 }
 
 export function apiResponse<T = any>({
@@ -24,7 +25,8 @@ export function apiResponse<T = any>({
   message,
   data = null as any,
   pagination = null,
-  httpStatus = 200
+  httpStatus = 200,
+  encryptedData
 }: ApiResponseOptions<T>) {
   return NextResponse.json(
     {
@@ -33,19 +35,20 @@ export function apiResponse<T = any>({
       statusCode,
       message,
       data,
-      pagination
+      pagination,
+      ...(encryptedData ? { encryptedData } : {})
     },
     { status: httpStatus }
   );
 }
 
 export const ApiResponse = {
-  success<T>(data: T, message = "Operation completed successfully", statusCode = 1000, pagination: PaginationMeta = null, httpStatus = 200) {
-    return apiResponse<T>({ success: true, status: "SUCCESS", statusCode, message, data, pagination, httpStatus });
+  success<T>(data: T, message = "Operation completed successfully", statusCode = 1000, pagination: PaginationMeta = null, httpStatus = 200, encryptedData?: string) {
+    return apiResponse<T>({ success: true, status: "SUCCESS", statusCode, message, data, pagination, httpStatus, encryptedData });
   },
 
-  created<T>(data: T, message = "Resource created successfully", statusCode = 2001, httpStatus = 201) {
-    return apiResponse<T>({ success: true, status: "SUCCESS", statusCode, message, data, httpStatus });
+  created<T>(data: T, message = "Resource created successfully", statusCode = 2001, httpStatus = 201, encryptedData?: string) {
+    return apiResponse<T>({ success: true, status: "SUCCESS", statusCode, message, data, httpStatus, encryptedData });
   },
 
   loginSuccess<T>(data: T, message = "Login successful", statusCode = 1001, httpStatus = 200) {
@@ -68,7 +71,7 @@ export const ApiResponse = {
     return apiResponse({ success: false, status: "UNAUTHORIZED", statusCode, message, data: null, httpStatus });
   },
 
-  forbidden(message = "Forbidden access", statusCode = 4003, httpStatus = 403) {
+  forbidden(message = "Forbidden access", statusCode = 4033, httpStatus = 403) {
     return apiResponse({ success: false, status: "FORBIDDEN", statusCode, message, data: null, httpStatus });
   },
 

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import DailyReport from "@/models/DailyReport";
 import { buildReportPdfBuffer } from "@/lib/pdf";
 
 export async function GET(request: Request) {
@@ -13,25 +12,24 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const employeeId = url.searchParams.get("employeeId");
 
-  await connectToDatabase();
-  const reports = employeeId ? await DailyReport.find({ employeeId }).lean() : await DailyReport.find().lean();
+  const reports = employeeId ? await db.dailyReport.findMany({ where: { employeeId } }) : await db.dailyReport.findMany();
 
   const buffer = await buildReportPdfBuffer({
     title: "Daily Reports",
     generatedBy: user.name,
     summary: {
-      totalEmployees: new Set(reports.map((report) => String(report.employeeId))).size,
+      totalEmployees: new Set(reports.map((report: any) => String(report.employeeId))).size,
       totalReports: reports.length,
-      teamSummary: reports.reduce<Record<string, number>>((acc, report) => {
+      teamSummary: reports.reduce<Record<string, number>>((acc, report: any) => {
         acc[report.teamName] = (acc[report.teamName] ?? 0) + 1;
         return acc;
       }, {}),
-      statusSummary: reports.reduce<Record<string, number>>((acc, report) => {
+      statusSummary: reports.reduce<Record<string, number>>((acc, report: any) => {
         acc[report.status] = (acc[report.status] ?? 0) + 1;
         return acc;
       }, {})
     },
-    reports: reports.map((report) => ({
+    reports: reports.map((report: any) => ({
       name: report.name,
       teamName: report.teamName,
       reportType: report.reportType,

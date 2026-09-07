@@ -10,12 +10,15 @@ import { ReportField, ReportInput, ReportMultiSelectCards, ReportSelect } from "
 import { api } from "@/lib/api";
 import { DEPARTMENT_OPTIONS, MARKETING_SUB_TEAMS } from "@/lib/constants";
 
+import { useQuery } from "@tanstack/react-query";
+import type { SessionUser } from "@/lib/types";
+
 const teamTypeFormSchema = z.object({
-  showName: z.string().min(2, "Enter display name"),
-  department: z.string().optional(),
+  showName: z.string().min(2, "Team name is required"),
+  department: z.string().min(1, "Department is required"),
   subTeams: z.array(z.string()).default([]),
-  isActive: z.boolean(),
-  isDeleted: z.boolean()
+  isActive: z.boolean().default(true),
+  isDeleted: z.boolean().default(false)
 });
 
 type TeamTypeFormValues = z.infer<typeof teamTypeFormSchema>;
@@ -53,21 +56,56 @@ export function TeamTypeForm({
   const [loading, setLoading] = useState(mode === "edit");
   const [record, setRecord] = useState<TeamTypeRecord | null>(null);
 
+  const { data: currentUser } = useQuery({
+    queryKey: ["current-user"],
+    queryFn: async () => {
+      const response = await api.get("/api/auth/me");
+      return response.data?.data as SessionUser | null;
+    },
+    staleTime: 60_000
+  });
+
+  const availableDepartments = useMemo(() => {
+    if (currentUser?.role === "hod" && currentUser.departments && currentUser.departments.length > 0) {
+      return currentUser.departments.map((d) => d.name);
+    }
+    return DEPARTMENT_OPTIONS;
+  }, [currentUser]);
+
   const {
     register,
     control,
     handleSubmit,
     reset,
     setValue,
+    setError: setFieldError,
+    clearErrors,
     formState: { errors, isSubmitting }
   } = useForm<TeamTypeFormValues>({
-    resolver: zodResolver(teamTypeFormSchema),
     mode: "onSubmit",
     reValidateMode: "onSubmit",
     defaultValues: emptyValues
   });
 
   const selectedDepartment = useWatch({ control, name: "department" });
+
+  useEffect(() => {
+    if (mode === "create") {
+      let defaultDept = "";
+      if (typeof window !== "undefined") {
+        const stored = localStorage.getItem("daily_report_selected_department");
+        if (stored && stored !== "all" && availableDepartments.includes(stored as any)) {
+          defaultDept = stored;
+        }
+      }
+      if (!defaultDept && availableDepartments.length === 1) {
+        defaultDept = availableDepartments[0];
+      }
+      if (defaultDept) {
+        setValue("department", defaultDept);
+      }
+    }
+  }, [mode, availableDepartments, setValue]);
 
   useEffect(() => {
     if (mode !== "edit" || !teamTypeId) return;
@@ -85,8 +123,8 @@ export function TeamTypeForm({
           showName: teamType.showName || teamType.name,
           department: teamType.department ?? "",
           subTeams: teamType.subTeams ?? [],
-          isActive: teamType.isActive,
-          isDeleted: teamType.isDeleted
+          isActive: teamType.isActive ?? true,
+          isDeleted: teamType.isDeleted ?? false
         });
       })
       .catch((requestError) => {
@@ -108,11 +146,27 @@ export function TeamTypeForm({
   const onSubmit = async (values: TeamTypeFormValues) => {
     setMessage(null);
     setError(null);
+    clearErrors();
+
+    const parsed = teamTypeFormSchema.safeParse(values);
+    if (!parsed.success) {
+      parsed.error.issues.forEach((issue) => {
+        const fieldName = issue.path[0] as keyof TeamTypeFormValues;
+        if (fieldName) {
+          setFieldError(fieldName, {
+            type: "manual",
+            message: issue.message || "Invalid input"
+          });
+        }
+      });
+      return;
+    }
 
     const payload = {
-      ...values,
-      department: values.department ? values.department : undefined,
-      subTeams: values.department === "Marketing" ? values.subTeams : []
+      ...parsed.data,
+      isActive: mode === "create" ? true : parsed.data.isActive,
+      department: parsed.data.department ? parsed.data.department : undefined,
+      subTeams: parsed.data.department === "Marketing" ? parsed.data.subTeams : []
     };
 
     try {
@@ -127,8 +181,18 @@ export function TeamTypeForm({
 
       onSaved?.();
     } catch (requestError) {
-      const responseMessage = axios.isAxiosError(requestError) ? requestError.response?.data?.message : null;
-      setError(responseMessage ?? "Failed to save team type.");
+      if (axios.isAxiosError(requestError)) {
+        const data = requestError.response?.data;
+        let msg: string | null = null;
+        if (typeof data?.message === "string") {
+          msg = data.message;
+        } else if (Array.isArray(data) && data[0]?.message) {
+          msg = data[0].message;
+        }
+        setError(msg ?? "Failed to save team type.");
+      } else {
+        setError("Failed to save team type.");
+      }
     }
   };
 
@@ -138,14 +202,7 @@ export function TeamTypeForm({
 
   return (
     <form className="grid gap-4" onSubmit={handleSubmit(onSubmit)}>
-      <ReportField label="Show name" error={errors.showName?.message}>
-        <ReportInput placeholder="e.g. Finance Team, Frontend, QA" {...register("showName")} />
-      </ReportField>
-      <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground">
-        Internal name: {internalName}
-      </div>
-
-      <ReportField label="Assigned Department (Optional)" error={errors.department?.message}>
+      <ReportField label="Department" required error={errors.department?.message}>
         <ReportSelect
           {...register("department", {
             onChange: (e) => {
@@ -155,13 +212,17 @@ export function TeamTypeForm({
             }
           })}
         >
-          <option value="">No specific department</option>
-          {DEPARTMENT_OPTIONS.map((dept) => (
+          <option value="">Select Department</option>
+          {availableDepartments.map((dept) => (
             <option key={dept} value={dept}>
               {dept}
             </option>
           ))}
         </ReportSelect>
+      </ReportField>
+
+      <ReportField label="Team Name" required error={errors.showName?.message}>
+        <ReportInput placeholder="e.g. Finance Team, Frontend, QA" {...register("showName")} />
       </ReportField>
 
       {selectedDepartment === "Marketing" && (
@@ -184,24 +245,21 @@ export function TeamTypeForm({
         />
       )}
 
-      <ReportField label="Status" error={errors.isActive?.message}>
-        <ReportSelect {...register("isActive", { setValueAs: (value) => value === "true" })}>
-          <option value="true">Active</option>
-          <option value="false">Inactive</option>
-        </ReportSelect>
-      </ReportField>
-      <ReportField label="Deleted" error={errors.isDeleted?.message}>
-        <ReportSelect {...register("isDeleted", { setValueAs: (value) => value === "true" })}>
-          <option value="false">Not deleted</option>
-          <option value="true">Deleted</option>
-        </ReportSelect>
-      </ReportField>
-
-      {mode === "edit" && record ? (
-        <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground">
-          <div>Created by: {record.createdBy || "N/A"}</div>
-          <div>Created at: {record.createdAt ? new Date(record.createdAt).toLocaleString() : "N/A"}</div>
-        </div>
+      {mode === "edit" ? (
+        <>
+          <ReportField label="Status" error={errors.isActive?.message}>
+            <ReportSelect {...register("isActive", { setValueAs: (value) => String(value) === "true" })}>
+              <option value="true">Active</option>
+              <option value="false">Inactive</option>
+            </ReportSelect>
+          </ReportField>
+          <ReportField label="Deleted" error={errors.isDeleted?.message}>
+            <ReportSelect {...register("isDeleted", { setValueAs: (value) => String(value) === "true" })}>
+              <option value="false">Not deleted</option>
+              <option value="true">Deleted</option>
+            </ReportSelect>
+          </ReportField>
+        </>
       ) : null}
 
       {error ? <p className="text-sm text-danger">{error}</p> : null}

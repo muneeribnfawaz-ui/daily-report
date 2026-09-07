@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import { ApiResponse } from "@/lib/api-response";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { canViewFinanceReport, canEditFinanceReport, canApproveFinanceReport } from "@/lib/permissions";
-import FinanceReport from "@/models/FinanceReport";
 import { logAuditEntry } from "@/lib/audit";
+import { syncReportCashToPettyCash } from "@/lib/petty-cash-sync";
 import { financeReportSchema } from "@/lib/validation";
 import { getINRtoSARRate, convertINRtoSAR } from "@/lib/currency";
+import { encryptPayload, decryptPayload } from "@/lib/crypto";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -15,25 +17,28 @@ export async function GET(_request: Request, context: RouteContext) {
   try {
     const user = await getCurrentUser();
     if (!user) {
-      return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
+      return ApiResponse.unauthorized();
     }
 
     if (!canViewFinanceReport(user)) {
-      return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
+      return ApiResponse.forbidden();
     }
 
     const { id } = await context.params;
-    await connectToDatabase();
-    const report = await FinanceReport.findById(id).lean() as Record<string, unknown> | null;
+        const report = await db.financeReport.findUnique({
+          where: { id: String(id) },
+          include: { items: true, bankBalances: true, statusHistory: true }
+        }) as Record<string, unknown> | null;
 
     if (!report) {
-      return NextResponse.json({ success: false, message: "Finance report not found" }, { status: 404 });
+      return ApiResponse.notFound("Finance report not found");
     }
 
-    return NextResponse.json({ success: true, data: report });
+    const encryptedData = await encryptPayload(report);
+    return ApiResponse.success(report, "Operation completed successfully", 1000, null, 200, encryptedData);
   } catch (error) {
     console.error("Failed to fetch finance report", error);
-    return NextResponse.json({ success: false, message: "Failed to fetch finance report" }, { status: 500 });
+    return ApiResponse.serverError("Failed to fetch finance report");
   }
 }
 
@@ -41,48 +46,133 @@ export async function PUT(request: Request, context: RouteContext) {
   try {
     const user = await getCurrentUser();
     if (!user) {
-      return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
+      return ApiResponse.unauthorized();
     }
 
     if (!canEditFinanceReport(user)) {
-      return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
+      return ApiResponse.forbidden();
     }
 
     const { id } = await context.params;
-    await connectToDatabase();
-    const report = await FinanceReport.findById(id);
+        const report = await db.financeReport.findUnique({
+          where: { id: String(id) },
+          include: { items: true, bankBalances: true }
+        });
 
     if (!report) {
-      return NextResponse.json({ success: false, message: "Finance report not found" }, { status: 404 });
+      return ApiResponse.notFound("Finance report not found");
+    }
+
+    if (user.role !== "admin" && user.role !== "ceo" && String(report.submittedBy) !== user.id) {
+      return ApiResponse.forbidden("Forbidden: You can only update your own report.");
     }
 
     if (report.status !== "pending") {
-      return NextResponse.json(
-        { success: false, message: "Only pending finance reports can be edited" },
-        { status: 400 }
-      );
+      return ApiResponse.error("Only pending reports can be edited", 4000, 400);
     }
 
-    const body = await request.json();
+    const rawBody = await request.json();
+    let body = rawBody;
+    if (rawBody.encryptedData) {
+      try {
+        body = await decryptPayload(rawBody.encryptedData);
+      } catch (err) {
+        return ApiResponse.error("Failed to decrypt payload", 4000, 400);
+      }
+    }
+
     const parsed = financeReportSchema.safeParse(body);
     if (!parsed.success) {
       const firstError = parsed.error.issues[0]?.message || "Invalid payload";
-      return NextResponse.json({ success: false, message: firstError }, { status: 400 });
+      return ApiResponse.validationError(firstError);
     }
 
-    const previous = report.toObject();
+    const previous = report;
     const exchangeRate = await getINRtoSARRate();
 
-    report.expenses = parsed.data.expenses;
-    report.receipts = parsed.data.receipts;
-    report.payments = parsed.data.payments;
-    report.bankBalances = parsed.data.bankBalances;
-    report.cashBalance = parsed.data.cashBalance;
-    report.nextDayApprovals = parsed.data.nextDayApprovals;
-    report.summary = parsed.data.summary;
-    report.exchangeRate = exchangeRate;
+    // delete existing items and create new ones for simplicity since Prisma nested updates can be complex
+    await db.financeReportItem.deleteMany({ where: { financeReportId: report.id } });
+    await db.financeReportBankBalance.deleteMany({ where: { financeReportId: report.id } });
 
-    await report.save();
+    const updatedReport = await db.financeReport.update({
+      where: { id: report.id },
+      data: {
+        exchangeRate,
+        editAccessGranted: false,
+        bankBalances: {
+          create: parsed.data.bankBalances?.map((b: any) => ({
+            bankName: b.bankName,
+            openingBalance: b.openingBalance,
+            receipts: b.receipts,
+            payments: b.payments,
+            closingBalance: b.closingBalance
+          })) ?? []
+        },
+        items: {
+          create: [
+            ...(parsed.data.expenses?.map((i: any) => ({
+              particulars: i.particulars,
+              description: i.description,
+              amountINR: i.amountINR,
+              amountSAR: i.amountSAR,
+              priority: i.priority,
+              bankName: i.bankName,
+              paymentMode: i.paymentMode,
+              revisedAmountINR: i.revisedAmountINR,
+              revisedAmountSAR: i.revisedAmountSAR,
+              revisionReference: i.revisionReference,
+              approval: i.approval,
+              type: "expense"
+            })) ?? []),
+            ...(parsed.data.receipts?.map((i: any) => ({
+              particulars: i.particulars,
+              description: i.description,
+              amountINR: i.amountINR,
+              amountSAR: i.amountSAR,
+              priority: i.priority,
+              bankName: i.bankName,
+              paymentMode: i.paymentMode,
+              revisedAmountINR: i.revisedAmountINR,
+              revisedAmountSAR: i.revisedAmountSAR,
+              revisionReference: i.revisionReference,
+              approval: i.approval,
+              type: "receipt"
+            })) ?? []),
+            ...(parsed.data.payments?.map((i: any) => ({
+              particulars: i.particulars,
+              description: i.description,
+              amountINR: i.amountINR,
+              amountSAR: i.amountSAR,
+              priority: i.priority,
+              bankName: i.bankName,
+              paymentMode: i.paymentMode,
+              revisedAmountINR: i.revisedAmountINR,
+              revisedAmountSAR: i.revisedAmountSAR,
+              revisionReference: i.revisionReference,
+              approval: i.approval,
+              type: "payment"
+            })) ?? []),
+            ...(parsed.data.nextDayApprovals?.map((i: any) => ({
+              particulars: i.particulars,
+              description: i.description,
+              amountINR: i.amountINR,
+              amountSAR: i.amountSAR,
+              priority: i.priority,
+              bankName: i.bankName,
+              paymentMode: i.paymentMode,
+              revisedAmountINR: i.revisedAmountINR,
+              revisedAmountSAR: i.revisedAmountSAR,
+              revisionReference: i.revisionReference,
+              approval: i.approval,
+              type: "next_day"
+            })) ?? [])
+          ]
+        }
+      }
+    });
+
+    // Sync Cash items to Petty Cash ledger immediately
+    await syncReportCashToPettyCash(String(updatedReport.id));
 
     await logAuditEntry({
       action: "Finance Report Updated",
@@ -90,13 +180,14 @@ export async function PUT(request: Request, context: RouteContext) {
       userName: user.name,
       financeReportId: id,
       oldValue: previous,
-      newValue: report.toObject()
+      newValue: updatedReport
     });
 
-    return NextResponse.json({ success: true, data: report, message: "Finance report updated." });
+    const encryptedData = await encryptPayload(updatedReport);
+    return ApiResponse.success(updatedReport, "Finance report updated.", 1000, null, 200, encryptedData);
   } catch (error) {
     console.error("Failed to update finance report", error);
-    return NextResponse.json({ success: false, message: "Failed to update finance report" }, { status: 500 });
+    return ApiResponse.serverError("Failed to update finance report");
   }
 }
 
@@ -104,38 +195,41 @@ export async function DELETE(_request: Request, context: RouteContext) {
   try {
     const user = await getCurrentUser();
     if (!user) {
-      return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
+      return ApiResponse.unauthorized();
     }
 
     if (!canApproveFinanceReport(user)) {
-      return NextResponse.json({ success: false, message: "Only CEO can delete finance reports" }, { status: 403 });
+      return ApiResponse.forbidden("Only CEO can delete finance reports");
     }
 
     const { id } = await context.params;
-    await connectToDatabase();
-    const report = await FinanceReport.findById(id);
+        const report = await db.financeReport.findUnique({
+          where: { id: String(id) }
+        });
 
     if (!report) {
-      return NextResponse.json({ success: false, message: "Finance report not found" }, { status: 404 });
+      return ApiResponse.notFound("Finance report not found");
     }
 
     if (report.status !== "pending") {
-      return NextResponse.json({ success: false, message: "Only pending reports can be deleted" }, { status: 400 });
+      return ApiResponse.error("Only pending reports can be deleted", 4000, 400);
     }
 
-    await report.deleteOne();
+    await db.financeReport.delete({
+      where: { id: report.id }
+    });
 
     await logAuditEntry({
       action: "Finance Report Deleted",
       userId: user.id,
       userName: user.name,
       financeReportId: id,
-      oldValue: report.toObject()
+      oldValue: report
     });
 
-    return NextResponse.json({ success: true, message: "Finance report deleted." });
+    return ApiResponse.success(null, "Finance report deleted.");
   } catch (error) {
     console.error("Failed to delete finance report", error);
-    return NextResponse.json({ success: false, message: "Failed to delete finance report" }, { status: 500 });
+    return ApiResponse.serverError("Failed to delete finance report");
   }
 }

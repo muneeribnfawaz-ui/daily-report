@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import DailyReport from "@/models/DailyReport";
-import User from "@/models/User";
 import { logAuditEntry } from "@/lib/audit";
 import { getActiveLeaveRequestsForRange } from "@/lib/leave-requests";
 import { getVisibleReportEmployeeIds } from "@/lib/report-visibility";
 import { canEditDailyReport } from "@/lib/report-edit-access";
+import { mapReportRelations, reportRelationsInclude } from "@/lib/report-mapper";
 
 async function assertManager() {
   const user = await getCurrentUser();
@@ -21,8 +20,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (!user) return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
 
   const { id } = await Promise.resolve(params);
-  await connectToDatabase();
-  const report = (await DailyReport.findById(id).lean()) as
+    const report = (await db.dailyReport.findUnique({ 
+      where: { id: String(id) },
+      include: reportRelationsInclude
+    })) as
     | {
         employeeId: string;
         reportDate: string | Date;
@@ -40,18 +41,24 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     employeeIds: [String(report.employeeId)],
     dateFrom: new Date(report.reportDate).toISOString().slice(0, 10)
   });
-  const employee = await User.findById(report.employeeId).lean<{ role?: string | null } | null>();
+  const employee = await db.user.findUnique({ where: { id: String(report.employeeId) } });
   const activeLeave = leaveRequests[0] ?? null;
+  
+  const mappedReport = mapReportRelations({
+    ...report,
+    canEdit: canEditDailyReport(report, { role: employee?.role }),
+    employeeRole: employee?.role ?? null,
+    leaveStatus: activeLeave?.status ?? null,
+    leaveType: activeLeave?.leaveType,
+    leaveReason: activeLeave?.reason,
+    leaveReviewedByName: activeLeave?.reviewedByName
+  });
+
   return NextResponse.json({
     success: true,
     data: {
-      ...report,
-      canEdit: canEditDailyReport(report, { role: employee?.role }),
-      employeeRole: employee?.role ?? null,
-      leaveStatus: activeLeave?.status ?? null,
-      leaveType: activeLeave?.leaveType,
-      leaveReason: activeLeave?.reason,
-      leaveReviewedByName: activeLeave?.reviewedByName
+      ...mappedReport,
+      _id: report.id,
     }
   });
 }
@@ -62,8 +69,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { id } = await Promise.resolve(params);
   const body = await request.json();
-  await connectToDatabase();
-  const report = await DailyReport.findById(id);
+    const report = await db.dailyReport.findUnique({ where: { id: String(id) } });
   if (!report) return NextResponse.json({ success: false, message: "Report not found" }, { status: 404 });
 
   const visibleEmployeeIds = await getVisibleReportEmployeeIds(user);
@@ -71,9 +77,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ success: false, message: "Report not found" }, { status: 404 });
   }
 
-  const previous = report.toObject();
-  Object.assign(report, body);
-  await report.save();
+  const previous = report;
+  
+  // Exclude id and other fields that shouldn't be updated directly via object spread if necessary,
+  // but Prisma update handles this safely if we just pass body to data (excluding id)
+  const updateData = { ...body };
+  delete updateData.id;
+  
+  const updatedReport = await db.dailyReport.update({
+    where: { id: report.id },
+    data: updateData
+  });
 
   await logAuditEntry({
     action: body.status === "approved" ? "Report Approved" : "Report Rejected",
@@ -84,5 +98,5 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     newValue: body
   });
 
-  return NextResponse.json({ success: true, data: report });
+  return NextResponse.json({ success: true, data: { ...updatedReport, _id: updatedReport.id } });
 }

@@ -12,6 +12,7 @@ export interface SessionUser {
   teamNames?: string[] | null;
   departments?: Array<{ name: string; subTeams: string[] }>;
   status?: string | null;
+  avatarUrl?: string | null;
 }
 
 export interface ApiSuccess<T> {

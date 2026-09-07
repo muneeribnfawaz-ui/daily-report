@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
+import { format } from "date-fns";
 import type { Route } from "next";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -9,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { DEPARTMENT_OPTIONS } from "@/lib/constants";
 
 type ConsolidatedReportSummaryItem = {
@@ -17,10 +19,17 @@ type ConsolidatedReportSummaryItem = {
   teamNames: string[];
 };
 
-function formatDateOnly(value: string | Date) {
+function formatPeriodDate(value: string | Date, period: "daily" | "weekly" | "monthly") {
   const normalizedValue =
     typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value;
   const date = new Date(normalizedValue);
+  
+  if (period === "monthly") {
+    return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  } else if (period === "weekly") {
+    return `Week of ${date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+  }
+
   const day = String(date.getDate()).padStart(2, "0");
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const year = date.getFullYear();
@@ -32,13 +41,17 @@ export function ConsolidatedReportBrowser({
   detailBaseHref,
   userDepartment,
   enrolledDepartments = [],
-  userRole
+  enrolledTeams = [],
+  userRole,
+  mine
 }: {
   endpoint: string;
   detailBaseHref: string;
   userDepartment?: string;
   enrolledDepartments?: string[];
+  enrolledTeams?: string[];
   userRole?: string;
+  mine?: boolean;
 }) {
   const isUnrestrictedRole = userRole === "admin" || userRole === "ceo";
 
@@ -60,7 +73,13 @@ export function ConsolidatedReportBrowser({
   }, [userDepartment, availableDepartmentOptions, isUnrestrictedRole]);
 
   const [department, setDepartment] = useState<string>(initialDepartment);
+  const [team, setTeam] = useState<string>("All");
+  const [period, setPeriod] = useState<"daily" | "weekly" | "monthly">("daily");
   const [selectedCompanyId, setSelectedCompanyId] = useState("");
+
+  const [selectedDate, setSelectedDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
+  const [selectedWeek, setSelectedWeek] = useState(() => format(new Date(), "yyyy-'W'ww"));
+  const [selectedMonth, setSelectedMonth] = useState(() => format(new Date(), "yyyy-MM"));
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -76,12 +95,15 @@ export function ConsolidatedReportBrowser({
   }, []);
 
   const summaryQuery = useQuery({
-    queryKey: [endpoint, "summary", department, selectedCompanyId],
+    queryKey: [endpoint, "summary", department, team, selectedCompanyId, period],
     queryFn: async () => {
       const response = await api.get(endpoint, {
         params: {
+          period,
           ...(department !== "All" ? { department } : {}),
-          ...(selectedCompanyId ? { workspaceId: selectedCompanyId } : {})
+          ...(team !== "All" ? { team } : {}),
+          ...(selectedCompanyId ? { workspaceId: selectedCompanyId } : {}),
+          ...(mine ? { mine: "true" } : {})
         }
       });
       return response.data?.data as ConsolidatedReportSummaryItem[];
@@ -104,28 +126,98 @@ export function ConsolidatedReportBrowser({
                 </Badge>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              <label htmlFor="department-filter" className="text-sm text-muted-foreground whitespace-nowrap">
-                Department:
-              </label>
-              <Select
-                id="department-filter"
-                value={department}
-                onChange={(e) => setDepartment(e.target.value)}
-                className="w-full sm:w-[200px]"
-                disabled={!isUnrestrictedRole && availableDepartmentOptions.length === 1}
-              >
-                {(isUnrestrictedRole || availableDepartmentOptions.length > 1) && (
-                  <option value="All">
-                    {isUnrestrictedRole ? "All Departments" : "All Enrolled Depts"}
-                  </option>
-                )}
-                {availableDepartmentOptions.map((dept) => (
-                  <option key={dept} value={dept}>
-                    {dept}
-                  </option>
-                ))}
-              </Select>
+            <div className="flex flex-wrap items-center gap-4 mt-2 sm:mt-0">
+              <div className="flex items-center gap-2">
+                <label htmlFor="period-filter" className="text-sm text-muted-foreground whitespace-nowrap">
+                  Period:
+                </label>
+                <Select
+                  id="period-filter"
+                  value={period}
+                  onChange={(e) => setPeriod(e.target.value as "daily" | "weekly" | "monthly")}
+                  className="w-[120px] sm:w-[150px]"
+                >
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </Select>
+              </div>
+
+              {period === "daily" && (
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="date"
+                    value={selectedDate}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSelectedDate(e.target.value)}
+                    className="w-[140px]"
+                  />
+                </div>
+              )}
+              {period === "weekly" && (
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="week"
+                    value={selectedWeek}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSelectedWeek(e.target.value)}
+                    className="w-[160px]"
+                  />
+                </div>
+              )}
+              {period === "monthly" && (
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="month"
+                    value={selectedMonth}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSelectedMonth(e.target.value)}
+                    className="w-[150px]"
+                  />
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <label htmlFor="department-filter" className="text-sm text-muted-foreground whitespace-nowrap">
+                  Department:
+                </label>
+                <Select
+                  id="department-filter"
+                  value={department}
+                  onChange={(e) => setDepartment(e.target.value)}
+                  className="w-[140px] sm:w-[200px]"
+                  disabled={!isUnrestrictedRole && availableDepartmentOptions.length === 1}
+                >
+                  {(isUnrestrictedRole || availableDepartmentOptions.length > 1) && (
+                    <option value="All">
+                      {isUnrestrictedRole ? "All Departments" : "All Enrolled Depts"}
+                    </option>
+                  )}
+                  {availableDepartmentOptions.map((dept) => (
+                    <option key={dept} value={dept}>
+                      {dept}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+
+              {(!isUnrestrictedRole && enrolledTeams && enrolledTeams.length > 1) && (
+                <div className="flex items-center gap-2">
+                  <label htmlFor="team-filter" className="text-sm text-muted-foreground whitespace-nowrap">
+                    Team:
+                  </label>
+                  <Select
+                    id="team-filter"
+                    value={team}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTeam(e.target.value)}
+                    className="w-[140px] sm:w-[200px]"
+                  >
+                    <option value="All">All My Teams</option>
+                    {enrolledTeams.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              )}
             </div>
           </div>
 
@@ -147,19 +239,11 @@ export function ConsolidatedReportBrowser({
                   <div key={report.date} className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-4 text-sm">
                     <div className="space-y-1">
                       <div className="inline-flex w-fit rounded-full bg-muted px-3 py-1 text-sm font-semibold text-textPrimary">
-                        {formatDateOnly(report.date)}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Badge variant="outline" className="rounded-full">
-                          {report.reportCount} report{report.reportCount === 1 ? "" : "s"}
-                        </Badge>
-                        <Badge variant="outline" className="rounded-full">
-                          {report.teamNames.length} team{report.teamNames.length === 1 ? "" : "s"}
-                        </Badge>
+                        {formatPeriodDate(report.date, period)}
                       </div>
                     </div>
-                    <Button asChild size="sm" className="h-8">
-                      <Link href={`${detailBaseHref}/${report.date}${department !== "All" ? `?department=${department}` : ""}` as Route}>View Preview</Link>
+                    <Button asChild size="sm" variant="secondary">
+                      <Link href={`${detailBaseHref}/${report.date}?period=${period}${department !== "All" ? `&department=${department}` : ""}${team !== "All" ? `&team=${team}` : ""}${mine ? "&mine=true" : ""}` as Route}>View</Link>
                     </Button>
                   </div>
                 ))

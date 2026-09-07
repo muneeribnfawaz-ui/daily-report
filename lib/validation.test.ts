@@ -5,7 +5,9 @@ import {
   adminCreateUserSchema,
   adminUpdateUserSchema,
   leaveRequestSchema,
-  financeReportSchema
+  financeReportSchema,
+  workspaceSchema,
+  workspaceUpdateSchema
 } from "./validation";
 
 describe("Validation Schemas & Bug Finding", () => {
@@ -93,6 +95,71 @@ describe("Validation Schemas & Bug Finding", () => {
       // Valid departments should succeed
       const validDeptRes = adminCreateUserSchema.safeParse({ ...baseEmployee, departments: [{ name: "Software", subTeams: [] }] });
       expect(validDeptRes.success).toBe(true);
+    });
+
+    it("adminUpdateUserSchema rejects weak passwords when resetting password", () => {
+      const weakReset = adminUpdateUserSchema.safeParse({
+        resetPassword: true,
+        newPassword: "weakpassword",
+        confirmPassword: "weakpassword"
+      });
+      expect(weakReset.success).toBe(false);
+
+      const strongReset = adminUpdateUserSchema.safeParse({
+        resetPassword: true,
+        newPassword: "StrongPassword123!",
+        confirmPassword: "StrongPassword123!"
+      });
+      expect(strongReset.success).toBe(true);
+    });
+
+    it("requires team type selection for Team Lead and Team Member creation", () => {
+      const baseEmployee = {
+        firstName: "Jane",
+        lastName: "Doe",
+        phone: "9876543210",
+        empID: "EMP01",
+        roleTypes: ["Web Developer"],
+        departments: [{ name: "Software", subTeams: [] }],
+        managerName: "John Doe",
+        email: "jane@example.com",
+        password: "StrongPassword123!",
+        workspaceId: "6a857bb9315b49aa4c6906cd"
+      };
+
+      // Empty teamNames for team_member should fail
+      const memberRes = adminCreateUserSchema.safeParse({ ...baseEmployee, role: "team_member", teamNames: [] });
+      expect(memberRes.success).toBe(false);
+      if (!memberRes.success) {
+        expect(memberRes.error.issues.some(i => i.message.includes("Select at least one team type"))).toBe(true);
+      }
+
+      // Empty teamNames for team_lead should fail
+      const leadRes = adminCreateUserSchema.safeParse({ ...baseEmployee, role: "team_lead", teamNames: [] });
+      expect(leadRes.success).toBe(false);
+      if (!leadRes.success) {
+        expect(leadRes.error.issues.some(i => i.message.includes("Select at least one team type"))).toBe(true);
+      }
+    });
+
+    it("allows HOD creation without team names or skills with CEO manager", () => {
+      const hodEmployee = {
+        firstName: "Alice",
+        lastName: "Smith",
+        phone: "9876543210",
+        empID: "HOD01",
+        role: "hod",
+        roleTypes: [],
+        teamNames: [],
+        departments: [{ name: "Software", subTeams: [] }],
+        managerName: "Muneer CEO",
+        email: "alice.hod@example.com",
+        password: "StrongPassword123!",
+        workspaceId: "6a857bb9315b49aa4c6906cd"
+      };
+
+      const res = adminCreateUserSchema.safeParse(hodEmployee);
+      expect(res.success).toBe(true);
     });
 
     it("detects password mismatch during user update reset", () => {
@@ -217,6 +284,24 @@ describe("Validation Schemas & Bug Finding", () => {
       if (!res.success) {
         expect(res.error.issues.some(i => i.message.includes("Value must be 0 or greater"))).toBe(true);
       }
+    });
+  });
+
+  describe("Workspace Schemas", () => {
+    it("workspaceSchema allows missing ownerWorkspaceId but rejects empty string", () => {
+      const res1 = workspaceSchema.safeParse({ name: "Test", type: "company" });
+      expect(res1.success).toBe(true);
+
+      const res2 = workspaceSchema.safeParse({ name: "Test", type: "company", ownerWorkspaceId: "   " });
+      expect(res2.success).toBe(false);
+    });
+
+    it("workspaceUpdateSchema rejects empty ownerWorkspaceId if provided for company", () => {
+      const res1 = workspaceUpdateSchema.safeParse({ type: "company", name: "Test" });
+      expect(res1.success).toBe(true);
+
+      const res2 = workspaceUpdateSchema.safeParse({ type: "company", ownerWorkspaceId: "" });
+      expect(res2.success).toBe(false);
     });
   });
 });

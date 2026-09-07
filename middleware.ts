@@ -56,14 +56,19 @@ export async function middleware(request: NextRequest) {
     return withNoStoreHeaders(NextResponse.redirect(new URL("/dashboard", request.url)));
   }
 
+  if (role === "team_member" && pathname.startsWith("/daily-report")) {
+    const nextPath = pathname.replace("/daily-report", "/tm/daily-report");
+    return withNoStoreHeaders(NextResponse.redirect(new URL(nextPath, request.url)));
+  }
+
   if ((pathname.startsWith("/report-manager") || pathname.startsWith("/reports") || pathname.startsWith("/users")) && role === "team_member") {
-    return withNoStoreHeaders(NextResponse.redirect(new URL("/daily-report/my-reports", request.url)));
+    return withNoStoreHeaders(NextResponse.redirect(new URL("/tm/dashboard", request.url)));
   }
 
   // Finance route authorization is handled securely in the page/layout components
   // using canViewFinanceReport, which checks the database for department assignment.
 
-  if (pathname.startsWith("/dashboard") && role !== "team_member" && role !== "admin" && role !== "ceo" && role !== "team_lead" && role !== "report_manager" && role !== "finance_team" && role !== "hod") {
+  if (pathname.startsWith("/dashboard") && role !== "team_member" && role !== "admin" && role !== "ceo" && role !== "team_lead" && role !== "report_manager" && (role as string) !== "finance_team" && role !== "hod") {
     return withNoStoreHeaders(NextResponse.redirect(new URL("/login", request.url)));
   }
 

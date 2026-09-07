@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { ReportSheetPreview, type ReportSheetEntry, type ReportSheetTeamGroup } from "@/components/reports/report-sheet-preview";
+import { isInMarketing, isInConstruction } from "@/lib/permissions";
 
 type ReportPreviewItem = ReportSheetEntry & {
   status?: string;
@@ -47,6 +48,25 @@ export function MyReportPreview({ reportId }: { reportId: string }) {
   });
 
   const report = reportQuery.data;
+  const { data: sessionUser } = useQuery<any>({
+    queryKey: ["session-user"],
+    queryFn: async () => {
+      const response = await api.get("/api/auth/me");
+      return response.data?.data;
+    }
+  });
+  const isTm = sessionUser?.role === "team_member";
+  const isMarketing = isInMarketing(sessionUser);
+  const isConstruction = isInConstruction(sessionUser);
+
+  const myReportsHref = isTm ? "/tm/my-reports" : "/daily-report/my-reports";
+  let editReportPrefix = isTm ? "/tm/daily-report" : "/daily-report";
+  
+  if (isMarketing) {
+    editReportPrefix = "/marketing";
+  } else if (isConstruction) {
+    editReportPrefix = "/construction";
+  }
 
   if (reportQuery.isLoading) {
     return <div className="text-sm text-muted-foreground">Loading report preview...</div>;
@@ -60,11 +80,11 @@ export function MyReportPreview({ reportId }: { reportId: string }) {
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
         <Button asChild variant="outline">
-          <Link href="/daily-report/my-reports">Back</Link>
+          <Link href={myReportsHref as any}>Back</Link>
         </Button>
         {report.canEdit ? (
           <Button asChild>
-            <Link href={`/daily-report/${report._id}`}>Edit Report</Link>
+            <Link href={`${editReportPrefix}/${report._id}` as any}>Edit Report</Link>
           </Button>
         ) : null}
       </div>

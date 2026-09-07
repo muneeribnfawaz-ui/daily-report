@@ -1,15 +1,17 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { ReportSheetPreview, type ReportSheetEntry, type ReportSheetTeamGroup } from "@/components/reports/report-sheet-preview";
 import { CeoApprovalSection } from "@/components/reports/ceo-approval-section";
 import { useSession } from "@/hooks/use-session";
 
 type ManagedReport = ReportSheetEntry & {
   editAccessRequested?: boolean;
+  editAccessRequestReason?: string;
   editAccessGranted?: boolean;
   isLocked?: boolean;
 };
@@ -39,6 +41,8 @@ function groupReportsByTeam(reports: ReportSheetEntry[]): ReportSheetTeamGroup[]
 
 export function ReportDetailExplorer({ reportId }: { reportId: string }) {
   const { data: sessionUser } = useSession();
+  const [isUpdatingEdit, setIsUpdatingEdit] = useState(false);
+
   const reportQuery = useQuery({
     queryKey: ["report-detail", reportId],
     queryFn: async () => {
@@ -46,6 +50,16 @@ export function ReportDetailExplorer({ reportId }: { reportId: string }) {
       return response.data?.data as ManagedReport;
     }
   });
+
+  const handleEditApproval = async (approve: boolean) => {
+    setIsUpdatingEdit(true);
+    try {
+      await api.post(`/api/reports/${reportId}/approve-edit`, { approve });
+      await reportQuery.refetch();
+    } finally {
+      setIsUpdatingEdit(false);
+    }
+  };
 
   const report = reportQuery.data;
   const dateLabel = report ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium" }).format(new Date(report.reportDate)) : "";
@@ -86,12 +100,32 @@ export function ReportDetailExplorer({ reportId }: { reportId: string }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-2 rounded-2xl border bg-background/70 p-4">
-        {report.editAccessRequested ? <Badge variant="outline">Edit requested</Badge> : null}
-        {report.editAccessGranted ? <Badge variant="soft">Edit enabled</Badge> : null}
-        {!report.editAccessRequested && !report.editAccessGranted ? (
-          <div className="text-sm text-muted-foreground">No edit request for this report.</div>
-        ) : null}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-300/60 bg-amber-500/10 p-4 shadow-sm">
+        <div className="flex flex-col gap-1 text-sm">
+          <div className="flex items-center gap-2">
+            {report.editAccessRequested ? <Badge variant="outline" className="border-amber-400 text-amber-800 dark:text-amber-300 font-bold">Edit Requested</Badge> : null}
+            {report.editAccessGranted ? <Badge variant="soft" className="bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 font-semibold">Edit Enabled</Badge> : null}
+            {!report.editAccessRequested && !report.editAccessGranted ? (
+              <div className="text-sm text-muted-foreground">No edit request for this report.</div>
+            ) : null}
+          </div>
+          {report.editAccessRequested && report.editAccessRequestReason ? (
+            <div className="mt-1 text-xs bg-card/90 border border-amber-300/40 rounded-lg p-2.5 text-textPrimary">
+              <span className="font-semibold text-amber-800 dark:text-amber-300">Reason for Request: </span>
+              <span className="italic">"{report.editAccessRequestReason}"</span>
+            </div>
+          ) : null}
+        </div>
+        {report.editAccessRequested && sessionUser?.role && ["admin", "ceo", "hod", "team_lead"].includes(sessionUser.role) && (
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" className="border-danger/30 text-danger hover:bg-danger/10" onClick={() => handleEditApproval(false)} disabled={isUpdatingEdit}>
+              Reject Edit
+            </Button>
+            <Button size="sm" className="bg-primary hover:bg-primaryDark text-primary-foreground font-bold" onClick={() => handleEditApproval(true)} disabled={isUpdatingEdit}>
+              Approve Edit
+            </Button>
+          </div>
+        )}
       </div>
       <ReportSheetPreview title="Daily Team Progress Report" dateLabel={dateLabel} teamGroups={singlePreviewGroups} />
       {approvalItems.length > 0 ? (

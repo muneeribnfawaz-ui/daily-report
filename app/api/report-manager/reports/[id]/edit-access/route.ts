@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import DailyReport from "@/models/DailyReport";
 import { logAuditEntry } from "@/lib/audit";
 import { getVisibleReportEmployeeIds } from "@/lib/report-visibility";
 
@@ -13,8 +12,7 @@ export async function PATCH(_request: Request, { params }: { params: Promise<{ i
 
   const { id } = await params;
 
-  await connectToDatabase();
-  const report = await DailyReport.findById(id);
+    const report = await db.dailyReport.findUnique({ where: { id: String(id) } });
   if (!report) {
     return NextResponse.json({ success: false, message: "Report not found" }, { status: 404 });
   }
@@ -28,11 +26,15 @@ export async function PATCH(_request: Request, { params }: { params: Promise<{ i
     return NextResponse.json({ success: false, message: "Locked reports cannot be edited." }, { status: 423 });
   }
 
-  report.editAccessGranted = true;
-  report.editAccessGrantedBy = user.id;
-  report.editAccessGrantedAt = new Date();
-  report.editAccessRequested = false;
-  await report.save();
+  const updatedReport = await db.dailyReport.update({
+    where: { id: report.id },
+    data: {
+      editAccessGranted: true,
+      editAccessGrantedBy: user.id,
+      editAccessGrantedAt: new Date(),
+      editAccessRequested: false
+    }
+  });
 
   await logAuditEntry({
     action: "Report Edit Access Granted",
@@ -44,5 +46,5 @@ export async function PATCH(_request: Request, { params }: { params: Promise<{ i
     }
   });
 
-  return NextResponse.json({ success: true, data: report, message: "Edit access enabled for this report." });
+  return NextResponse.json({ success: true, data: updatedReport, message: "Edit access enabled for this report." });
 }

@@ -4,15 +4,16 @@ import { ManagerAddUserForm } from "@/components/admin/manager-add-user-form";
 import type { SessionUser } from "@/lib/types";
 
 export function UserCreateScreen({ currentUser }: { currentUser: SessionUser }) {
-  const isAdmin = currentUser.role === "admin" || currentUser.role === "ceo";
-  const isManagerScoped = currentUser.role === "team_lead" || currentUser.role === "hod";
+  const plainUser = currentUser ? JSON.parse(JSON.stringify(currentUser)) : currentUser;
+  const isAdmin = plainUser?.role === "admin";
+  const isManagerScoped = plainUser?.role === "ceo" || plainUser?.role === "team_lead" || plainUser?.role === "hod" || plainUser?.role === "report_manager";
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>User Details</CardTitle>
+        <CardTitle>Employee Details</CardTitle>
       </CardHeader>
-      <CardContent>{isAdmin ? <AdminAddUserForm /> : isManagerScoped ? <ManagerAddUserForm /> : null}</CardContent>
+      <CardContent>{isAdmin ? <AdminAddUserForm /> : isManagerScoped ? <ManagerAddUserForm currentUser={plainUser} /> : null}</CardContent>
     </Card>
   );
 }

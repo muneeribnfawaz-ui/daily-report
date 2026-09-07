@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { canCreateFinanceReport } from "@/lib/permissions";
-import FinanceReport from "@/models/FinanceReport";
+import { encryptPayload } from "@/lib/crypto";
 
 export async function GET(request: Request) {
   try {
@@ -15,20 +15,33 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
     }
 
-    await connectToDatabase();
-    
-    // Find the most recently submitted finance report
-    const latestReport = (await FinanceReport.findOne()
-      .sort({ reportDate: -1, createdAt: -1 })
-      .select("closingCashBalance reportDate")
-      .lean()) as { closingCashBalance?: number; reportDate?: string } | null;
+        
+    const url = new URL(request.url);
+    const workspaceId = url.searchParams.get("workspaceId") || request.headers.get("x-workspace-id") || user.workspaceId;
+    const activeWorkspaceId = workspaceId && workspaceId !== "all" ? workspaceId : user.workspaceId;
 
+    if (user.role !== "admin") {
+      const isMember = await db.workspaceMember.findFirst({ where: { userId: user.id, workspaceId: activeWorkspaceId, status: "active", isActive: true } });
+      if (!isMember) return NextResponse.json({ success: false, message: "Forbidden workspace context" }, { status: 403 });
+    }
+
+    // Find the most recently submitted finance report for this workspace
+    const latestReport = await db.financeReport.findFirst({
+      where: { workspaceId: activeWorkspaceId },
+      orderBy: [{ reportDate: 'desc' }, { createdAt: 'desc' }],
+      include: { bankBalances: true }
+    });
+
+    const resultData = {
+      bankBalances: latestReport?.bankBalances || [],
+      lastReportDate: latestReport?.reportDate ?? null
+    };
+
+    const encryptedData = await encryptPayload(resultData);
     return NextResponse.json({ 
       success: true, 
-      data: {
-        openingBalance: latestReport?.closingCashBalance ?? 0,
-        lastReportDate: latestReport?.reportDate ?? null
-      } 
+      encryptedData,
+      data: resultData
     });
   } catch (error) {
     console.error("Failed to fetch latest finance balance", error);

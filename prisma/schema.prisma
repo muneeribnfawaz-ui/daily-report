@@ -1,0 +1,612 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String   @id @default(uuid())
+  name             String
+  firstName        String   @default("")
+  lastName         String   @default("")
+  dateOfBirth      String   @default("")
+  phone            String?  @unique
+  secondaryPhone   String   @default("")
+  email            String   @unique
+  avatarUrl        String   @default("")
+  password         String
+  role             String   @default("")
+  isDeleted        Boolean  @default(false)
+  isAdminActive    Boolean  @default(false)
+  isEmailActivated Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  workspaceMembers WorkspaceMember[]
+  dailyReports     DailyReport[]
+
+  constructionReportsSubmitted ConstructionReport[] @relation("ConstructionSubmittedBy")
+  constructionReportsApproved  ConstructionReport[] @relation("ConstructionApprovedBy")
+  leaveRequests                LeaveRequest[]
+  moneyRequests                MoneyRequest[]
+  notifications                Notification[]
+  bankAccountsCreated          BankAccount[]
+  consolidatedReports          ConsolidatedReport[]
+  financeReportSubmissions     FinanceReport[]      @relation("FinanceSubmittedBy")
+  financeReportForwardings     FinanceReport[]      @relation("FinanceForwardedBy")
+  financeReportApprovals       FinanceReport[]      @relation("FinanceApprovedBy")
+}
+
+model Workspace {
+  id               String      @id @default(uuid())
+  name             String      @unique
+  type             String      @default("company")
+  ownerWorkspaceId String?
+  ownerWorkspace   Workspace?  @relation("OwnerWorkspace", fields: [ownerWorkspaceId], references: [id])
+  ownedWorkspaces  Workspace[] @relation("OwnerWorkspace")
+  isActive         Boolean     @default(true)
+  isDeleted        Boolean     @default(false)
+  createdBy        String      @default("")
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  members        WorkspaceMember[]
+  dailyReports   DailyReport[]
+  financeReports FinanceReport[]
+  companyDetails Company?
+
+  constructionReports ConstructionReport[]
+  leaveRequests       LeaveRequest[]
+  moneyRequests       MoneyRequest[]
+  pettyCash           PettyCash?
+  transactions        Transaction[]
+  bankAccounts        BankAccount[]
+  consolidatedReports ConsolidatedReport[]
+}
+
+model WorkspaceMember {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+  empID       String    @default("")
+  role        String
+  roleTypes   String[]
+  teamNames   String[]
+  teamName    String    @default("")
+  managerName String    @default("")
+  status      String    @default("active")
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  departments WorkspaceMemberDepartment[]
+
+  @@unique([userId, workspaceId])
+  @@index([workspaceId, role])
+}
+
+model WorkspaceMemberDepartment {
+  id                String          @id @default(uuid())
+  workspaceMemberId String
+  workspaceMember   WorkspaceMember @relation(fields: [workspaceMemberId], references: [id])
+  name              String
+  subTeams          String[]
+}
+
+model TeamType {
+  id         String   @id @default(uuid())
+  name       String   @unique
+  showName   String
+  department String
+  subTeams   String[]
+  isActive   Boolean  @default(true)
+  isDeleted  Boolean  @default(false)
+  createdBy  String   @default("")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Company {
+  id                 String    @id @default(uuid())
+  workspaceId        String    @unique
+  workspace          Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  
+  name               String    @unique
+  code               String    @default("")
+  description        String    @default("")
+  
+  cin                String?   @default("")
+  registrationNumber String?   @default("")
+  address            String?   @default("")
+  
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
+
+model DailyReport {
+  id                      String    @id @default(uuid())
+  workspaceId             String
+  workspace               Workspace @relation(fields: [workspaceId], references: [id])
+  employeeId              String
+  employee                User      @relation(fields: [employeeId], references: [id])
+  name                    String
+  teamName                String
+  reportType              String
+  reportDate              DateTime
+  attachmentLink          String    @default("")
+  dailyMeetingUpdate      String    @default("")
+  completedWork           String    @default("")
+  pendingWork             String    @default("")
+  blockers                String    @default("")
+  requiredClarification   String    @default("")
+  status                  String    @default("submitted")
+  rejectionReason         String    @default("")
+  reviewNotes             String    @default("")
+  reviewedBy              String?
+  reviewedByName          String    @default("")
+  reviewedAt              DateTime?
+  verificationLevel       String    @default("")
+  submittedAt             DateTime  @default(now())
+  approvedBy              String?
+  approvedAt              DateTime?
+  editAccessRequested     Boolean   @default(false)
+  editAccessRequestReason String    @default("")
+  editAccessRequestedAt   DateTime?
+  editAccessGranted       Boolean   @default(false)
+  editAccessGrantedBy     String?
+  editAccessGrantedAt     DateTime?
+  isLocked                Boolean   @default(false)
+  lockedAt                DateTime?
+  lockedBy                String?
+  consolidatedReportId    String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  approvalItems        DailyReportApprovalItem[]
+  workPlans            DailyReportWorkPlan[]
+  materialUtilizations DailyReportMaterialUtilization[]
+  tomorrowWorkPlans    DailyReportTomorrowWorkPlan[]
+  marketingSelfItems   DailyReportMarketingSelfItem[]
+  marketingClientItems DailyReportMarketingClientItem[]
+
+  @@unique([workspaceId, employeeId, teamName, reportDate])
+}
+
+model FinanceReport {
+  id              String    @id @default(uuid())
+  workspaceId     String
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+  reportDate      DateTime
+  submittedBy     String
+  submittedByUser User      @relation("FinanceSubmittedBy", fields: [submittedBy], references: [id])
+  submittedByName String
+  exchangeRate    Float     @default(0)
+  status          String    @default("pending")
+  forwardedBy     String?
+  forwardedByUser User?     @relation("FinanceForwardedBy", fields: [forwardedBy], references: [id])
+  forwardedByName String    @default("")
+  forwardedAt     DateTime?
+  approvedBy      String?
+  approvedByUser  User?     @relation("FinanceApprovedBy", fields: [approvedBy], references: [id])
+  approvedByName  String    @default("")
+  approvedAt      DateTime?
+  rejectionReason String    @default("")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  editAccessRequested     Boolean   @default(false)
+  editAccessRequestReason String    @default("")
+  editAccessRequestedAt   DateTime?
+  editAccessGranted       Boolean   @default(false)
+  editAccessGrantedBy     String?
+
+  bankBalances  FinanceReportBankBalance[]
+  items         FinanceReportItem[]
+  statusHistory FinanceReportStatusHistory[]
+
+  @@unique([workspaceId, submittedBy, reportDate])
+}
+
+model AuditLog {
+  id                   String   @id @default(uuid())
+  action               String
+  userId               String?
+  userName             String?
+  reportId             String?
+  consolidatedReportId String?
+  financeReportId      String?
+  leaveRequestId       String?
+  oldValue             Json?
+  newValue             Json?
+  reason               String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+model BankAccount {
+  id             String    @id @default(uuid())
+  workspaceId    String
+  workspace      Workspace @relation(fields: [workspaceId], references: [id])
+  bankName       String
+  accountNumber  String    @unique
+  ifscCode       String    @default("")
+  iban           String    @default("")
+  branchName     String    @default("")
+  product             String    @default("")
+  currency            String    @default("INR")
+  openingBalance      Float     @default(0)
+  account_last_4      String    @default("")
+  account_lookup_hash String    @default("")
+  row_signature       String    @default("")
+  editStatus          String    @default("approved")
+  pendingEdits        Json?
+  editReason          String?
+  editRequestedBy     String?
+  isActive       Boolean   @default(true)
+  isDeleted      Boolean   @default(false)
+  createdBy      String?
+  createdByUser  User?     @relation(fields: [createdBy], references: [id])
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([workspaceId, bankName])
+}
+
+model ConsolidatedReport {
+  id              String    @id @default(uuid())
+  title           String
+  workspaceId     String
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+  reportDate      DateTime
+  dateFrom        DateTime
+  dateTo          DateTime
+  generatedBy     String
+  generatedByUser User      @relation(fields: [generatedBy], references: [id])
+  generatedAt     DateTime  @default(now())
+  teamNames       String[]
+  employeeCount   Int       @default(0)
+  reportCount     Int       @default(0)
+  pdfPath         String    @default("")
+  status          String    @default("draft")
+  remarks         String    @default("")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([workspaceId, reportDate])
+  @@index([workspaceId, status])
+}
+
+model ConstructionReport {
+  id              String    @id @default(uuid())
+  workspaceId     String
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+  reportDate      DateTime
+  submittedBy     String
+  submittedByUser User      @relation("ConstructionSubmittedBy", fields: [submittedBy], references: [id])
+  submittedByName String
+  photos          String[]
+  status          String    @default("pending")
+  approvedBy      String?
+  approvedByUser  User?     @relation(fields: [approvedBy], references: [id], name: "ConstructionApprovedBy")
+  approvedByName  String    @default("")
+  approvedAt      DateTime?
+  rejectionReason String    @default("")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  workPlan            ConstructionWorkPlan[]
+  materialUtilization ConstructionMaterialUtilization[]
+  tomorrowsWorkPlan   ConstructionTomorrowWorkPlan[]
+
+  @@unique([workspaceId, reportDate])
+  @@index([workspaceId, submittedBy, reportDate(sort: Desc)])
+  @@index([status])
+}
+
+model ConstructionWorkPlan {
+  id                   String             @id @default(uuid())
+  constructionReportId String
+  constructionReport   ConstructionReport @relation(fields: [constructionReportId], references: [id])
+  activity             String
+  location             String
+  unit                 String
+  plannedQuantity      Float
+  executedQuantity     Float
+  completionPercentage Float
+  remarks              String             @default("")
+}
+
+model ConstructionMaterialUtilization {
+  id                   String             @id @default(uuid())
+  constructionReportId String
+  constructionReport   ConstructionReport @relation(fields: [constructionReportId], references: [id])
+  material             String
+  unit                 String
+  openingStock         Float
+  received             Float              @default(0)
+  closingStock         Float
+}
+
+model ConstructionTomorrowWorkPlan {
+  id                   String             @id @default(uuid())
+  constructionReportId String
+  constructionReport   ConstructionReport @relation(fields: [constructionReportId], references: [id])
+  activity             String
+  location             String
+  unit                 String
+  plannedQuantity      Float
+}
+
+model LeaveRequest {
+  id              String    @id @default(uuid())
+  workspaceId     String
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+  employeeId      String
+  employee        User      @relation(fields: [employeeId], references: [id])
+  leaveNumber     String    @unique
+  name            String
+  teamName        String
+  requestedByRole String
+  leaveType       String
+  leaveDuration   String    @default("full_day")
+  leaveHalf       String?
+  fromDate        DateTime
+  toDate          DateTime
+  reason          String
+  status          String    @default("pending_tl")
+  tlReviewedBy    String?
+  tlReviewedAt    DateTime?
+  tlComment       String    @default("")
+  hodReviewedBy   String?
+  hodReviewedAt   DateTime?
+  hodComment      String    @default("")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([workspaceId, employeeId, fromDate, toDate, leaveType])
+}
+
+model MoneyRequest {
+  id                String    @id @default(uuid())
+  workspaceId       String
+  workspace         Workspace @relation(fields: [workspaceId], references: [id])
+  submittedBy       String
+  submittedByUser   User      @relation(fields: [submittedBy], references: [id])
+  submittedByName   String
+  reportDate        DateTime
+  particulars       String
+  description       String    @default("")
+  amountINR         Float     @default(0)
+  amountSAR         Float     @default(0)
+  priority          String    @default("medium")
+  bankName          String    @default("")
+  revisedAmountINR  Float?
+  revisedAmountSAR  Float?
+  revisionReference String    @default("")
+  status            String    @default("pending")
+  financeReportId   String?
+  reviewedBy        String?
+  reviewedByName    String    @default("")
+  reviewedAt        DateTime?
+  reviewComment     String    @default("")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  bankBalances MoneyRequestBankBalance[]
+
+  @@index([workspaceId, reportDate(sort: Desc)])
+  @@index([status])
+  @@index([submittedBy])
+}
+
+model MoneyRequestBankBalance {
+  id             String       @id @default(uuid())
+  moneyRequestId String
+  moneyRequest   MoneyRequest @relation(fields: [moneyRequestId], references: [id])
+  bankName       String
+  openingBalance Float        @default(0)
+  receipts       Float        @default(0)
+  payments       Float        @default(0)
+  closingBalance Float        @default(0)
+}
+
+model Notification {
+  id          String   @id @default(uuid())
+  recipientId String
+  recipient   User     @relation(fields: [recipientId], references: [id])
+  type        String
+  title       String
+  message     String
+  metadata    Json?
+  isRead      Boolean  @default(false)
+  linkUrl     String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([recipientId, isRead, createdAt(sort: Desc)])
+}
+
+model PettyCash {
+  id          String    @id @default(uuid())
+  workspaceId String    @unique
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+  balance       Float     @default(0)
+  row_signature String    @default("")
+  isActive      Boolean   @default(true)
+  isDeleted   Boolean   @default(false)
+  createdBy   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([workspaceId])
+}
+
+model Transaction {
+  id              String    @id @default(uuid())
+  workspaceId     String
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+  financeReportId String?
+  type            String
+  particulars     String
+  description     String    @default("")
+  amountINR       Float     @default(0)
+  amountSAR       Float     @default(0)
+  bankAccountId   String?
+  bankName        String    @default("")
+  paymentMode     String    @default("")
+  row_signature   String    @default("")
+  isActive        Boolean   @default(true)
+  isDeleted       Boolean   @default(false)
+  createdBy       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([workspaceId, type])
+}
+
+model TransactionAuditLog {
+  id               String   @id @default(uuid())
+  transactionId    String
+  oldAmountINR     Float?
+  newAmountINR     Float?
+  oldAmountSAR     Float?
+  newAmountSAR     Float?
+  editedBy         String
+  editedAt         DateTime @default(now())
+  reason           String
+  signature        String   @default("")
+
+  @@index([transactionId, editedAt(sort: Desc)])
+}
+
+model DailyReportApprovalItem {
+  id            String      @id @default(uuid())
+  dailyReportId String
+  dailyReport   DailyReport @relation(fields: [dailyReportId], references: [id])
+  particulars   String      @default("")
+  amountINR     Float       @default(0)
+  amountRiyal   Float       @default(0)
+  reason        String      @default("")
+  review        String      @default("")
+  approval      String      @default("pending")
+}
+
+model DailyReportWorkPlan {
+  id                   String      @id @default(uuid())
+  dailyReportId        String
+  dailyReport          DailyReport @relation(fields: [dailyReportId], references: [id])
+  activity             String      @default("")
+  location             String      @default("")
+  unit                 String      @default("")
+  plannedQuantity      String      @default("")
+  executedQuantity     String      @default("")
+  completionPercentage String      @default("")
+  remarks              String      @default("")
+}
+
+model DailyReportMaterialUtilization {
+  id            String      @id @default(uuid())
+  dailyReportId String
+  dailyReport   DailyReport @relation(fields: [dailyReportId], references: [id])
+  material      String      @default("")
+  unit          String      @default("")
+  openingStock  String      @default("")
+  received      String      @default("")
+  closingStock  String      @default("")
+}
+
+model DailyReportTomorrowWorkPlan {
+  id              String      @id @default(uuid())
+  dailyReportId   String
+  dailyReport     DailyReport @relation(fields: [dailyReportId], references: [id])
+  activity        String      @default("")
+  location        String      @default("")
+  unit            String      @default("")
+  plannedQuantity String      @default("")
+}
+
+model DailyReportMarketingSelfItem {
+  id                 String      @id @default(uuid())
+  dailyReportId      String
+  dailyReport        DailyReport @relation(fields: [dailyReportId], references: [id])
+  date               String      @default("")
+  executiveName      String      @default("")
+  clientName         String      @default("")
+  companyName        String      @default("")
+  clientType         String      @default("")
+  mobileNo           String      @default("")
+  location           String      @default("")
+  referredBy         String      @default("")
+  discussionSummary  String      @default("")
+  interestLevel      String      @default("")
+  followUpDate       String      @default("")
+  status             String      @default("")
+  remarks            String      @default("")
+}
+
+model DailyReportMarketingClientItem {
+  id                   String      @id @default(uuid())
+  dailyReportId        String
+  dailyReport          DailyReport @relation(fields: [dailyReportId], references: [id])
+  date                 String      @default("")
+  executiveName        String      @default("")
+  clientName           String      @default("")
+  companyName          String      @default("")
+  clientType           String      @default("")
+  contactPerson        String      @default("")
+  mobileNo             String      @default("")
+  email                String      @default("")
+  projectType          String      @default("")
+  requirementDiscussed String      @default("")
+  projectStage         String      @default("")
+  decisionMaker        String      @default("")
+  interestLevel        String      @default("")
+  nextAction           String      @default("")
+  followUpDate         String      @default("")
+  status               String      @default("")
+  remarks              String      @default("")
+}
+
+model FinanceReportBankBalance {
+  id              String        @id @default(uuid())
+  financeReportId String
+  financeReport   FinanceReport @relation(fields: [financeReportId], references: [id])
+  bankName        String
+  openingBalance  Float         @default(0)
+  receipts        Float         @default(0)
+  payments        Float         @default(0)
+  closingBalance  Float         @default(0)
+}
+
+model FinanceReportItem {
+  id                String        @id @default(uuid())
+  financeReportId   String
+  financeReport     FinanceReport @relation(fields: [financeReportId], references: [id])
+  particulars       String
+  description       String        @default("")
+  amountINR         Float         @default(0)
+  amountSAR         Float         @default(0)
+  priority          String        @default("medium")
+  bankName          String        @default("")
+  revisedAmountINR  Float?
+  revisedAmountSAR  Float?
+  revisionReference String        @default("")
+  approval          String        @default("pending")
+  type              String        @default("expense")
+  paymentMode       String?
+}
+
+model FinanceReportStatusHistory {
+  id              String        @id @default(uuid())
+  financeReportId String
+  financeReport   FinanceReport @relation(fields: [financeReportId], references: [id])
+  status          String
+  by              String?
+  byName          String?
+  timestamp       DateTime      @default(now())
+}

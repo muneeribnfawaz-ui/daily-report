@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { signupSchema } from "@/lib/validation";
 import { hashPassword } from "@/lib/auth";
-import User from "@/models/User";
 import { ensureDefaultAdmin } from "@/lib/bootstrap";
-import Workspace from "@/models/Workspace";
-import WorkspaceMember from "@/models/WorkspaceMember";
 
 export async function POST(request: Request) {
   const body = await request.json();
@@ -16,38 +13,45 @@ export async function POST(request: Request) {
   }
 
   await ensureDefaultAdmin();
-  await connectToDatabase();
-  const existing = await User.findOne({ email: parsed.data.email.toLowerCase() });
+  const existing = await db.user.findFirst({ where: { email: parsed.data.email.toLowerCase() } });
   if (existing) {
     return NextResponse.json({ success: false, message: "Email already exists" }, { status: 409 });
   }
 
-  const defaultWorkspace = await Workspace.findOne({ isDeleted: { $ne: true } }).sort({ createdAt: 1 });
+  const defaultWorkspace = await db.workspace.findFirst({ 
+    where: { isDeleted: false }, 
+    orderBy: { createdAt: 'asc' } 
+  });
 
   const password = await hashPassword(parsed.data.password);
-  const user = await User.create({
-    name: parsed.data.name,
-    email: parsed.data.email.toLowerCase(),
-    password,
-    isDeleted: false,
-    isActive: true
+  const user = await db.user.create({
+    data: {
+      name: parsed.data.name,
+      email: parsed.data.email.toLowerCase(),
+      password,
+      isDeleted: false
+    }
   });
 
   if (defaultWorkspace) {
-    await WorkspaceMember.create({
-      userId: user._id,
-      workspaceId: defaultWorkspace._id,
-      role: "team_member",
-      status: "active",
-      isActive: true,
-      departments: [{ name: "Software", subTeams: [] }]
+    await db.workspaceMember.create({
+      data: {
+        userId: user.id,
+        workspaceId: defaultWorkspace.id,
+        role: "team_member",
+        status: "active",
+        isActive: true,
+        departments: {
+          create: [{ name: "Software", subTeams: [] }]
+        }
+      }
     });
   }
 
   return NextResponse.json({
     success: true,
     data: {
-      id: String(user._id),
+      id: user.id,
       name: user.name,
       email: user.email,
       role: "team_member",

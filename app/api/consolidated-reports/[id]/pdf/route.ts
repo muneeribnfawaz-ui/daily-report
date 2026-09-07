@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import ConsolidatedReport from "@/models/ConsolidatedReport";
-import DailyReport from "@/models/DailyReport";
 import { buildReportPdfBuffer } from "@/lib/pdf";
 
 type ConsolidatedReportPdfSource = {
@@ -19,13 +17,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   }
 
   const { id } = await Promise.resolve(params);
-  await connectToDatabase();
-  const consolidated = (await ConsolidatedReport.findById(id).lean()) as ConsolidatedReportPdfSource | null;
+    const consolidated = (await db.consolidatedReport.findUnique({ where: { id } })) as ConsolidatedReportPdfSource | null;
   if (!consolidated) {
     return NextResponse.json({ success: false, message: "Not found" }, { status: 404 });
   }
 
-  const reports = await DailyReport.find({ consolidatedReportId: id }).lean();
+  const reports = await db.dailyReport.findMany({ where: { consolidatedReportId: id } });
   const buffer = await buildReportPdfBuffer({
     title: consolidated.title,
     generatedBy: user.name,

@@ -24,10 +24,17 @@ type ReportListItem = ReportSheetEntry & {
   employeeId?: string;
 };
 
-function formatDateOnly(value: string | Date) {
+function formatPeriodDate(value: string | Date, period: "daily" | "weekly" | "monthly") {
   const normalizedValue =
     typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value;
   const date = new Date(normalizedValue);
+  
+  if (period === "monthly") {
+    return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  } else if (period === "weekly") {
+    return `Week of ${date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+  }
+
   const day = String(date.getDate()).padStart(2, "0");
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const year = date.getFullYear();
@@ -60,16 +67,19 @@ function groupReportsByTeam(reports: ReportListItem[]): ReportSheetTeamGroup[] {
 }
 
 /** Fetches consolidated report data for a given group from the API. */
-function useGroupReport(endpoint: string, date: string, group: ReportGroup, department?: string, workspaceId?: string) {
+function useGroupReport(endpoint: string, date: string, group: ReportGroup, department?: string, workspaceId?: string, period?: string, team?: string, mine?: boolean) {
   return useQuery({
-    queryKey: [endpoint, "detail", date, group, department, workspaceId],
+    queryKey: [endpoint, "detail", date, group, department, workspaceId, period, team, mine],
     enabled: Boolean(date),
     queryFn: async () => {
       const response = await api.get(endpoint, { 
         params: { 
           date, 
-          group, 
+          group,
+          period,
           department: department && department !== "All" ? department : undefined,
+          team: team && team !== "All" ? team : undefined,
+          mine: mine ? "true" : undefined,
           ...(workspaceId ? { workspaceId } : {})
         } 
       });
@@ -103,11 +113,13 @@ const GROUP_CONFIG: Record<ReportGroup, { label: string; pdfLabel: string; empty
 export function ConsolidatedReportPreviewScreen({
   endpoint,
   date,
+  period,
   backHref,
   title
 }: {
   endpoint: string;
   date: string;
+  period?: string;
   backHref: string;
   title: string;
 }) {
@@ -131,11 +143,14 @@ export function ConsolidatedReportPreviewScreen({
 
   const searchParams = useSearchParams();
   const department = searchParams.get("department") ?? "All";
+  const team = searchParams.get("team") ?? "All";
+  const mine = searchParams.get("mine") === "true";
 
-  const activeQuery = useGroupReport(endpoint, date, "operations", department, selectedCompanyId);
+  const activeQuery = useGroupReport(endpoint, date, "operations", department, selectedCompanyId, period, team, mine);
   const report = activeQuery.data;
   const previewGroups = report?.teamGroups ?? [];
-  const dateLabel = date ? formatDateOnly(date) : "";
+
+  const dateLabel = date ? formatPeriodDate(date, period as "daily" | "weekly" | "monthly") : "";
   const config = GROUP_CONFIG.operations;
   
   const displayDepartment = department !== "All" ? department : "Operations";
@@ -147,10 +162,17 @@ export function ConsolidatedReportPreviewScreen({
       
       const queryParams = new URLSearchParams({
         date,
-        group: "operations"
+        group: "operations",
+        period: period ?? "daily"
       });
       if (department !== "All") {
         queryParams.set("department", department);
+      }
+      if (team !== "All") {
+        queryParams.set("team", team);
+      }
+      if (mine) {
+        queryParams.set("mine", "true");
       }
       if (selectedCompanyId) {
         queryParams.set("workspaceId", selectedCompanyId);

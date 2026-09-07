@@ -33,6 +33,18 @@ type OperationsDashboardData = {
 export function OperationsDashboardContent() {
   const selectedCompanyId = useSelectedCompany();
 
+  const { data: sessionUser } = useQuery<any>({
+    queryKey: ["session-user"],
+    queryFn: async () => {
+      const res = await fetch("/api/auth/me");
+      const json = await res.json();
+      return json.data;
+    }
+  });
+
+  const userRole = sessionUser?.role;
+  const isTm = userRole === "team_member";
+
   const { data, isLoading } = useQuery<OperationsDashboardData>({
     queryKey: ["operations-dashboard-stats", selectedCompanyId],
     queryFn: async () => {
@@ -57,25 +69,52 @@ export function OperationsDashboardContent() {
   return (
     <div className="space-y-6">
       <DashboardPageHeader
-        eyebrow="Management Console"
-        title="Review, consolidate, and monitor daily progress"
-        description="Track team output, review submissions, and manage operational daily reports."
+        eyebrow={isTm ? "Employee Dashboard" : "Management Console"}
+        title={isTm ? "Track your daily progress and reports" : "Review, consolidate, and monitor daily progress"}
+        description={isTm ? "Submit daily progress updates, view past reports, and review lead feedback." : "Track team output, review submissions, and manage operational daily reports."}
         actions={
-          <>
-            <CreateUserButton />
-            <Button asChild variant="outline">
-              <Link href="/daily-report/create">New Daily Report</Link>
-            </Button>
-            <Button asChild>
-              <Link href="/reports">Open Reports</Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link href="/consolidated-reports">Consolidated Reports</Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link href="/leave-requests">Leave Requests</Link>
-            </Button>
-          </>
+          isTm ? null : (
+            <>
+              {userRole !== "team_lead" && <CreateUserButton />}
+              
+              {userRole !== "team_lead" && (
+                <Button asChild variant="outline">
+                  <Link href="/daily-report/create">New Daily Report</Link>
+                </Button>
+              )}
+
+              {userRole === "hod" && (
+                <>
+                  <Button asChild>
+                    <Link href="/hod/reports">All Reports</Link>
+                  </Button>
+                  <Button asChild variant="outline">
+                    <Link href="/finance">Finance Report</Link>
+                  </Button>
+                  <Button asChild variant="outline">
+                    <Link href="/consolidated-reports">Consolidated Reports</Link>
+                  </Button>
+                </>
+              )}
+
+              {userRole === "report_manager" && (
+                <Button asChild>
+                  <Link href="/reports">Open Reports</Link>
+                </Button>
+              )}
+
+              {(userRole === "admin" || userRole === "ceo") && (
+                <>
+                  <Button asChild>
+                    <Link href={userRole === "ceo" ? "/ceo/reports" : "/admin/reports"}>Open Reports</Link>
+                  </Button>
+                  <Button asChild variant="outline">
+                    <Link href="/consolidated-reports">Consolidated Reports</Link>
+                  </Button>
+                </>
+              )}
+            </>
+          )
         }
       />
 

@@ -1,8 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { useForm, type FieldErrors } from "react-hook-form";
+import { useEffect, useState, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { useForm, useWatch, type FieldErrors } from "react-hook-form";
 import type { z } from "zod";
 import { dailyReportSchema } from "@/lib/validation";
 import { api } from "@/lib/api";
@@ -10,6 +11,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { SessionUser } from "@/lib/types";
 import { ReportField, ReportInput, ReportSelect, ReportTextarea } from "@/components/forms/report-controls";
+import { ConstructionReportFields } from "../forms/construction-report-fields";
+import { MarketingReportFields } from "../forms/marketing-report-fields";
+import { formatDisplayName } from "@/lib/utils";
 
 type DailyReportValues = z.infer<typeof dailyReportSchema>;
 
@@ -27,6 +31,11 @@ type ReportItem = {
   status: string;
   isLocked: boolean;
   canEdit: boolean;
+  constructionWorkPlan?: any[];
+  constructionMaterialUtilization?: any[];
+  constructionTomorrowWorkPlan?: any[];
+  marketingSelfItems?: any[];
+  marketingClientItems?: any[];
 };
 
 function toDateInputValue(value?: string | Date | null) {
@@ -41,6 +50,7 @@ function toDateInputValue(value?: string | Date | null) {
 }
 
 export function EditReportForm({ reportId }: { reportId: string }) {
+  const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
   const [completedTasks, setCompletedTasks] = useState<string[]>([]);
   const [pendingTasks, setPendingTasks] = useState<string[]>([]);
@@ -48,6 +58,11 @@ export function EditReportForm({ reportId }: { reportId: string }) {
   const [completedDraft, setCompletedDraft] = useState("");
   const [pendingDraft, setPendingDraft] = useState("");
   const [blockerDraft, setBlockerDraft] = useState("");
+  const [workPlanItems, setWorkPlanItems] = useState<any[]>([]);
+  const [materialItems, setMaterialItems] = useState<any[]>([]);
+  const [tomorrowWorkPlanItems, setTomorrowWorkPlanItems] = useState<any[]>([]);
+  const [marketingSelfItems, setMarketingSelfItems] = useState<any[]>([]);
+  const [marketingClientItems, setMarketingClientItems] = useState<any[]>([]);
   const { data: currentUser } = useQuery({
     queryKey: ["current-user"],
     queryFn: async () => {
@@ -66,6 +81,7 @@ export function EditReportForm({ reportId }: { reportId: string }) {
   const report = reportQuery.data;
   const { isLoading, isError, refetch: refetchReport } = reportQuery;
   const showDailyMeetingUpdate = Boolean(currentUser);
+  
   const {
     register,
     setValue,
@@ -73,6 +89,7 @@ export function EditReportForm({ reportId }: { reportId: string }) {
     reset,
     setError,
     clearErrors,
+    control,
     formState: { errors, isSubmitting }
   } = useForm<DailyReportValues>({
     defaultValues: {
@@ -88,6 +105,25 @@ export function EditReportForm({ reportId }: { reportId: string }) {
     }
   });
 
+  const formValues = useWatch({ control });
+  const draftLoadedKeyRef = useRef<string | null>(null);
+  const draftStorageKey = currentUser?.id && reportId
+    ? `daily-report-draft-edit:${currentUser.id}:${reportId}`
+    : null;
+
+  const isConstructionTeam = (currentUser?.departments ?? []).some((d: any) => 
+    (typeof d === "string" ? d : d.name) === "Construction"
+  ) || (report?.teamName && report.teamName.toLowerCase().includes("construction"))
+    || (report?.constructionWorkPlan && report.constructionWorkPlan.length > 0)
+    || (report?.constructionMaterialUtilization && report.constructionMaterialUtilization.length > 0)
+    || (report?.constructionTomorrowWorkPlan && report.constructionTomorrowWorkPlan.length > 0);
+
+  const isMarketingTeam = (currentUser?.departments ?? []).some((d: any) => 
+    (typeof d === "string" ? d : d.name) === "Marketing"
+  ) || (report?.teamName && report.teamName.toLowerCase().includes("marketing"))
+    || (report?.marketingSelfItems && report.marketingSelfItems.length > 0)
+    || (report?.marketingClientItems && report.marketingClientItems.length > 0);
+
   useEffect(() => {
     if (report?.teamName) {
       setValue("teamName", report.teamName);
@@ -96,6 +132,44 @@ export function EditReportForm({ reportId }: { reportId: string }) {
 
   useEffect(() => {
     if (!report) return;
+
+    if (draftStorageKey) {
+      const storedDraft = window.localStorage.getItem(draftStorageKey);
+      if (storedDraft) {
+        try {
+          const parsedDraft = JSON.parse(storedDraft) as any;
+          if (parsedDraft.values) {
+            reset({
+              teamName: parsedDraft.values.teamName ?? report.teamName ?? "",
+              reportType: parsedDraft.values.reportType ?? report.reportType ?? "Daily Update",
+              reportDate: parsedDraft.values.reportDate ?? toDateInputValue(report.reportDate),
+              attachmentLink: parsedDraft.values.attachmentLink ?? report.attachmentLink ?? "",
+              dailyMeetingUpdate: parsedDraft.values.dailyMeetingUpdate ?? report.dailyMeetingUpdate ?? "",
+              completedWork: parsedDraft.values.completedWork ?? report.completedWork ?? "",
+              pendingWork: parsedDraft.values.pendingWork ?? report.pendingWork ?? "",
+              blockers: parsedDraft.values.blockers ?? report.blockers ?? "",
+              requiredClarification: parsedDraft.values.requiredClarification ?? report.requiredClarification ?? ""
+            });
+            setCompletedTasks(parsedDraft.completedTasks ?? []);
+            setPendingTasks(parsedDraft.pendingTasks ?? []);
+            setBlockerTasks(parsedDraft.blockerTasks ?? []);
+            setCompletedDraft(parsedDraft.completedDraft ?? "");
+            setPendingDraft(parsedDraft.pendingDraft ?? "");
+            setBlockerDraft(parsedDraft.blockerDraft ?? "");
+            setWorkPlanItems(parsedDraft.workPlanItems ?? []);
+            setMaterialItems(parsedDraft.materialItems ?? []);
+            setTomorrowWorkPlanItems(parsedDraft.tomorrowWorkPlanItems ?? []);
+            setMarketingSelfItems(parsedDraft.marketingSelfItems ?? []);
+            setMarketingClientItems(parsedDraft.marketingClientItems ?? []);
+            draftLoadedKeyRef.current = draftStorageKey;
+            return;
+          }
+        } catch {
+          window.localStorage.removeItem(draftStorageKey);
+        }
+      }
+    }
+
     reset({
       teamName: report.teamName ?? "",
       reportType: report.reportType ?? "Daily Update",
@@ -113,7 +187,50 @@ export function EditReportForm({ reportId }: { reportId: string }) {
     setCompletedDraft(report.completedWork ?? "");
     setPendingDraft(report.pendingWork ?? "");
     setBlockerDraft(report.blockers ?? "");
-  }, [report, reset]);
+    setWorkPlanItems(report.constructionWorkPlan ?? []);
+    setMaterialItems(report.constructionMaterialUtilization ?? []);
+    setTomorrowWorkPlanItems(report.constructionTomorrowWorkPlan ?? []);
+    setMarketingSelfItems(report.marketingSelfItems ?? []);
+    setMarketingClientItems(report.marketingClientItems ?? []);
+    draftLoadedKeyRef.current = draftStorageKey;
+  }, [report, reset, draftStorageKey]);
+
+  useEffect(() => {
+    if (!draftStorageKey) return;
+    if (draftLoadedKeyRef.current !== draftStorageKey) return;
+
+    window.localStorage.setItem(
+      draftStorageKey,
+      JSON.stringify({
+        values: formValues,
+        completedTasks,
+        pendingTasks,
+        blockerTasks,
+        completedDraft,
+        pendingDraft,
+        blockerDraft,
+        workPlanItems,
+        materialItems,
+        tomorrowWorkPlanItems,
+        marketingSelfItems,
+        marketingClientItems
+      })
+    );
+  }, [
+    formValues,
+    completedTasks,
+    pendingTasks,
+    blockerTasks,
+    completedDraft,
+    pendingDraft,
+    blockerDraft,
+    workPlanItems,
+    materialItems,
+    tomorrowWorkPlanItems,
+    marketingSelfItems,
+    marketingClientItems,
+    draftStorageKey
+  ]);
 
   useEffect(() => {
     setValue("completedWork", completedTasks.join("\n"), { shouldDirty: true });
@@ -129,8 +246,21 @@ export function EditReportForm({ reportId }: { reportId: string }) {
 
   const onSubmit = async (values: DailyReportValues) => {
     setMessage(null);
+    if (isMarketingTeam && marketingSelfItems.length === 0 && marketingClientItems.length === 0) {
+      setMessage("You must add at least one row in either the Marketing Self or Marketing Client table.");
+      return;
+    }
     try {
-      const parsed = dailyReportSchema.safeParse(values);
+      const payload = {
+        ...values,
+        constructionWorkPlan: isConstructionTeam ? workPlanItems : [],
+        constructionMaterialUtilization: isConstructionTeam ? materialItems : [],
+        constructionTomorrowWorkPlan: isConstructionTeam ? tomorrowWorkPlanItems : [],
+        marketingSelfItems: isMarketingTeam ? marketingSelfItems : [],
+        marketingClientItems: isMarketingTeam ? marketingClientItems : []
+      };
+      
+      const parsed = dailyReportSchema.safeParse(payload);
       if (!parsed.success) {
         clearErrors();
         for (const issue of parsed.error.issues) {
@@ -142,8 +272,21 @@ export function EditReportForm({ reportId }: { reportId: string }) {
             });
           }
         }
-        const messages = parsed.error.issues.map((issue) => issue.message).filter(Boolean);
-        setMessage(messages.length ? messages.join(" | ") : "Please fix the highlighted fields and try again.");
+        let hasMarketingError = false;
+        const messages = parsed.error.issues.map((issue) => {
+          if (issue.path[0] === "marketingSelfItems" || issue.path[0] === "marketingClientItems") {
+            hasMarketingError = true;
+            return null;
+          }
+          return issue.message;
+        }).filter(Boolean);
+        
+        if (hasMarketingError) {
+          messages.push("Please fill all mandatory fields (*) correctly in the Marketing tables.");
+        }
+        
+        const uniqueMessages = Array.from(new Set(messages));
+        setMessage(uniqueMessages.length ? uniqueMessages.join(" | ") : "Please fix the highlighted fields and try again.");
         return;
       }
 
@@ -161,10 +304,21 @@ export function EditReportForm({ reportId }: { reportId: string }) {
           blockers: updatedReport.blockers ?? "",
           requiredClarification: updatedReport.requiredClarification ?? ""
         });
+        setWorkPlanItems(updatedReport.constructionWorkPlan ?? []);
+        setMaterialItems(updatedReport.constructionMaterialUtilization ?? []);
+        setTomorrowWorkPlanItems(updatedReport.constructionTomorrowWorkPlan ?? []);
+        setMarketingSelfItems(updatedReport.marketingSelfItems ?? []);
+        setMarketingClientItems(updatedReport.marketingClientItems ?? []);
       } else {
         await refetchReport();
       }
+      
+      if (draftStorageKey) {
+        window.localStorage.removeItem(draftStorageKey);
+      }
+      
       setMessage("Report updated successfully.");
+      router.push(`/daily-report/${reportId}/preview`);
     } catch {
       setMessage("Update failed. Please try again.");
     }
@@ -193,8 +347,9 @@ export function EditReportForm({ reportId }: { reportId: string }) {
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <Badge variant="soft">{currentUser?.name ?? "Loading user..."}</Badge>
           <span className="text-sm text-muted-foreground">{currentUser?.email ?? ""}</span>
-          {report.teamName ? <Badge variant="outline">{report.teamName}</Badge> : null}
+          {report.teamName ? <Badge variant="outline">{formatDisplayName(report.teamName)}</Badge> : null}
           {report.isLocked ? <Badge variant="outline">Locked</Badge> : null}
+          <Badge variant="soft" className="bg-amber-100 text-amber-800 hover:bg-amber-100">Status: Draft</Badge>
         </div>
         <div className="mt-3 text-xs text-muted-foreground">Only completed work is required. All other fields are optional.</div>
         {!report.canEdit ? (
@@ -215,14 +370,6 @@ export function EditReportForm({ reportId }: { reportId: string }) {
           ))}
         </ReportSelect>
       </ReportField>
-      <ReportField label="Report date" error={errors.reportDate?.message}>
-        <ReportInput type="date" readOnly={currentUser?.role !== "team_lead"} {...register("reportDate")} />
-      </ReportField>
-      {currentUser?.role !== "team_lead" ? (
-        <p className="text-xs text-muted-foreground md:col-span-2">Date is set to today automatically for team members.</p>
-      ) : (
-        <p className="text-xs text-muted-foreground md:col-span-2">Team leads can choose any date for backfilled reports.</p>
-      )}
       <ReportField className="md:col-span-2" label="Attachment link" error={errors.attachmentLink?.message}>
         <ReportInput
           type="url"
@@ -241,74 +388,94 @@ export function EditReportForm({ reportId }: { reportId: string }) {
           <ReportTextarea placeholder="Add any new meeting points here" {...register("dailyMeetingUpdate")} />
         </ReportField>
       ) : null}
-      <input type="hidden" {...register("completedWork")} />
-      <input type="hidden" {...register("pendingWork")} />
-      <input type="hidden" {...register("blockers")} />
-      <ReportField
-        className="md:col-span-2"
-        label="Completed Work"
-        required
-        helperText="Required. Paste or type completed tasks (one per line)."
-        error={errors.completedWork?.message}
-      >
-        <ReportTextarea
-          placeholder="Paste your completed work here..."
-          value={completedDraft}
-          onChange={(event) => {
-            const value = event.target.value;
-            const tasks = value
-              .split("\n")
-              .map((task) => task.replace(/^[-•*]\s*/, "").trim())
-              .filter(Boolean);
-            setCompletedDraft(value);
-            setCompletedTasks(tasks);
-          }}
+      {(!isConstructionTeam && !isMarketingTeam) ? (
+        <>
+          <input type="hidden" {...register("completedWork")} />
+          <input type="hidden" {...register("pendingWork")} />
+          <input type="hidden" {...register("blockers")} />
+          <ReportField
+            className="md:col-span-2"
+            label="Completed Work"
+            required
+            helperText="Required. Paste or type completed tasks (one per line)."
+            error={errors.completedWork?.message}
+          >
+            <ReportTextarea
+              placeholder="Paste your completed work here..."
+              value={completedDraft}
+              onChange={(event) => {
+                const value = event.target.value;
+                const tasks = value
+                  .split("\n")
+                  .map((task) => task.replace(/^[-•*]\s*/, "").trim())
+                  .filter(Boolean);
+                setCompletedDraft(value);
+                setCompletedTasks(tasks);
+              }}
+            />
+          </ReportField>
+          <ReportField
+            className="md:col-span-2"
+            label="Pending Work"
+            helperText="Optional. Paste pending tasks, one per line."
+            error={errors.pendingWork?.message}
+          >
+            <ReportTextarea
+              placeholder="Paste pending work here..."
+              value={pendingDraft}
+              onChange={(event) => {
+                const value = event.target.value;
+                const tasks = value
+                  .split("\n")
+                  .map((task) => task.replace(/^[-•*]\s*/, "").trim())
+                  .filter(Boolean);
+                setPendingDraft(value);
+                setPendingTasks(tasks);
+              }}
+            />
+          </ReportField>
+          <ReportField
+            className="md:col-span-2"
+            label="Blockers"
+            helperText="Optional. Paste blockers, one per line."
+            error={errors.blockers?.message}
+          >
+            <ReportTextarea
+              placeholder="Paste blockers here..."
+              value={blockerDraft}
+              onChange={(event) => {
+                const value = event.target.value;
+                const tasks = value
+                  .split("\n")
+                  .map((task) => task.replace(/^[-•*]\s*/, "").trim())
+                  .filter(Boolean);
+                setBlockerDraft(value);
+                setBlockerTasks(tasks);
+              }}
+            />
+          </ReportField>
+          <ReportField className="md:col-span-2" label="Required clarification" error={errors.requiredClarification?.message}>
+            <ReportTextarea placeholder="Required Clarification" {...register("requiredClarification")} />
+          </ReportField>
+        </>
+      ) : isConstructionTeam ? (
+        <ConstructionReportFields
+          workPlanItems={workPlanItems}
+          setWorkPlanItems={setWorkPlanItems}
+          materialItems={materialItems}
+          setMaterialItems={setMaterialItems}
+          tomorrowWorkPlanItems={tomorrowWorkPlanItems}
+          setTomorrowWorkPlanItems={setTomorrowWorkPlanItems}
         />
-      </ReportField>
-      <ReportField
-        className="md:col-span-2"
-        label="Pending Work"
-        helperText="Optional. Paste pending tasks, one per line."
-        error={errors.pendingWork?.message}
-      >
-        <ReportTextarea
-          placeholder="Paste pending work here..."
-          value={pendingDraft}
-          onChange={(event) => {
-            const value = event.target.value;
-            const tasks = value
-              .split("\n")
-              .map((task) => task.replace(/^[-•*]\s*/, "").trim())
-              .filter(Boolean);
-            setPendingDraft(value);
-            setPendingTasks(tasks);
-          }}
+      ) : isMarketingTeam ? (
+        <MarketingReportFields
+          marketingSelfItems={marketingSelfItems}
+          setMarketingSelfItems={setMarketingSelfItems}
+          marketingClientItems={marketingClientItems}
+          setMarketingClientItems={setMarketingClientItems}
         />
-      </ReportField>
-      <ReportField
-        className="md:col-span-2"
-        label="Blockers"
-        helperText="Optional. Paste blockers, one per line."
-        error={errors.blockers?.message}
-      >
-        <ReportTextarea
-          placeholder="Paste blockers here..."
-          value={blockerDraft}
-          onChange={(event) => {
-            const value = event.target.value;
-            const tasks = value
-              .split("\n")
-              .map((task) => task.replace(/^[-•*]\s*/, "").trim())
-              .filter(Boolean);
-            setBlockerDraft(value);
-            setBlockerTasks(tasks);
-          }}
-        />
-      </ReportField>
-      <ReportField className="md:col-span-2" label="Required clarification" error={errors.requiredClarification?.message}>
-        <ReportTextarea placeholder="Required Clarification" {...register("requiredClarification")} />
-      </ReportField>
-      {message ? <p className="text-sm text-success md:col-span-2">{message}</p> : null}
+      ) : null}
+      {message ? <p className={`text-sm md:col-span-2 ${message.toLowerCase().includes("success") ? "text-success" : "text-destructive font-medium"}`}>{message}</p> : null}
       <Button className="md:col-span-2 w-fit" type="submit" disabled={isSubmitting || !report.canEdit}>
         {isSubmitting ? "Saving..." : report.canEdit ? "Save Changes" : "Edit Locked"}
       </Button>

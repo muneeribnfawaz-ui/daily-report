@@ -1,11 +1,6 @@
 import appData from "@/config/app-data.json";
 
-export const FINANCE_TEAM_INTERNAL_NAME = "FINANCE_TEAM";
-
 export const APP_NAME = "Daily Report Management System";
-
-/** The internal team-type name for the Finance team (also in lib/team-types.ts for server use). */
-export const FINANCE_TEAM_NAME = "FINANCE_TEAM";
 
 export const TEAM_OPTIONS = appData.teamOptions as unknown as readonly [
   "Backend",
@@ -67,71 +62,58 @@ export type SidebarNavItem = {
   label: string;
 };
 
-const REPORT_MANAGER_SIDEBAR_ITEMS = [
-  { href: "/reports", label: "Reports" },
-  { href: "/consolidated-reports", label: "Consolidated" },
-  { href: "/profile", label: "Profile" }
+const TEAM_MEMBER_SIDEBAR_ITEMS = [
+  { href: "/tm/dashboard", label: "Dashboard" },
+  { href: "/tm/my-reports", label: "My Reports" }
 ] as const satisfies ReadonlyArray<SidebarNavItem>;
 
 const TEAM_LEAD_SIDEBAR_ITEMS = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/daily-report/my-reports", label: "My Report" },
-  { href: "/users", label: "My Team" },
-  { href: "/reports", label: "All Reports" },
-  { href: "/consolidated-reports", label: "Consolidated" },
-  { href: "/leave-requests", label: "Leave Requests" },
-  { href: "/profile", label: "Profile" }
+  { href: "/team-lead/dashboard", label: "Dashboard" },
+  { href: "/daily-report/my-reports", label: "My Reports" },
+  { href: "/team-lead/users", label: "Employees" },
+  { href: "/team-lead/reports", label: "Team Reports" },
+  { href: "/team-lead/consolidated-reports", label: "Consolidated" }
+] as const satisfies ReadonlyArray<SidebarNavItem>;
+
+const REPORT_MANAGER_SIDEBAR_ITEMS = [
+  { href: "/daily-report/my-reports", label: "My Reports" },
+  { href: "/reports", label: "Reports" }
 ] as const satisfies ReadonlyArray<SidebarNavItem>;
 
 const HOD_SIDEBAR_ITEMS = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/users", label: "Employees" },
-  { href: "/reports", label: "Reports" },
+  { href: "/hod/dashboard", label: "Dashboard" },
+  { href: "/daily-report/my-reports", label: "My Reports" },
+  { href: "/hod/users", label: "Employees" },
+  { href: "/hod/team-types", label: "Team Types" },
+  { href: "/hod/reports", label: "All Reports" },
   { href: "/consolidated-reports", label: "Consolidated" },
-  { href: "/leave-requests", label: "Leave Requests" },
-  { href: "/profile", label: "Profile" }
-] as const satisfies ReadonlyArray<SidebarNavItem>;
-
-const TEAM_MEMBER_SIDEBAR_ITEMS = [
-  { href: "/daily-report/my-reports", label: "My Report" },
-  { href: "/leave-requests", label: "Leave Requests" },
-  { href: "/profile", label: "Profile" }
+  { href: "/finance", label: "Finance Report" }
 ] as const satisfies ReadonlyArray<SidebarNavItem>;
 
 const FINANCE_TEAM_SIDEBAR_ITEMS = [
   { href: "/finance", label: "Finance" },
   { href: "/consolidated-reports", label: "Consolidated" },
-  { href: "/daily-report/my-reports", label: "My Report" },
-  { href: "/leave-requests", label: "Leave Requests" },
-  { href: "/profile", label: "Profile" }
+  { href: "/daily-report/my-reports", label: "My Report" }
 ] as const satisfies ReadonlyArray<SidebarNavItem>;
 
 const ADMIN_SIDEBAR_ITEMS = [
-  { href: "/admin/dashboard", label: "Dashboard" },
   { href: "/admin/companies", label: "Companies" },
-  { href: "/admin/users", label: "Employees" },
+  { href: "/admin/users", label: "Users" },
   { href: "/admin/team-types", label: "Team Types" },
   { href: "/admin/reports", label: "Reports" },
   { href: "/consolidated-reports", label: "Consolidated" },
   { href: "/finance", label: "Finance" },
-  { href: "/leave-requests", label: "Leave Requests" },
-  { href: "/profile", label: "Profile" },
   { href: "/admin/settings", label: "Settings" },
   { href: "/admin/audit-logs", label: "Audit Logs" }
 ] as const satisfies ReadonlyArray<SidebarNavItem>;
 
 const CEO_SIDEBAR_ITEMS = [
   { href: "/ceo/dashboard", label: "Dashboard" },
-  { href: "/ceo/companies", label: "Companies" },
   { href: "/ceo/users", label: "Employees" },
   { href: "/ceo/team-types", label: "Team Types" },
   { href: "/ceo/reports", label: "Reports" },
   { href: "/consolidated-reports", label: "Consolidated" },
-  { href: "/finance", label: "Finance" },
-  { href: "/leave-requests", label: "Leave Requests" },
-  { href: "/profile", label: "Profile" },
-  { href: "/ceo/settings", label: "Settings" },
-  { href: "/ceo/audit-logs", label: "Audit Logs" }
+  { href: "/finance", label: "Finance" }
 ] as const satisfies ReadonlyArray<SidebarNavItem>;
 
 export const SIDEBAR_NAV_ITEMS_BY_ROLE = {
@@ -314,3 +296,37 @@ export const FINANCE_REPORT_FIELDS = [
   { key: "bankDeposit", label: "Bank Deposit", group: "neutral" },
   { key: "closingCashBalance", label: "Closing Cash Balance", group: "neutral" }
 ] as const;
+
+export const TRANSACTION_TYPES = ["expense", "receipt", "payment"] as const;
+export type TransactionType = (typeof TRANSACTION_TYPES)[number];
+
+export const PAYMENT_MODES = [
+  "cash",
+  "upi_qr_code",
+  "credit_card",
+  "debit_card",
+  "net_banking",
+  "neft",
+  "rtgs",
+  "imps",
+  "cheque",
+  "demand_draft",
+  "transfer_to_cash",
+  "other"
+] as const;
+export type PaymentMode = (typeof PAYMENT_MODES)[number];
+
+export const PAYMENT_MODE_LABELS: Record<PaymentMode, string> = {
+  cash: "Cash",
+  upi_qr_code: "UPI / QR Code",
+  credit_card: "Credit Card",
+  debit_card: "Debit Card",
+  net_banking: "Net Banking",
+  neft: "NEFT",
+  rtgs: "RTGS",
+  imps: "IMPS",
+  cheque: "Cheque",
+  demand_draft: "Demand Draft",
+  transfer_to_cash: "Transfer to Cash",
+  other: "Other"
+};

@@ -1,7 +1,5 @@
-import { connectToDatabase } from "@/lib/db";
-import TeamType from "@/models/TeamType";
+import db from "@/lib/db";
 
-import { FINANCE_TEAM_INTERNAL_NAME } from "@/lib/constants";
 import { formatDisplayName } from "@/lib/utils";
 
 export function formatTeamTypeShowName(teamType: any) {
@@ -15,14 +13,12 @@ export function formatTeamTypeShowName(teamType: any) {
 }
 
 export async function getActiveTeamTypeNames() {
-  await connectToDatabase();
-  const teamTypes = await TeamType.find({ isActive: true, isDeleted: false }).lean();
+  const teamTypes = await db.teamType.findMany({ where: { isActive: true, isDeleted: false } });
   return teamTypes.map((teamType) => teamType.name);
 }
 
 export async function getActiveTeamTypeShowNameMap() {
-  await connectToDatabase();
-  const teamTypes = await TeamType.find({ isActive: true, isDeleted: false }).lean();
+  const teamTypes = await db.teamType.findMany({ where: { isActive: true, isDeleted: false } });
 
   return Object.fromEntries(
     teamTypes
@@ -36,19 +32,8 @@ export async function isValidTeamTypeName(teamName: string) {
   return teamNames.includes(teamName);
 }
 
-/**
- * Returns the list of internal team-type names that belong to the Finance group.
- * Currently this is always [FINANCE_TEAM_INTERNAL_NAME], but the array shape
- * keeps the door open for future multi-team Finance groups.
- */
-export async function getFinanceTeamInternalNames(): Promise<string[]> {
-  await connectToDatabase();
-  const teamTypes = await TeamType.find({ name: FINANCE_TEAM_INTERNAL_NAME, isDeleted: false }).lean();
-  return teamTypes.map((t) => t.name as string);
-}
 
 export async function getTeamNamesByDepartment(department: string): Promise<string[]> {
-  await connectToDatabase();
-  const teamTypes = await TeamType.find({ department, isDeleted: false }).lean();
+  const teamTypes = await db.teamType.findMany({ where: { department, isDeleted: false } });
   return teamTypes.map((t) => t.name as string);
 }

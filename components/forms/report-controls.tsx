@@ -86,13 +86,29 @@ export function ReportMultiSelectCards({
   const selectedValues = value ?? [];
   const labelByValue = Object.fromEntries(options.map((option) => [option.value, option.label]));
 
-  const toggleValue = (optionValue: string) => {
-    if (selectedValues.includes(optionValue)) {
-      onChange(selectedValues.filter((currentValue) => currentValue !== optionValue));
-      return;
-    }
+  const isMatch = (a: string, b: string) => {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    return a.trim().toLowerCase() === b.trim().toLowerCase();
+  };
 
-    onChange([...selectedValues, optionValue]);
+  const isOptionSelected = (option: MultiSelectCardOption) => {
+    return selectedValues.some(
+      (val) => isMatch(val, option.value) || (option.label && isMatch(val, option.label))
+    );
+  };
+
+  const toggleValue = (option: MultiSelectCardOption) => {
+    const isSelected = isOptionSelected(option);
+    if (isSelected) {
+      onChange(
+        selectedValues.filter(
+          (val) => !isMatch(val, option.value) && (!option.label || !isMatch(val, option.label))
+        )
+      );
+    } else {
+      onChange([...selectedValues, option.value]);
+    }
   };
 
   return (
@@ -109,30 +125,17 @@ export function ReportMultiSelectCards({
           {selectedValues.length} selected
         </div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-md border bg-muted/40 p-4">
-          <div className="text-xs uppercase tracking-[0.2em] text-textSecondary">Selected</div>
-          <div className="mt-2 text-2xl font-semibold">{selectedValues.length}</div>
-        </div>
-        <div className="rounded-md border bg-muted/40 p-4">
-          <div className="text-xs uppercase tracking-[0.2em] text-textSecondary">Available</div>
-          <div className="mt-2 text-2xl font-semibold">{options.length}</div>
-        </div>
-        <div className="rounded-md border bg-muted/40 p-4 sm:col-span-2 xl:col-span-2">
-          <div className="text-xs uppercase tracking-[0.2em] text-textSecondary">Tip</div>
-          <div className="mt-2 text-sm text-textSecondary">Pick one or more roles. Click a card again to remove it.</div>
-        </div>
-      </div>
+
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {options.map((option) => {
-          const isSelected = selectedValues.includes(option.value);
+          const isSelected = isOptionSelected(option);
 
           return (
             <button
               key={option.value}
               type="button"
               aria-pressed={isSelected}
-              onClick={() => toggleValue(option.value)}
+              onClick={() => toggleValue(option)}
                 className={cn(
                   "flex min-h-24 flex-col justify-between rounded-md border p-4 text-left transition",
                   isSelected

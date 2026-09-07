@@ -2,6 +2,7 @@
 
 import axios from "axios";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { useEffect, useMemo, useState } from "react";
@@ -19,7 +20,9 @@ import { api } from "@/lib/api";
 import { adminUpdateUserSchema } from "@/lib/validation";
 import { Button } from "@/components/ui/button";
 import { ReportField, ReportInput, ReportMultiSelectCards, ReportSelect } from "@/components/forms/report-controls";
+import { PasswordInput } from "@/components/forms/password-input";
 import { useSession } from "@/hooks/use-session";
+import { canUpdateEmail } from "@/lib/permissions";
 
 type UpdateUserValues = z.infer<typeof adminUpdateUserSchema>;
 
@@ -48,8 +51,10 @@ type SessionUser = {
   name: string;
   email: string;
   role: string;
+  workspaceId?: string;
   teamName?: string | null;
   teamNames?: string[] | null;
+  departments?: Array<{ name: string; subTeams: string[] }> | null;
 };
 
 type DepartmentItem = {
@@ -113,15 +118,15 @@ export function UserEditForm({
   userId: string;
   backHref: string;
 }) {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showResetPassword, setShowResetPassword] = useState(false);
   const { data: teamTypes } = useQuery<TeamTypeOption[]>({
-    queryKey: ["team-types"],
+    queryKey: ["team-types", "edit-user"],
     queryFn: async () => {
-      const response = await api.get("/api/team-types");
-      return response.data?.data as TeamTypeOption[];
+      const response = await api.get("/api/admin/team-types", { params: { includeInactive: "true", department: "all" } });
+      return (response.data?.data ?? []) as TeamTypeOption[];
     },
     staleTime: 0
   });
@@ -146,14 +151,28 @@ export function UserEditForm({
     }
   });
 
+  const { data: userData, isLoading, isError } = useQuery<UserRecord>({
+    queryKey: ["user-edit", userId],
+    queryFn: async () => {
+      const response = await api.get(`/api/users/${userId}`);
+      return response.data?.data as UserRecord;
+    }
+  });
+
+  const sessionUserRole = sessionUser?.role;
+  const sessionUserName = sessionUser?.name;
   const currentRole = normalizeRole(sessionUser?.role) ?? null;
   const currentUserTeamNames = useMemo(
     () => normalizeTeamNames(sessionUser?.teamName ?? null, sessionUser?.teamNames ?? null),
     [sessionUser?.teamName, sessionUser?.teamNames]
   );
-  const canEditManagerName = currentRole === "admin" || currentRole === "hod" || currentRole === "ceo";
-  const canEditRole = currentRole === "admin" || ((currentRole === "hod" || currentRole === "ceo") && userData?.role !== "ceo");
-  const canEditEmail = currentRole === "admin" || currentRole === "ceo";
+  const isTeamLead = currentRole === "team_lead";
+  const canEditManagerName = (currentRole === "admin" || currentRole === "hod" || currentRole === "ceo") && !isTeamLead;
+  const canEditRole = (currentRole === "admin" || ((currentRole === "hod" || currentRole === "ceo") && userData?.role !== "ceo")) && !isTeamLead;
+  const targetUserRole = normalizeRole(userData?.role);
+  const isSelfUpdate = sessionUser?.id === userData?._id;
+  const canEditEmail = canUpdateEmail(currentRole || "", targetUserRole || "", isSelfUpdate);
+  const canEditEmpID = canEditEmail;
   const canResetPassword = currentRole === "admin" || currentRole === "hod" || currentRole === "ceo";
 
   const availableRoleOptions = useMemo(() => {
@@ -162,13 +181,24 @@ export function UserEditForm({
     }
     return CREATE_USER_ROLE_OPTIONS;
   }, [sessionUser?.role]);
-  const { data: userData, isLoading, isError } = useQuery<UserRecord>({
-    queryKey: ["user-edit", userId],
-    queryFn: async () => {
-      const response = await api.get(`/api/users/${userId}`);
-      return response.data?.data as UserRecord;
+
+  const allowedDepartments = useMemo(() => {
+    if ((currentRole === "hod" || currentRole === "team_lead" || currentRole === "report_manager") && sessionUser?.departments && sessionUser.departments.length > 0) {
+      return sessionUser.departments.map((d) => d.name);
     }
-  });
+    if ((currentRole === "hod" || currentRole === "team_lead" || currentRole === "report_manager") && sessionUser?.teamNames && sessionUser.teamNames.length > 0 && teamTypes) {
+      const depts = new Set<string>();
+      sessionUser.teamNames.forEach((tn: string) => {
+        const teamInfo = teamTypes.find((t) => t.name === tn);
+        if (teamInfo?.department) depts.add(teamInfo.department);
+      });
+      if (depts.size > 0) return Array.from(depts);
+    }
+    if (currentRole === "hod" || currentRole === "team_lead" || currentRole === "report_manager") {
+      return [];
+    }
+    return DEPARTMENT_OPTIONS;
+  }, [currentRole, sessionUser?.departments, sessionUser?.teamNames, teamTypes]);
 
   const {
     register,
@@ -205,6 +235,14 @@ export function UserEditForm({
 
   useEffect(() => {
     if (!userData) return;
+    const existingTeams = normalizeUserTeamNames(userData);
+    const resolvedTeamNames =
+      existingTeams.length > 0
+        ? existingTeams
+        : isTeamLead && currentUserTeamNames.length > 0
+        ? currentUserTeamNames
+        : [];
+
     reset({
       firstName: userData.firstName ?? "",
       lastName: userData.lastName ?? "",
@@ -213,9 +251,9 @@ export function UserEditForm({
       role: normalizeRole(userData.role) ?? undefined,
       roleTypes: (userData.roleTypes ?? []) as UpdateUserValues["roleTypes"],
       workspaceId: userData.workspaceId ?? "",
-      teamNames: normalizeUserTeamNames(userData) as UpdateUserValues["teamNames"],
+      teamNames: resolvedTeamNames as UpdateUserValues["teamNames"],
       departments: (userData.departments ?? []) as UpdateUserValues["departments"],
-      managerName: userData.managerName ?? "",
+      managerName: isTeamLead ? (sessionUserName || userData.managerName || "") : (userData.managerName ?? ""),
       email: userData.email ?? "",
       resetPassword: false,
       newPassword: "",
@@ -226,8 +264,7 @@ export function UserEditForm({
       isAdminActive: userData.isAdminActive ?? false,
       isEmailActivated: userData.isEmailActivated ?? false
     });
-    setShowResetPassword(false);
-  }, [reset, userData]);
+  }, [currentUserTeamNames, isTeamLead, reset, sessionUserName, userData]);
 
   const managerName = useWatch({ control, name: "managerName" });
   const selectedRole = useWatch({ control, name: "role" });
@@ -255,41 +292,111 @@ export function UserEditForm({
   const teamLeadOptions = managerPools?.teamLeads ?? [];
   const hodOptions = managerPools?.hods ?? [];
 
-const selectedDepartmentNames = useMemo(
+  const selectedDepartmentNames = useMemo(
     () => currentDepartments.map((d) => d.name),
     [currentDepartments]
   );
 
-const availableSkills = useMemo(
+  const availableSkills = useMemo(
     () => getSkillsForDepartments(selectedDepartmentNames),
     [selectedDepartmentNames]
   );
 
   const availableTeamOptions = useMemo(() => {
-    if (selectedRole === "ceo") return [];
+    if (selectedRole === "ceo" || selectedRole === "hod" || selectedRole === "report_manager") return [];
 
-    let filteredTeams = teamOptions;
-    if (selectedDepartmentNames.length > 0) {
-      filteredTeams = teamOptions.filter((team) => team.department && selectedDepartmentNames.includes(team.department as any));
-    } else {
-      filteredTeams = [];
+    let teams = teamOptions;
+    const existingUserTeams = normalizeUserTeamNames(userData);
+
+    if (isTeamLead) {
+      const allowedTeamNames = sessionUser?.teamNames ?? [];
+      const allowedTeamName = sessionUser?.teamName;
+      const allAllowed = [...allowedTeamNames];
+      if (allowedTeamName && !allAllowed.includes(allowedTeamName)) {
+        allAllowed.push(allowedTeamName);
+      }
+      for (const et of existingUserTeams) {
+        if (!allAllowed.some((a) => a.trim().toLowerCase() === et.trim().toLowerCase())) {
+          allAllowed.push(et);
+        }
+      }
+      if (allAllowed.length) {
+        const normalizedAllowed = allAllowed.map((t) => t.trim().toLowerCase());
+        const filtered = teamOptions.filter(
+          (team) =>
+            normalizedAllowed.includes(team.name.trim().toLowerCase()) ||
+            (team.showName && normalizedAllowed.includes(team.showName.trim().toLowerCase()))
+        );
+        const coveredNames = new Set(
+          filtered.flatMap((t) => [t.name.toLowerCase(), (t.showName || "").toLowerCase()].filter(Boolean))
+        );
+        const missing = allAllowed.filter((a) => !coveredNames.has(a.toLowerCase()));
+        teams = [
+          ...filtered,
+          ...missing.map((name) => ({
+            _id: name,
+            name: name,
+            showName: name
+          }))
+        ];
+      }
+    } else if (selectedDepartmentNames.length > 0) {
+      const deptTeams = teams.filter((team) => {
+        if (!team.department) return false;
+        return selectedDepartmentNames.some(
+          (sd) => sd.trim().toLowerCase() === team.department?.trim().toLowerCase()
+        );
+      });
+      if (deptTeams.length > 0) {
+        teams = deptTeams;
+      } else {
+        teams = [];
+      }
     }
+    return teams;
+  }, [isTeamLead, sessionUser?.teamNames, sessionUser?.teamName, selectedRole, teamOptions, selectedDepartmentNames, userData]);
 
-    if (currentRole === "team_lead") {
-      if (!currentUserTeamNames.length) return [];
-      return filteredTeams.filter((team) => currentUserTeamNames.includes(team.name));
+  const managerSelectOptions = useMemo(() => {
+    if (!canEditManagerName) return [];
+    if (selectedRole === "hod") return [{ _id: "admin", name: "Admin" }];
+
+    let baseOptions = (selectedRole === "team_lead" || selectedRole === "report_manager") ? hodOptions : teamLeadOptions;
+    if (userData?.managerName && !baseOptions.some((m) => m.name === userData.managerName)) {
+      baseOptions = [{ _id: "current_manager", name: userData.managerName }, ...baseOptions];
     }
-    if (selectedRole === "team_member") {
-      const selectedManager = teamLeadOptions.find((m) => m.name === managerName);
-      if (!selectedManager) return filteredTeams;
-      const managerTeams = normalizeTeamNames(selectedManager.teamName ?? null, selectedManager.teamNames ?? null);
-      return filteredTeams.filter((team) => managerTeams.includes(team.name));
+    return baseOptions;
+  }, [canEditManagerName, hodOptions, selectedRole, teamLeadOptions, userData?.managerName]);
+
+  useEffect(() => {
+    if (!selectedRole) return;
+    if (selectedRole === "report_manager" || selectedRole === "ceo" || selectedRole === "hod") {
+      if (currentRoleTypes && currentRoleTypes.length > 0) {
+        setValue("roleTypes", []);
+      }
+      if (currentTeamNames && currentTeamNames.length > 0) {
+        setValue("teamNames", []);
+      }
+      if (selectedRole === "ceo" && currentDepartments.length > 0) {
+        setValue("departments", []);
+      }
+      if (selectedRole === "hod") {
+        const ceoManager = sessionUserRole === "ceo" ? (sessionUserName || "CEO") : "CEO";
+        if (managerName !== ceoManager) {
+          setValue("managerName", ceoManager);
+        }
+      }
     }
-    return filteredTeams;
-  }, [currentRole, currentUserTeamNames, selectedRole, teamLeadOptions, managerName, teamOptions, selectedDepartmentNames]);
+  }, [
+    selectedRole,
+    sessionUserRole,
+    sessionUserName,
+    currentRoleTypes?.length,
+    currentTeamNames?.length,
+    currentDepartments.length,
+    managerName,
+    setValue
+  ]);
 
-
-    
   const toggleDepartment = (deptName: "Construction" | "Software" | "Finance" | "Marketing") => {
     const exists = currentDepartments.some((d) => d.name === deptName);
     let next: typeof currentDepartments;
@@ -298,7 +405,10 @@ const availableSkills = useMemo(
     } else {
       next = [...currentDepartments, { name: deptName, subTeams: deptName === "Marketing" ? ["Physical"] : [] }];
     }
-    setValue("departments", next);
+    setValue("departments", next, { shouldValidate: true, shouldDirty: true, shouldTouch: true });
+    if (next.length > 0) {
+      clearErrors("departments");
+    }
   };
 
   const toggleMarketingSubTeam = (sub: "Physical" | "Digital") => {
@@ -309,53 +419,9 @@ const availableSkills = useMemo(
     const nextSub = exists ? currentSub.filter((s) => s !== sub) : [...currentSub, sub];
     const nextDepartments = [...currentDepartments];
     nextDepartments[marketingIndex] = { name: "Marketing", subTeams: nextSub };
-    setValue("departments", nextDepartments);
+    setValue("departments", nextDepartments, { shouldValidate: true, shouldDirty: true, shouldTouch: true });
+    clearErrors("departments");
   };
-
-  const managerSelectOptions = useMemo(() => {
-    if (!canEditManagerName) return [];
-    if (selectedRole === "hod") return [{ _id: "admin", name: "Admin" }];
-    if (selectedRole === "team_lead" || selectedRole === "report_manager") return hodOptions;
-    if (selectedRole === "team_member") return teamLeadOptions;
-    return teamLeadOptions;
-  }, [canEditManagerName, hodOptions, selectedRole, teamLeadOptions]);
-
-  useEffect(() => {
-    // Clear invalid role types when available skills change
-    if (currentRoleTypes && currentRoleTypes.length > 0) {
-      const validSkillNames = availableSkills.map((s) => s.name);
-      const filteredRoleTypes = currentRoleTypes.filter((rt) => validSkillNames.includes(rt));
-      if (filteredRoleTypes.length !== currentRoleTypes.length) {
-        setValue("roleTypes", filteredRoleTypes as UpdateUserValues["roleTypes"]);
-      }
-    }
-  }, [availableSkills, currentRoleTypes, setValue]);
-
-  useEffect(() => {
-    if (!availableTeamOptions.length) return;
-
-    if (currentRole === "team_lead") {
-      const allowedTeamNames = new Set(availableTeamOptions.map((team) => team.name));
-      const filteredTeamNames = (currentTeamNames ?? []).filter((teamName) => allowedTeamNames.has(teamName));
-      if (filteredTeamNames.length !== (currentTeamNames ?? []).length) {
-        setValue("teamNames", filteredTeamNames);
-      }
-    } else if (selectedRole === "team_member") {
-      const allowedTeamNames = new Set(availableTeamOptions.map((team) => team.name));
-      const filteredTeamNames = (currentTeamNames ?? []).filter((teamName) => allowedTeamNames.has(teamName));
-      if (filteredTeamNames.length !== (currentTeamNames ?? []).length) {
-        setValue("teamNames", filteredTeamNames);
-      }
-    }
-  }, [availableTeamOptions, currentRole, currentTeamNames, selectedRole, setValue]);
-
-  useEffect(() => {
-    if (!canEditManagerName || selectedRole !== "team_member") return;
-
-    if (managerName && !managerSelectOptions.some((manager) => manager.name === managerName)) {
-      setValue("managerName", "");
-    }
-  }, [canEditManagerName, managerName, managerSelectOptions, selectedRole, setValue]);
 
   const onSubmit = async (values: UpdateUserValues) => {
     setError(null);
@@ -364,13 +430,13 @@ const availableSkills = useMemo(
     const normalizedTeamNames = Array.from(
       new Set((values.teamNames ?? []).map((teamName) => teamName.trim()).filter(Boolean))
     );
-    const resolvedManagerName = values.managerName;
+    const resolvedManagerName = isTeamLead ? (sessionUserName || values.managerName) : values.managerName;
 
     const payload = {
       ...values,
       email: canEditEmail ? values.email : undefined,
       teamNames: normalizedTeamNames,
-      managerName: canEditManagerName ? resolvedManagerName : undefined,
+      managerName: canEditManagerName ? resolvedManagerName : isTeamLead ? resolvedManagerName : undefined,
       resetPassword: canResetPassword ? values.resetPassword : undefined,
       newPassword: values.resetPassword ? values.newPassword : undefined,
       confirmPassword: values.resetPassword ? values.confirmPassword : undefined
@@ -416,7 +482,11 @@ const availableSkills = useMemo(
       }
       await queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
       await queryClient.invalidateQueries({ queryKey: ["user-edit", userId] });
+      await queryClient.invalidateQueries({ queryKey: ["report-manager-users"] });
       setMessage("User updated successfully.");
+      setTimeout(() => {
+        router.push(backHref as any);
+      }, 500);
     } catch (requestError) {
       const responseMessage = axios.isAxiosError(requestError) ? requestError.response?.data?.message : null;
       setError(responseMessage ?? "Failed to update user.");
@@ -432,109 +502,171 @@ const availableSkills = useMemo(
   }
 
   return (
-    <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSubmit(onSubmit)}>
-      <ReportField label="First name" error={errors.firstName?.message}>
-        <ReportInput placeholder="First name" {...register("firstName")} />
+    <form className="grid gap-4 md:grid-cols-2" autoComplete="off" onSubmit={handleSubmit(onSubmit)}>
+      {/* 1. Company */}
+      {currentRole === "hod" || currentRole === "team_lead" || currentRole === "report_manager" || currentRole === "ceo" ? (
+        <ReportField className="md:col-span-2" label="Company">
+          <input type="hidden" {...register("workspaceId")} />
+          <ReportInput
+            disabled
+            value={companies?.find((c) => c._id === (userData?.workspaceId || sessionUser?.workspaceId))?.name || "Company Workspace"}
+            className="font-semibold text-sky-600 dark:text-sky-400"
+          />
+        </ReportField>
+      ) : (
+        <ReportField className="md:col-span-2" label="Company" required error={errors.workspaceId?.message}>
+          <ReportSelect {...register("workspaceId")}>
+            <option value="">Select Company</option>
+            {companies?.map((company) => (
+              <option key={company._id} value={company._id}>
+                {company.name}
+              </option>
+            ))}
+          </ReportSelect>
+        </ReportField>
+      )}
+
+      <ReportField label="First name" required error={errors.firstName?.message}>
+        <ReportInput
+          placeholder="First name"
+          autoComplete="off"
+          data-lpignore="true"
+          {...register("firstName")}
+          onChange={(e) => {
+            const cleaned = e.target.value.replace(/[^a-zA-Z\s'-]/g, "");
+            setValue("firstName", cleaned, { shouldValidate: true, shouldDirty: true });
+          }}
+        />
       </ReportField>
       <ReportField label="Last name" error={errors.lastName?.message}>
-        <ReportInput placeholder="Last name" {...register("lastName")} />
+        <ReportInput
+          placeholder="Last name"
+          autoComplete="off"
+          data-lpignore="true"
+          {...register("lastName")}
+          onChange={(e) => {
+            const cleaned = e.target.value.replace(/[^a-zA-Z\s'-]/g, "");
+            setValue("lastName", cleaned, { shouldValidate: true, shouldDirty: true });
+          }}
+        />
       </ReportField>
-      <ReportField label="Phone" error={errors.phone?.message}>
-        <ReportInput placeholder="Phone" type="tel" {...register("phone")} />
+      <ReportField label="Phone" required error={errors.phone?.message}>
+        <ReportInput
+          placeholder="Phone"
+          type="tel"
+          maxLength={10}
+          {...register("phone")}
+          onChange={(e) => {
+            const cleaned = e.target.value.replace(/[^0-9]/g, "").slice(0, 10);
+            setValue("phone", cleaned, { shouldValidate: true, shouldDirty: true });
+          }}
+        />
       </ReportField>
-      <ReportField label="Employee ID" error={errors.empID?.message}>
-        <ReportInput placeholder="Employee ID" {...register("empID")} />
-      </ReportField>
-      <ReportField label="Email" error={errors.email?.message}>
-        {canEditEmail ? (
-          <ReportInput placeholder="Email" type="email" {...register("email")} />
+      <ReportField label="Employee ID" required error={errors.empID?.message}>
+        {canEditEmpID ? (
+          <ReportInput key="empID-editable" placeholder="Employee ID" {...register("empID")} />
         ) : (
-          <ReportInput disabled value={userData.email ?? ""} />
+          <ReportInput key="empID-disabled" disabled value={userData.empID ?? ""} />
+        )}
+      </ReportField>
+      <ReportField label="Email" required error={errors.email?.message}>
+        {canEditEmail ? (
+          <ReportInput key="email-editable" placeholder="Email" type="email" {...register("email")} />
+        ) : (
+          <ReportInput key="email-disabled" disabled value={userData.email ?? ""} />
         )}
       </ReportField>
 
-      <ReportField className="md:col-span-2" label="Company" error={errors.workspaceId?.message}>
-        <ReportSelect {...register("workspaceId")}>
-          <option value="">Select Company</option>
-          {companies?.map((company) => (
-            <option key={company._id} value={company._id}>
-              {company.name}
-            </option>
-          ))}
-        </ReportSelect>
-      </ReportField>
-
+      {/* 2. Department */}
       {selectedRole !== "ceo" ? (
-        <>
-          <div className="md:col-span-2">
-            <Controller
-              control={control}
-              name="teamNames"
-              render={({ field }) => (
-                <ReportMultiSelectCards
-                  label="Team (Team Type)"
-                  helperText={selectedRole === "team_member" ? "Choose one or more teams for this user." : "Choose one or more teams for this user."}
-                  error={errors.teamNames?.message}
-                  value={field.value ?? []}
-                  onChange={field.onChange}
-                  options={availableTeamOptions.map((team) => ({
-                    value: team.name,
-                    label: team.showName ?? team.name
-                  }))}
-                />
-              )}
-            />
+        <div className="md:col-span-2 space-y-2">
+          <div className="text-sm font-medium text-foreground">
+            Departments (Assigned to User) <span className="text-danger">*</span>
           </div>
-          <div className="md:col-span-2 space-y-2">
-            <div className="text-sm font-medium text-foreground">Departments (Assigned to User)</div>
-            <div className="text-xs text-muted-foreground mb-2">Select one or more primary departments for this user.</div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {DEPARTMENT_OPTIONS.map((deptName) => {
-                const isSelected = currentDepartments.some((d) => d.name === deptName);
-                return (
-                  <Button
-                    key={deptName}
-                    type="button"
-                    disabled
-                    variant={isSelected ? "default" : "outline"}
-                    className="justify-start text-xs h-9 disabled:opacity-70 disabled:cursor-not-allowed"
-                    onClick={() => toggleDepartment(deptName)}
-                  >
-                    {deptName}
-                  </Button>
-                );
-              })}
-            </div>
+          <div className="text-xs text-muted-foreground mb-2">Select one or more primary departments for this user.</div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {allowedDepartments.map((deptName) => {
+              const isSelected = currentDepartments.some((d) => d.name === deptName);
+              return (
+                <Button
+                  key={deptName}
+                  type="button"
+                  variant={isSelected ? "default" : "outline"}
+                  className="justify-start text-xs h-9"
+                  onClick={() => toggleDepartment(deptName as any)}
+                >
+                  {deptName}
+                </Button>
+              );
+            })}
+          </div>
+          {errors.departments?.message ? (
+            <p className="text-xs text-danger font-medium mt-1">{errors.departments.message}</p>
+          ) : null}
 
-            {currentDepartments.some((d) => d.name === "Marketing") && (
-              <div className="mt-3 p-3 border rounded-lg bg-muted/20 space-y-2">
-                <div className="text-xs font-semibold text-foreground">Marketing Sub-Teams</div>
-                <div className="flex gap-2">
-                  {MARKETING_SUB_TEAMS.map((sub) => {
-                    const marketingDept = currentDepartments.find((d) => d.name === "Marketing");
-                    const isSubSelected = marketingDept?.subTeams?.includes(sub);
-                    return (
-                      <Button
-                        key={sub}
-                        type="button"
-                        disabled
-                        variant={isSubSelected ? "secondary" : "outline"}
-                        size="sm"
-                        className="text-xs h-8 disabled:opacity-70 disabled:cursor-not-allowed"
-                        onClick={() => toggleMarketingSubTeam(sub)}
-                      >
-                        {sub}
-                      </Button>
-                    );
-                  })}
-                </div>
+          {currentDepartments.some((d) => d.name === "Marketing") && (
+            <div className="mt-3 p-3 border rounded-lg bg-muted/20 space-y-2">
+              <div className="text-xs font-semibold text-foreground">Marketing Sub-Teams</div>
+              <div className="flex gap-2">
+                {MARKETING_SUB_TEAMS.map((sub) => {
+                  const marketingDept = currentDepartments.find((d) => d.name === "Marketing");
+                  const isSubSelected = marketingDept?.subTeams?.includes(sub);
+                  return (
+                    <Button
+                      key={sub}
+                      type="button"
+                      variant={isSubSelected ? "default" : "outline"}
+                      size="sm"
+                      className="text-xs h-8"
+                      onClick={() => toggleMarketingSubTeam(sub)}
+                    >
+                      {sub}
+                    </Button>
+                  );
+                })}
               </div>
-            )}
-          </div>
-        </>
+            </div>
+          )}
+        </div>
       ) : null}
-      <ReportField label="Role" error={errors.role?.message}>
-        {canEditRole ? (
+
+      {/* 3. Team Type (Placed directly after Department) */}
+      {selectedRole !== "ceo" && selectedRole !== "hod" && selectedRole !== "report_manager" ? (
+        <div className="md:col-span-2">
+          <Controller
+            control={control}
+            name="teamNames"
+            render={({ field }) => (
+              <ReportMultiSelectCards
+                label="Team (Team Type)"
+                required={selectedRole === "team_lead" || selectedRole === "team_member"}
+                helperText={
+                  isTeamLead
+                    ? "Choose one or more team types from your assigned team list."
+                    : selectedRole === "team_member"
+                    ? "Choose at least one team type managed by the selected team lead."
+                    : selectedRole === "team_lead"
+                    ? "Choose at least one team type for this team lead."
+                    : "Choose one or more team types for this user."
+                }
+                error={errors.teamNames?.message}
+                value={field.value ?? []}
+                onChange={field.onChange}
+                options={availableTeamOptions.map((team) => ({
+                  value: team.name,
+                  label: team.showName ?? team.name
+                }))}
+              />
+            )}
+          />
+        </div>
+      ) : null}
+
+      {/* 4. Role */}
+      <ReportField label="Role" required error={errors.role?.message}>
+        {isTeamLead ? (
+          <ReportInput disabled value="Team Member" />
+        ) : canEditRole ? (
           <Controller
             control={control}
             name="role"
@@ -544,28 +676,6 @@ const availableSkills = useMemo(
                 onChange={(event) => {
                   const nextRole = event.target.value as NonNullable<UpdateUserValues["role"]>;
                   field.onChange(nextRole);
-
-                  if (nextRole === "report_manager") {
-                    setValue("roleTypes", []);
-                  } else if (!currentRoleTypes?.length && selectedDepartmentNames.length > 0 && availableSkills.length > 0) {
-                    setValue("roleTypes", [availableSkills[0].name as any]);
-                  }
-
-                  if (!canEditManagerName) return;
-
-                  if (nextRole === "hod") {
-                    setValue("managerName", "Admin");
-                    return;
-                  }
-
-                  if (nextRole === "team_lead" || nextRole === "report_manager") {
-                    const firstHod = hodOptions[0]?.name ?? "";
-                    if (firstHod) setValue("managerName", firstHod);
-                    return;
-                  }
-
-                  const firstTeamLead = teamLeadOptions[0]?.name ?? "";
-                  if (firstTeamLead) setValue("managerName", firstTeamLead);
                 }}
               >
                 {availableRoleOptions.map((role) => (
@@ -580,7 +690,45 @@ const availableSkills = useMemo(
           <ReportInput disabled value={ROLE_LABELS[normalizeRole(userData.role) ?? "team_member"]} />
         )}
       </ReportField>
-      {selectedRole !== "report_manager" && selectedRole !== "ceo" ? (
+
+      {/* 5. Manager */}
+      {isTeamLead ? (
+        <ReportField className="md:col-span-2" label="Manager">
+          <input type="hidden" {...register("managerName")} />
+          <ReportInput disabled value={sessionUserName || "Team Lead"} />
+        </ReportField>
+      ) : selectedRole === "hod" ? (
+        <ReportField className="md:col-span-2" label="Manager">
+          <input type="hidden" {...register("managerName")} />
+          <div className="flex h-11 w-full items-center rounded-xl border border-input bg-muted/40 px-3 py-2 text-sm font-medium text-foreground">
+            {sessionUser?.role === "ceo" ? sessionUser.name : "CEO"}
+          </div>
+        </ReportField>
+      ) : selectedRole !== "ceo" && selectedRole !== "admin" ? (
+        <ReportField className="md:col-span-2" label={selectedRole === "team_member" ? "Team Lead" : selectedRole === "report_manager" || selectedRole === "team_lead" ? "HOD (Manager)" : "Manager"} required error={errors.managerName?.message}>
+          {canEditManagerName ? (
+            <Controller
+              control={control}
+              name="managerName"
+              render={({ field }) => (
+                <ReportSelect {...field}>
+                  <option value="">{selectedRole === "team_member" ? "Select team lead" : "Select HOD"}</option>
+                  {managerSelectOptions.map((manager) => (
+                    <option key={manager._id} value={manager.name}>
+                      {manager.name}
+                    </option>
+                  ))}
+                </ReportSelect>
+              )}
+            />
+          ) : (
+            <ReportInput disabled value={managerName ?? userData.managerName ?? ""} />
+          )}
+        </ReportField>
+      ) : null}
+
+      {/* 6. Skills */}
+      {selectedRole !== "report_manager" && selectedRole !== "ceo" && selectedRole !== "hod" ? (
         <div className="md:col-span-2">
           <Controller
             control={control}
@@ -588,6 +736,7 @@ const availableSkills = useMemo(
             render={({ field }) => (
               <ReportMultiSelectCards
                 label="Skills / Specialties"
+                required
                 helperText="Select one or more skills for this user (dynamically filtered based on chosen department)."
                 error={errors.roleTypes?.message}
                 value={field.value ?? []}
@@ -602,29 +751,6 @@ const availableSkills = useMemo(
           />
         </div>
       ) : null}
-      <div className="md:col-span-2 rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">
-        List team now follows the manager&apos;s team, while this user keeps its own team assignment here.
-      </div>
-      <ReportField className="md:col-span-2" label="Manager" error={errors.managerName?.message}>
-        {canEditManagerName ? (
-          <Controller
-            control={control}
-            name="managerName"
-            render={({ field }) => (
-              <ReportSelect {...field}>
-                <option value="">{selectedRole === "team_member" ? "Select team lead" : "Select manager"}</option>
-                {managerSelectOptions.map((manager) => (
-                  <option key={manager._id} value={manager.name}>
-                    {manager.name}
-                  </option>
-                ))}
-              </ReportSelect>
-            )}
-          />
-        ) : (
-          <ReportInput disabled value={managerName ?? userData.managerName ?? ""} />
-        )}
-      </ReportField>
       <ReportField label="Status" error={errors.status?.message}>
         <ReportSelect {...register("status")}>
           <option value="active">Active</option>
@@ -632,101 +758,45 @@ const availableSkills = useMemo(
           <option value="suspended">Suspended</option>
         </ReportSelect>
       </ReportField>
-      <ReportField label="Is active" error={errors.isActive?.message}>
-        <Controller
-          control={control}
-          name="isActive"
-          render={({ field }) => (
-            <ReportSelect value={String(field.value)} onChange={(event) => field.onChange(event.target.value === "true")}>
-              <option value="true">Is Active: Yes</option>
-              <option value="false">Is Active: No</option>
-            </ReportSelect>
-          )}
-        />
-      </ReportField>
-      <ReportField label="Is deleted" error={errors.isDeleted?.message}>
-        <Controller
-          control={control}
-          name="isDeleted"
-          render={({ field }) => (
-            <ReportSelect value={String(field.value)} onChange={(event) => field.onChange(event.target.value === "true")}>
-              <option value="false">Is Deleted: No</option>
-              <option value="true">Is Deleted: Yes</option>
-            </ReportSelect>
-          )}
-        />
-      </ReportField>
-      <ReportField label="Email activated" error={errors.isEmailActivated?.message}>
-        <Controller
-          control={control}
-          name="isEmailActivated"
-          render={({ field }) => (
-            <ReportSelect value={String(field.value)} onChange={(event) => field.onChange(event.target.value === "true")}>
-              <option value="false">Email Activated: No</option>
-              <option value="true">Email Activated: Yes</option>
-            </ReportSelect>
-          )}
-        />
-      </ReportField>
-      {canEditRole ? (
-        <ReportField className="md:col-span-2" label="Admin active" error={errors.isAdminActive?.message}>
-          <Controller
-            control={control}
-            name="isAdminActive"
-            render={({ field }) => (
-              <ReportSelect value={String(field.value)} onChange={(event) => field.onChange(event.target.value === "true")}>
-                <option value="false">Admin Active: No</option>
-                <option value="true">Admin Active: Yes</option>
-              </ReportSelect>
-            )}
-          />
-        </ReportField>
-      ) : null}
       {canResetPassword ? (
         <div className="md:col-span-2 rounded-md border bg-muted/20 p-4">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-sm font-medium text-foreground">Reset password</div>
-              <div className="text-xs text-muted-foreground">Use this only when you want to set a new login password.</div>
+              <div className="text-sm font-medium text-foreground">Reset Password</div>
+              <div className="text-xs text-muted-foreground">Enable to set a new login password for this user.</div>
             </div>
-            <Controller
-              control={control}
-              name="resetPassword"
-              render={({ field }) => (
-                <Button
-                  type="button"
-                  variant={field.value ? "default" : "outline"}
-                  onClick={() => {
-                    const nextValue = !field.value;
-                    field.onChange(nextValue);
-                    setShowResetPassword(nextValue);
-                    if (!nextValue) {
-                      setValue("newPassword", "");
-                      setValue("confirmPassword", "");
-                    }
-                  }}
-                >
-                  {field.value ? "Password reset enabled" : "Enable password reset"}
-                </Button>
-              )}
-            />
+            <Button
+              type="button"
+              variant={resetPasswordEnabled ? "default" : "outline"}
+              onClick={() => {
+                const nextState = !resetPasswordEnabled;
+                setValue("resetPassword", nextState, { shouldValidate: true, shouldDirty: true });
+                if (!nextState) {
+                  setValue("newPassword", "");
+                  setValue("confirmPassword", "");
+                  clearErrors(["newPassword", "confirmPassword"]);
+                }
+              }}
+            >
+              {resetPasswordEnabled ? "Password Reset Enabled" : "Enable Password Reset"}
+            </Button>
           </div>
-          {showResetPassword || resetPasswordEnabled ? (
+          {resetPasswordEnabled ? (
             <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <ReportField label="New password" error={errors.newPassword?.message}>
-                <PasswordInput variant="report" placeholder="New password" {...register("newPassword")} />
+              <ReportField
+                label="New Password"
+                required
+                error={errors.newPassword?.message}
+              >
+                <PasswordInput variant="report" showRules={true} placeholder="New password" {...register("newPassword")} />
               </ReportField>
-              <ReportField label="Confirm password" error={errors.confirmPassword?.message}>
+              <ReportField label="Confirm Password" required error={errors.confirmPassword?.message}>
                 <PasswordInput variant="report" placeholder="Confirm password" {...register("confirmPassword")} />
               </ReportField>
             </div>
           ) : null}
         </div>
       ) : null}
-      <div className="md:col-span-2 grid gap-2 rounded-md border bg-muted/30 p-4 text-sm text-muted-foreground">
-        <div>Created at: {userData.createdAt ? new Date(userData.createdAt).toLocaleString() : "N/A"}</div>
-        <div>Updated at: {userData.updatedAt ? new Date(userData.updatedAt).toLocaleString() : "N/A"}</div>
-      </div>
       {error ? <p className="text-sm text-danger md:col-span-2">{error}</p> : null}
       {message ? <p className="text-sm text-success md:col-span-2">{message}</p> : null}
       <div className="md:col-span-2 flex flex-wrap gap-3">
@@ -747,7 +817,8 @@ const availableSkills = useMemo(
               roleTypes: (userData.roleTypes ?? []) as UpdateUserValues["roleTypes"],
               workspaceId: userData.workspaceId ?? "",
               teamNames: normalizeUserTeamNames(userData) as UpdateUserValues["teamNames"],
-              managerName: userData.managerName ?? "",
+              departments: (userData.departments ?? []) as UpdateUserValues["departments"],
+              managerName: isTeamLead ? (sessionUserName || userData.managerName || "") : (userData.managerName ?? ""),
               email: userData.email ?? "",
               resetPassword: false,
               newPassword: "",
@@ -758,7 +829,7 @@ const availableSkills = useMemo(
               isAdminActive: userData.isAdminActive ?? false,
               isEmailActivated: userData.isEmailActivated ?? false
             });
-            setShowResetPassword(false);
+            setValue("resetPassword", false);
           }}
         >
           Reset

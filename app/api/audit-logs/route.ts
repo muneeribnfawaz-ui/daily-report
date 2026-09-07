@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import AuditLog from "@/models/AuditLog";
-import WorkspaceMember from "@/models/WorkspaceMember";
 
 export async function GET(request: Request) {
   const user = await getCurrentUser();
@@ -13,21 +11,16 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const workspaceId = url.searchParams.get("workspaceId") || request.headers.get("x-workspace-id") || user.workspaceId;
 
-  await connectToDatabase();
-  const filter: Record<string, any> = {};
+    const filter: Record<string, any> = {};
 
   if (user.role !== "admin") {
-    const memberships = await WorkspaceMember.find({
-      userId: user.id,
-      status: "active",
-      isActive: true
-    }).select("workspaceId").lean() as any[];
+    const memberships = await db.workspaceMember.findMany({ where: { userId: user.id, status: "active", isActive: true }, select: { workspaceId: true } });
     const allowedWorkspaceIds = memberships.map(m => String(m.workspaceId));
 
     if (workspaceId && workspaceId !== "all") {
       filter.workspaceId = allowedWorkspaceIds.includes(workspaceId) ? workspaceId : "non_existent_id";
     } else {
-      filter.workspaceId = { $in: allowedWorkspaceIds };
+      filter.workspaceId = { in: allowedWorkspaceIds };
     }
   } else {
     if (workspaceId && workspaceId !== "all") {
@@ -35,6 +28,6 @@ export async function GET(request: Request) {
     }
   }
 
-  const logs = await AuditLog.find(filter).sort({ createdAt: -1 }).lean();
+  const logs = await db.auditLog.findMany({ where: filter, orderBy: { createdAt: "desc" } });
   return NextResponse.json({ success: true, data: logs });
 }

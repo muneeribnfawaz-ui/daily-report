@@ -8,7 +8,8 @@ import Link from "next/link";
 import type { Route } from "next";
 
 type NotificationItem = {
-  _id: string;
+  id?: string;
+  _id?: string;
   type: string;
   title: string;
   message: string;
@@ -93,7 +94,7 @@ export function NotificationBell() {
       </Button>
 
       {isOpen && (
-        <div className="absolute right-0 top-11 z-50 w-[340px] overflow-hidden rounded-xl border border-cardBorder bg-card shadow-lg sm:w-[380px]">
+        <div className="fixed left-3 right-3 top-16 z-50 overflow-hidden rounded-xl border border-cardBorder bg-card shadow-2xl sm:absolute sm:left-auto sm:right-0 sm:top-11 sm:w-[380px]">
           <div className="flex items-center justify-between border-b px-4 py-3">
             <div className="text-sm font-semibold">Notifications</div>
             {unreadCount > 0 && (
@@ -114,45 +115,48 @@ export function NotificationBell() {
                 No notifications yet
               </div>
             ) : (
-              notifications.map((n) => (
-                <div
-                  key={n._id}
-                  className={`border-b px-4 py-3 transition-colors last:border-b-0 ${
-                    n.isRead ? "bg-card" : "bg-primary/5"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        {!n.isRead && (
-                          <span className="h-2 w-2 shrink-0 rounded-full bg-primary" />
-                        )}
-                        <span className="text-sm font-medium truncate">{n.title}</span>
-                      </div>
-                      <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
-                        {n.message}
-                      </p>
-                      <div className="mt-1.5 flex items-center gap-3">
-                        <span className="text-[10px] text-muted-foreground">{timeAgo(n.createdAt)}</span>
-                        {n.linkUrl && (
-                          <Link
-                            href={n.linkUrl as Route}
-                            className="flex items-center gap-1 text-[10px] text-primary hover:underline"
-                            onClick={() => {
-                              if (!n.isRead) {
-                                markReadMutation.mutate({ notificationIds: [n._id] });
-                              }
-                              setIsOpen(false);
-                            }}
-                          >
-                            View <ExternalLink className="h-2.5 w-2.5" />
-                          </Link>
-                        )}
+              notifications.map((n, idx) => {
+                const notifId = n.id || n._id || String(idx);
+                return (
+                  <div
+                    key={notifId}
+                    className={`border-b px-4 py-3 transition-colors last:border-b-0 ${
+                      n.isRead ? "bg-card" : "bg-primary/5"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          {!n.isRead && (
+                            <span className="h-2 w-2 shrink-0 rounded-full bg-primary" />
+                          )}
+                          <span className="text-sm font-medium truncate">{n.title}</span>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                          {n.message}
+                        </p>
+                        <div className="mt-1.5 flex items-center gap-3">
+                          <span className="text-[10px] text-muted-foreground">{timeAgo(n.createdAt)}</span>
+                          {n.linkUrl && (
+                            <Link
+                              href={n.linkUrl as Route}
+                              className="flex items-center gap-1 text-[10px] text-primary hover:underline"
+                              onClick={() => {
+                                if (!n.isRead) {
+                                  markReadMutation.mutate({ notificationIds: [notifId] });
+                                }
+                                setIsOpen(false);
+                              }}
+                            >
+                              View <ExternalLink className="h-2.5 w-2.5" />
+                            </Link>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

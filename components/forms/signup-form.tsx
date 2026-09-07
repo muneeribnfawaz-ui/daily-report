@@ -52,7 +52,7 @@ export function SignupForm() {
         <Input placeholder="Email" type="email" {...register("email")} />
       </ReportField>
       <ReportField label="Password" error={errors.password?.message}>
-        <PasswordInput placeholder="Password" {...register("password")} />
+        <PasswordInput showRules={true} placeholder="Password" {...register("password")} />
       </ReportField>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {success ? <p className="text-sm text-success">{success}</p> : null}

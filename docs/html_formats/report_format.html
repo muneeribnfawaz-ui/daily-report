@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, print-scale: 100%">
+    <title>MIF Technology - Daily Team Report | MIF Cortex</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            background: #e2e8f0;
+            padding: 40px 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .report-container {
+            max-width: 1400px;
+            width: 100%;
+            background: white;
+            border-radius: 24px;
+            box-shadow: 0 20px 35px -12px rgba(0,0,0,0.2);
+            padding: 32px 40px 48px 40px;
+        }
+
+        /* Header */
+        .header {
+            border-bottom: 3px solid #1e4a76;
+            padding-bottom: 20px;
+            margin-bottom: 28px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+
+        .title-section {
+            flex: 1;
+        }
+
+        /* Company Name - BIG and CENTERED */
+        .company-name {
+            text-align: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e2edf7;
+        }
+
+        .company-name h1 {
+            font-size: 42px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #1e4a76, #0f2b3d);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: #1e4a76;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .company-name p {
+            font-size: 14px;
+            color: #4a6a85;
+            letter-spacing: 1px;
+            margin-top: 5px;
+        }
+
+        .title-section h2 {
+            font-size: 24px;
+            color: #0f2b3d;
+            font-weight: 700;
+            margin-top: 5px;
+        }
+
+        .title-section p {
+            color: #2c5a7a;
+            margin-top: 6px;
+            font-size: 14px;
+        }
+
+        .date-badge {
+            background: #f1f5f9;
+            padding: 8px 18px;
+            border-radius: 60px;
+            font-weight: 600;
+            color: #1e4a76;
+            font-size: 14px;
+        }
+
+        /* Project row */
+        .project-row {
+            background: #f8fafc;
+            border-radius: 16px;
+            padding: 16px 24px;
+            margin-bottom: 32px;
+            display: flex;
+            gap: 40px;
+            border: 1px solid #e2edf7;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .project-item {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+        }
+
+        .project-item label {
+            font-size: 14px;
+            font-weight: 700;
+            color: #4a6a85;
+            letter-spacing: 0.5px;
+        }
+
+        .project-item .value {
+            font-size: 20px;
+            font-weight: 800;
+            color: #0c4a6e;
+        }
+
+        /* Team Card */
+        .team-card {
+            margin-bottom: 48px;
+            border: 1px solid #e2edf7;
+            border-radius: 20px;
+            overflow: hidden;
+            background: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+
+        .team-header {
+            background: linear-gradient(135deg, #1e4a76 0%, #1e3a5f 100%);
+            color: white;
+            padding: 14px 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .team-header h2 {
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        .team-icon {
+            font-size: 26px;
+        }
+
+        .team-badge {
+            background: rgba(255,255,255,0.2);
+            padding: 4px 12px;
+            border-radius: 40px;
+            font-size: 12px;
+            font-weight: 500;
+            margin-left: auto;
+        }
+
+        /* Daily Meeting Update - ONE PER TEAM */
+        .daily-meeting {
+            background: #fefce8;
+            border-left: 5px solid #eab308;
+            padding: 14px 24px;
+            margin: 0;
+            border-bottom: 1px solid #e2edf7;
+        }
+
+        .daily-meeting-label {
+            font-weight: 800;
+            color: #854d0e;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .daily-meeting-content {
+            color: #3b2e1e;
+            font-size: 13.5px;
+            line-height: 1.5;
+        }
+
+        /* Table */
+        .report-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12.5px;
+        }
+
+        .report-table th {
+            background: #f1f5f9;
+            text-align: left;
+            padding: 10px 12px;
+            font-weight: 700;
+            color: #1e3a5f;
+            border-bottom: 2px solid #cbd5e1;
+            font-size: 12px;
+        }
+
+        .report-table td {
+            padding: 12px;
+            border-bottom: 1px solid #e4e9f0;
+            vertical-align: top;
+        }
+
+        /* Attachment row - directly below each user */
+        .attachment-row {
+            background-color: #f8fafc;
+            border-bottom: 1px solid #e2edf7;
+        }
+
+        .attachment-row td {
+            padding: 8px 12px 8px 40px;
+            font-size: 11.5px;
+            color: #1e4a76;
+        }
+
+        .attachment-icon {
+            margin-right: 8px;
+            font-size: 12px;
+        }
+
+        .attachment-link {
+            color: #1e4a76;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .attachment-link:hover {
+            text-decoration: underline;
+        }
+
+        .no-attachment {
+            color: #94a3b8;
+            font-style: italic;
+        }
+
+        .tl-row {
+            background-color: #fefce8;
+            border-left: 4px solid #eab308;
+        }
+
+        .tl-row td:first-child {
+            font-weight: 700;
+        }
+
+        .member-row td:first-child {
+            padding-left: 28px;
+            position: relative;
+        }
+
+        .member-row td:first-child::before {
+            content: "└─ ";
+            color: #94a3b8;
+            position: absolute;
+            left: 8px;
+        }
+
+        .role-tl {
+            background: #eab308;
+            color: #1e3a5f;
+            font-size: 9px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 20px;
+            display: inline-block;
+            margin-left: 8px;
+        }
+
+        .role-member {
+            background: #2c7a4d;
+            color: white;
+            font-size: 9px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 20px;
+            display: inline-block;
+            margin-left: 8px;
+        }
+
+        .task-list {
+            margin: 0;
+            padding-left: 16px;
+        }
+
+        .task-list li {
+            margin-bottom: 4px;
+            line-height: 1.4;
+        }
+
+        .footer-note {
+            margin-top: 24px;
+            border-top: 1px solid #e2e8f0;
+            padding-top: 20px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #5f6c80;
+        }
+
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+                margin: 0;
+            }
+            .report-container {
+                box-shadow: none;
+                padding: 15px;
+            }
+            .team-card {
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+            button {
+                display: none;
+            }
+        }
+
+        button {
+            background: #1e4a76;
+            border: none;
+            color: white;
+            font-weight: 600;
+            padding: 12px 28px;
+            border-radius: 40px;
+            cursor: pointer;
+            margin-bottom: 24px;
+            font-size: 15px;
+        }
+
+        button:hover {
+            background: #0f3a5a;
+        }
+
+        .print-hide {
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+<div style="width: 100%; display: flex; flex-direction: column; align-items: center;">
+    <div class="print-hide">
+        <button id="printPDF">📄 Save as PDF (MIF Cortex Daily Report)</button>
+    </div>
+    <div class="report-container" id="reportContent">
+        <!-- COMPANY NAME - BIG and CENTERED -->
+        <div class="company-name">
+            <h1>MIF TECHNOLOGY</h1>
+            <p>Enterprise Technology Solutions</p>
+        </div>
+
+        <!-- HEADER with Title and Date -->
+        <div class="header">
+            <div class="title-section">
+                <h2>📋 Daily Team Progress Report</h2>
+                <p>Completed Work · Pending Work · Blockers · Clarifications</p>
+            </div>
+            <div class="date-badge" id="currentDate"></div>
+        </div>
+
+        <!-- PROJECT NAME - MIF Cortex -->
+        <div class="project-row">
+            <div class="project-item">
+                <label>📁 PROJECT NAME</label>
+                <div class="value">MIF Cortex</div>
+            </div>
+        </div>
+
+        <!-- ==================== TEAM 1: ENGINEERING ==================== -->
+        <div class="team-card">
+            <div class="team-header">
+                <span class="team-icon">⚙️</span>
+                <h2>Engineering Team</h2>
+                <span class="team-badge">Core Platform · 4 members</span>
+            </div>
+            
+            <div class="daily-meeting">
+                <div class="daily-meeting-label">📢 DAILY MEETING UPDATE</div>
+                <div class="daily-meeting-content">
+                    ✅ Standup completed at 10:30 AM. All members aligned on sprint goals. <br>
+                    🔄 Decided to prioritize API security fixes before new feature development. <br>
+                    📅 Retrospective scheduled for Friday 3 PM.
+                </div>
+            </div>
+
+            <table class="report-table">
+                <thead>
+                    <tr>
+                        <th style="width: 18%">Team Member</th>
+                        <th style="width: 27%">✅ Completed Work</th>
+                        <th style="width: 20%">⏳ Pending Work</th>
+                        <th style="width: 20%">🚧 Blockers</th>
+                        <th style="width: 15%">❓ Required Clarification</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- DAVID KIM - Team Lead -->
+                    <tr class="tl-row">
+                        <td><strong>David Kim</strong> <span class="role-tl">Team Lead</span></td>
+                        <td>
+                            <ul class="task-list">
+                                <li>Architecture review completed for 3 microservices</li>
+                                <li>Unblocked backend team on authentication flow</li>
+                                <li>Client sync for API design - requirements finalized</li>
+                            </ul>
+                        </td>
+                        <td>
+                            <ul class="task-list">
+                                <li>Security approval for new endpoint</li>
+                                <li>Q2 roadmap presentation draft</li>
+                            </ul>
+                        </td>
+                        <td>Waiting for security team review (submitted 2 days ago)</br><span style="font-size:11px;color:#eab308;">⏳ Awaiting response</span></td>
+                        <td>Need clarity on rate limiting SLA for enterprise tier</br><span style="font-size:11px;color:#1e4a76;">📝 Pending product decision</span></td>
+                    </tr>
+                    <tr class="attachment-row">
+                        <td colspan="5">
+                            <span class="attachment-icon">📎</span> 
+                            <strong>Attachment:</strong> 
+                            <a href="#" class="attachment-link">architecture-review-mif-cortex.pdf</a> 
+                            <span style="color:#6b7280; font-size:11px;">(PDF, 2.4 MB)</span>
+                        </td>
+                    </tr>
+
+                    <!-- SOFIA RAHMAN -->
+                    <tr class="member-row">
+                        <td>Sofia Rahman <span class="role-member">Senior Dev</span></td>
+                        <td>
+                            <ul class="task-list">
+                                <li>Implemented rate-limiting middleware for API gateway</li>
+                                <li>Fixed 2 critical memory leak bugs</li>
+                                <li>Code review for 4 PRs</li>
+                            </ul>
+                        </td>
+                        <td>
+                            <ul class="task-list">
+                                <li>Write integration tests for rate limiter</li>
+                                <li>Update API documentation</li>
+                            </ul>
+                        </td>
+                        <td>No blockers</br><span style="font-size:11px;color:#2c7a4d;">✅ All good</span></td>
+                        <td>—</br><span style="font-size:11px;color:#94a3b8;">N/A</span></td>
+                    </tr>
+                    <tr class="attachment-row">
+                        <td colspan="5">
+                            <span class="attachment-icon">📎</span> 
+                            <strong>Attachment:</strong> 
+                            <a href="#" class="attachment-link">rate-limiter-implementation-v2.zip</a>
+                            <span style="color:#6b7280; font-size:11px;">(ZIP, 156 KB)</span>
+                        </td>
+                    </tr>
+
+                    <!-- LIAM CHEN -->
+                    <tr class="member-row">
+                        <td>Liam Chen <span class="role-member">Frontend Dev</span></td>
+                        <td>
+                            <ul class="task-list">
+                                <li>Chat UI component with real-time messaging</li>
+                                <li>Responsive design fixes for mobile view</li>
+                                <li>Integrated WebSocket connection</li>
+                            </ul>
+                        </td>
+                        <td>
+                            <ul class="task-list">
+                                <li>Add emoji picker to chat</li>
+                                <li>Unit tests for chat components</li>
+                            </ul>
+                        </td>
+                        <td>Design review pending (waiting on Elena)</br><span style="font-size:11px;color:#eab308;">⏳ Blocked since yesterday</span></td>
+                        <td>Message read receipt feature - is this in scope?</br><span style="font-size:11px;color:#1e4a76;">📝 Asked in daily standup</span></td>
+                    </tr>
+                    <tr class="attachment-row">
+                        <td colspan="5">
+                            <span class="attachment-icon">📎</span> 
+                            <strong>Attachment:</strong> 
+                            <a href="#" class="attachment-link">chat-component-demo-recording.mp4</a>
+                            <span style="color:#6b7280; font-size:11px;">(MP4, 8.1 MB)</span>
+                        </td>
+                    </tr>
+
+                    <!-- NINA GUPTA (No Attachment) -->
+                    <tr class="member-row">
+                        <td>Nina Gupta <span class="role-member">Backend Dev</span></td>
+                        <td>
+                            <ul class="task-list">
+                                <li>Refactored auth service to use JWT</li>
+                                <li>Added structured logging with correlation IDs</li>
+                                <li>Optimized database query for user profiles (40% faster)</li>
+                            </ul>
+                        </td>
+                        <td>
+                            <ul class="task-list">
+                                <li>Password reset flow implementation</li>
+                                <li>2FA setup for admin accounts</li>
+                            </ul>
+                        </td>
+                        <td>Test coverage tools not working in CI pipeline</br><span style="font-size:11px;color:#dc2626;">⚠️ Critical blocker</span></td>
+                        <td>Should we support OAuth for external partners?</br><span style="font-size:11px;color:#1e4a76;">❓ Need clarification from security team</span></td>
+                    </tr>
+                    <tr class="attachment-row">
+                        <td colspan="5">
+                            <span class="attachment-icon">📎</span> 
+                            <strong>Attachment:</strong> 
+                            <span class="no-attachment">— No attachment uploaded —</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ==================== TEAM 2: PRODUCT & DESIGN ==================== -->
+        <div class="team-card">
+            <div class="team-header">
+                <span class="team-icon">🎨</span>
+                <h2>Product & Design Team</h2>
+                <span class="team-badge">UX + Product · 3 members</span>
+            </div>
+            
+            <div class="daily-meeting">
+                <div class="daily-meeting-label">📢 DAILY MEETING UPDATE</div>
+                <div class="daily-meeting-content">
+                    ✅ Design review completed for onboarding flow. Product roadmap prioritized for Q3. <br>
+                    🎯 Action item: User testing sessions to be scheduled by Friday.
+                </div>
+            </div>
+
+            <table class="report-table">
+                <thead>
+                    <tr><th>Team Member</th><th>✅ Completed Work</th><th>⏳ Pending Work</th><th>🚧 Blockers</th><th>❓ Required Clarification</th></tr>
+                </thead>
+                <tbody>
+                    <!-- RACHEL OMONDI -->
+                    <tr class="tl-row">
+                        <td><strong>Rachel Omondi</strong> <span class="role-tl">Product Lead</span></td>
+                        <td><ul class="task-list"><li>Finalized sprint goals for next iteration</li><li>User story mapping session completed</li><li>Stakeholder demo for analytics dashboard</li></ul></td>
+                        <td><ul class="task-list"><li>Feedback consolidation from stakeholders</li><li>Update product roadmap doc</li></ul></td>
+                        <td>Awaiting engineering estimates for 3 epics</br><span style="font-size:11px;color:#eab308;">⏳ Estimated by EOD tomorrow</span></td>
+                        <td>Budget approval needed for new design tool?</br><span style="font-size:11px;color:#1e4a76;">💰 Pending finance review</span></td>
+                    </tr>
+                    <tr class="attachment-row">
+                        <td colspan="5">
+                            <span class="attachment-icon">📎</span> 
+                            <strong>Attachment:</strong> 
+                            <a href="#" class="attachment-link">sprint-goals-q3-mif-cortex.pdf</a>
+                            <span style="color:#6b7280; font-size:11px;">(PDF, 1.2 MB)</span>
+                        </td>
+                    </tr>
+
+                    <!-- HIRO TANAKA -->
+                    <tr class="member-row">
+                        <td>Hiro Tanaka <span class="role-member">Product Manager</span></td>
+                        <td><ul class="task-list"><li>Wrote 8 new user stories for auth module</li><li>Prioritized backlog for sprint 24</li><li>Created acceptance criteria for 5 features</li></ul></td>
+                        <td><ul class="task-list"><li>Review with engineering on technical feasibility</li><li>Update Jira board</li></ul></td>
+                        <td>No blockers</br><span style="font-size:11px;color:#2c7a4d;">✅ On track</span></td>
+                        <td>—</br><span style="font-size:11px;color:#94a3b8;">N/A</span></td>
+                    </tr>
+                    <tr class="attachment-row">
+                        <td colspan="5">
+                            <span class="attachment-icon">📎</span> 
+                            <strong>Attachment:</strong> 
+                            <a href="#" class="attachment-link">user-stories-auth-module.xlsx</a>
+                            <span style="color:#6b7280; font-size:11px;">(Excel, 45 KB)</span>
+                        </td>
+                    </tr>
+
+                    <!-- ELENA VASQUEZ -->
+                    <tr class="member-row">
+                        <td>Elena Vasquez <span class="role-member">UI/UX Designer</span></td>
+                        <td><ul class="task-list"><li>High-fidelity mockups for onboarding flow</li><li>Design system component updates (buttons, modals)</li><li>Accessibility audit for 6 screens</li></ul></td>
+                        <td><ul class="task-list"><li>Handoff to engineering with specs</li><li>Prototype for user testing</li></ul></td>
+                        <td>Waiting for content copy from marketing</br><span style="font-size:11px;color:#eab308;">⏳ Due by Friday</span></td>
+                        <td>Do we need dark mode support for MIF Cortex?</br><span style="font-size:11px;color:#1e4a76;">🌙 Need product decision</span></td>
+                    </tr>
+                    <tr class="attachment-row">
+                        <td colspan="5">
+                            <span class="attachment-icon">📎</span> 
+                            <strong>Attachment:</strong> 
+                            <a href="#" class="attachment-link">onboarding-flow-mockups.fig</a>
+                            <span style="color:#6b7280; font-size:11px;">(Figma, 3.2 MB)</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ==================== TEAM 3: QA & RELEASE ==================== -->
+        <div class="team-card">
+            <div class="team-header">
+                <span class="team-icon">🧪</span>
+                <h2>QA & Release Team</h2>
+                <span class="team-badge">Quality Engineering · 3 members</span>
+            </div>
+            
+            <div class="daily-meeting">
+                <div class="daily-meeting-label">📢 DAILY MEETING UPDATE</div>
+                <div class="daily-meeting-content">
+                    ✅ Regression test suite executed. Found 3 high-priority bugs. Release v2.3 delayed by 1 day due to CI/CD issues.
+                </div>
+            </div>
+
+            <table class="report-table">
+                <thead>
+                    <tr><th>Team Member</th><th>✅ Completed Work</th><th>⏳ Pending Work</th><th>🚧 Blockers</th><th>❓ Required Clarification</th></tr>
+                </thead>
+                <tbody>
+                    <!-- MARCUS WEBB -->
+                    <tr class="tl-row">
+                        <td><strong>Marcus Webb</strong> <span class="role-tl">QA Lead</span></td>
+                        <td><ul class="task-list"><li>Test plan for release v2.3 created</li><li>Automation suite results: 89% pass rate</li><li>Triage of 7 new bugs (3 critical, 4 minor)</li></ul></td>
+                        <td><ul class="task-list"><li>Regression sign-off report</li><li>Coordinate with DevOps on pipeline fix</li></ul></td>
+                        <td>CI/CD pipeline instability causing flaky tests</br><span style="font-size:11px;color:#dc2626;">⚠️ High severity blocker</span></td>
+                        <td>Should we automate performance testing for Cortex?</br><span style="font-size:11px;color:#1e4a76;">📊 Needs cost estimation</span></td>
+                    </tr>
+                    <tr class="attachment-row">
+                        <td colspan="5">
+                            <span class="attachment-icon">📎</span> 
+                            <strong>Attachment:</strong> 
+                            <a href="#" class="attachment-link">test-plan-release-v2.3.pdf</a>
+                            <span style="color:#6b7280; font-size:11px;">(PDF, 856 KB)</span>
+                        </td>
+                    </tr>
+
+                    <!-- ANANYA SHARMA -->
+                    <tr class="member-row">
+                        <td>Ananya Sharma <span class="role-member">QA Engineer</span></td>
+                        <td><ul class="task-list"><li>Executed regression tests on staging (124 test cases)</li><li>Logged 3 new edge-case bugs</li><li>Verified 5 fixed bugs</li></ul></td>
+                        <td><ul class="task-list"><li>Retest after deployment fix</li><li>Update test documentation</li></ul></td>
+                        <td>Test environment refresh delayed by 2 hours</br><span style="font-size:11px;color:#eab308;">⏳ Waiting for DevOps</span></td>
+                        <td>Test data requirements for new feature?</br><span style="font-size:11px;color:#1e4a76;">📝 Clarify with product team</span></td>
+                    </tr>
+                    <tr class="attachment-row">
+                        <td colspan="5">
+                            <span class="attachment-icon">📎</span> 
+                            <strong>Attachment:</strong> 
+                            <a href="#" class="attachment-link">regression-test-results.xlsx</a>
+                            <span style="color:#6b7280; font-size:11px;">(Excel, 128 KB)</span>
+                        </td>
+                    </tr>
+
+                    <!-- CARLOS M. (No Attachment) -->
+                    <tr class="member-row">
+                        <td>Carlos M. <span class="role-member">Release Engineer</span></td>
+                        <td><ul class="task-list"><li>Prepared staging release notes</li><li>Verified deployment pipeline configuration</li><li>Rollback procedure tested</li></ul></td>
+                        <td><ul class="task-list"><li>Fix SSL certificate renewal automation</li><li>Document deployment runbook</li></ul></td>
+                        <td>No blockers</br><span style="font-size:11px;color:#2c7a4d;">✅ Ready for release</span></td>
+                        <td>—</br><span style="font-size:11px;color:#94a3b8;">N/A</span></td>
+                    </tr>
+                    <tr class="attachment-row">
+                        <td colspan="5">
+                            <span class="attachment-icon">📎</span> 
+                            <strong>Attachment:</strong> 
+                            <span class="no-attachment">— No attachment uploaded —</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- ==================== TEAM 4: DATA & ANALYTICS ==================== -->
+        <div class="team-card">
+            <div class="team-header">
+                <span class="team-icon">📊</span>
+                <h2>Data & Analytics Team</h2>
+                <span class="team-badge">BI & ML · 3 members</span>
+            </div>
+            
+            <div class="daily-meeting">
+                <div class="daily-meeting-label">📢 DAILY MEETING UPDATE</div>
+                <div class="daily-meeting-content">
+                    ✅ ETL pipeline optimization discussion. Data quality review completed. New dashboard requirements gathered from sales team.
+                </div>
+            </div>
+
+            <table class="report-table">
+                <thead>
+                    <tr><th>Team Member</th><th>✅ Completed Work</th><th>⏳ Pending Work</th><th>🚧 Blockers</th><th>❓ Required Clarification</th></tr>
+                </thead>
+                <tbody>
+                    <!-- MEERA JOSHI -->
+                    <tr class="tl-row">
+                        <td><strong>Dr. Meera Joshi</strong> <span class="role-tl">Data Lead</span></td>
+                        <td><ul class="task-list"><li>Model validation for churn prediction (AUC: 0.89)</li><li>Data governance review meeting</li><li>Pipeline optimization for customer events</li></ul></td>
+                        <td><ul class="task-list"><li>Finalize ML model deployment plan</li><li>Q3 data strategy document</li></ul></td>
+                        <td>Data source latency from third-party CRM API (30 sec delay)</br><span style="font-size:11px;color:#eab308;">⏳ Vendor ticket raised</span></td>
+                        <td>Approval needed for additional compute resources?</br><span style="font-size:11px;color:#1e4a76;">☁️ Cloud budget review pending</span></td>
+                    </tr>
+                    <tr class="attachment-row">
+                        <td colspan="5">
+                            <span class="attachment-icon">📎</span> 
+                            <strong>Attachment:</strong> 
+                            <a href="#" class="attachment-link">churn-model-validation-notebook.ipynb</a>
+                            <span style="color:#6b7280; font-size:11px;">(Jupyter, 1.8 MB)</span>
+                        </td>
+                    </tr>
+
+                    <!-- OMAR FARID -->
+                    <tr class="member-row">
+                        <td>Omar Farid <span class="role-member">Data Engineer</span></td>
+                        <td><ul class="task-list"><li>Built new ETL job for customer event streaming</li><li>Reduced pipeline runtime by 35% (optimized joins)</li><li>Data validation framework implemented</li></ul></td>
+                        <td><ul class="task-list"><li>Add monitoring alerts for pipeline failures</li><li>Document data lineage</li></ul></td>
+                        <td>No blockers</br><span style="font-size:11px;color:#2c7a4d;">✅ Pipeline stable</span></td>
+                        <td>—</br><span style="font-size:11px;color:#94a3b8;">N/A</span></td>
+                    </tr>
+                    <tr class="attachment-row">
+                        <td colspan="5">
+                            <span class="attachment-icon">📎</span> 
+                            <strong>Attachment:</strong> 
+                            <a href="#" class="attachment-link">etl-pipeline-code.tar.gz</a>
+                            <span style="color:#6b7280; font-size:11px;">(Archive, 2.1 MB)</span>
+                        </td>
+                    </tr>
+
+                    <!-- ZOE LIU -->
+                    <tr class="member-row">
+                        <td>Zoe Liu <span class="role-member">Analytics Specialist</span></td>
+                        <td><ul class="task-list"><li>Created retention metrics dashboard (Tableau)</li><li>SQL query tuning for 3 slow reports</li><li>Customer cohort analysis completed</li></ul></td>
+                        <td><ul class="task-list"><li>Schedule automated report delivery</li><li>Training docs for business users</li></ul></td>
+                        <td>Access to new data warehouse (Snowflake) pending approval</br><span style="font-size:11px;color:#dc2626;">⚠️ Critical blocker for dashboard</span></td>
+                        <td>Which metrics should be shown on executive dashboard?</br><span style="font-size:11px;color:#1e4a76;">📊 Align with leadership on KPIs</span></td>
+                    </tr>
+                    <tr class="attachment-row">
+                        <td colspan="5">
+                            <span class="attachment-icon">📎</span> 
+                            <strong>Attachment:</strong> 
+                            <a href="#" class="attachment-link">retention-dashboard.twbx</a>
+                            <span style="color:#6b7280; font-size:11px;">(Tableau, 4.3 MB)</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="footer-note">
+            <span>📋 MIF Technology · MIF Cortex · Daily Team Report</span>
+            <span>🕒 Report Date: <span id="footerDate"></span></span>
+        </div>
+    </div>
+</div>
+
+<script>
+    function setDates() {
+        const today = new Date();
+        const formatted = today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+        document.getElementById('currentDate').innerText = formatted;
+        document.getElementById('footerDate').innerText = formatted;
+    }
+    setDates();
+    
+    document.getElementById('printPDF').addEventListener('click', () => {
+        window.print();
+    });
+</script>
+</body>
+</html>

@@ -98,17 +98,11 @@ export function AdminAddUserForm() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const availableRoleOptions = useMemo(() => {
-    if (sessionUser?.role !== "admin") {
-      return CREATE_USER_ROLE_OPTIONS.filter((role) => role !== "ceo");
-    }
-    return CREATE_USER_ROLE_OPTIONS;
-  }, [sessionUser?.role]);
   const { data: teamTypes } = useQuery<TeamTypeOption[]>({
-    queryKey: ["team-types"],
+    queryKey: ["team-types", "admin-create-user"],
     queryFn: async () => {
-      const response = await api.get("/api/team-types");
-      return response.data?.data as TeamTypeOption[];
+      const response = await api.get("/api/admin/team-types", { params: { department: "all" } });
+      return (response.data?.data ?? []) as TeamTypeOption[];
     },
     staleTime: 0
   });
@@ -126,6 +120,15 @@ export function AdminAddUserForm() {
   );
 
   const [selectedCompanyId, setSelectedCompanyId] = useState("");
+
+  const activeSelectedCompany = useMemo(() => {
+    if (!companies || companies.length === 0) return null;
+    if (selectedCompanyId && selectedCompanyId !== "all") {
+      const found = companies.find((c) => c._id === selectedCompanyId);
+      if (found) return found;
+    }
+    return companies[0];
+  }, [companies, selectedCompanyId]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -187,8 +190,15 @@ export function AdminAddUserForm() {
   const searchParams = useSearchParams();
   const initialRoleParam = searchParams.get("role") as AdminUserValues["role"] | null;
 
+  const availableRoleOptions = useMemo(() => {
+    if (sessionUser?.role !== "admin") {
+      return CREATE_USER_ROLE_OPTIONS.filter((role) => role !== "ceo");
+    }
+    return CREATE_USER_ROLE_OPTIONS;
+  }, [sessionUser?.role]);
+
   useEffect(() => {
-    if (initialRoleParam && availableRoleOptions.includes(initialRoleParam)) {
+    if (initialRoleParam && (availableRoleOptions as string[]).includes(initialRoleParam)) {
       setValue("role", initialRoleParam);
     }
     if (initialRoleParam === "ceo" && sessionUser && sessionUser.role !== "admin") {
@@ -203,6 +213,7 @@ export function AdminAddUserForm() {
   const currentManagerName = useWatch({ control, name: "managerName" });
   const teamLeadOptions = managerPools?.teamLeads ?? [];
   const hodOptions = managerPools?.hods ?? [];
+
   const managerSelectOptions = useMemo(() => {
     if (selectedRole === "hod") return [{ _id: "admin", name: "Admin" }];
     if (selectedRole === "team_lead" || selectedRole === "report_manager") return hodOptions;
@@ -210,108 +221,93 @@ export function AdminAddUserForm() {
     return teamLeadOptions;
   }, [hodOptions, selectedRole, teamLeadOptions]);
 
-const selectedDepartmentNames = useMemo(
+  const selectedDepartmentNames = useMemo(
     () => currentDepartments.map((d) => d.name),
     [currentDepartments]
   );
 
-const availableSkills = useMemo(
+  const availableSkills = useMemo(
     () => getSkillsForDepartments(selectedDepartmentNames),
     [selectedDepartmentNames]
   );
 
   const availableTeamOptions = useMemo(() => {
-    if (selectedRole === "ceo") return [];
+    if (selectedRole === "ceo" || selectedRole === "hod" || selectedRole === "report_manager") return [];
 
-    let filteredTeams = teamOptions;
     if (selectedDepartmentNames.length > 0) {
-      filteredTeams = teamOptions.filter((team) => team.department && selectedDepartmentNames.includes(team.department as any));
-    } else {
-      filteredTeams = [];
+      return teamOptions.filter((team) => team.department && selectedDepartmentNames.includes(team.department as any));
     }
+    return [];
+  }, [selectedRole, teamOptions, selectedDepartmentNames]);
 
-    if (selectedRole === "team_member") {
-      const selectedManager = teamLeadOptions.find((m) => m.name === currentManagerName);
-      if (!selectedManager) return filteredTeams;
-      const managerTeams = normalizeTeamNames(selectedManager.teamName ?? null, selectedManager.teamNames ?? null);
-      return filteredTeams.filter((team) => managerTeams.includes(team.name));
-    }
-    return filteredTeams;
-  }, [selectedRole, teamLeadOptions, currentManagerName, teamOptions, selectedDepartmentNames]);
+  const sessionUserRole = sessionUser?.role;
+  const sessionUserName = sessionUser?.name;
+  const activeCompanyId = activeSelectedCompany?._id;
 
-    
   useEffect(() => {
-    if (selectedRole === "report_manager" || selectedRole === "ceo") {
-      if (currentRoleTypes?.length) {
+    if (activeCompanyId) {
+      setValue("workspaceId", activeCompanyId);
+    }
+  }, [activeCompanyId, setValue]);
+
+  useEffect(() => {
+    if (selectedRole === "report_manager" || selectedRole === "ceo" || selectedRole === "hod") {
+      if (currentRoleTypes && currentRoleTypes.length > 0) {
         setValue("roleTypes", []);
       }
-      if (selectedRole === "ceo") {
-        if (currentDepartments.length > 0) setValue("departments", []);
-        if (currentTeamNames?.length > 0) setValue("teamNames", []);
+      if (currentTeamNames && currentTeamNames.length > 0) {
+        setValue("teamNames", []);
       }
-    } else if (!currentRoleTypes?.length && selectedDepartmentNames.length > 0 && availableSkills.length > 0) {
+      if (selectedRole === "ceo" && currentDepartments.length > 0) {
+        setValue("departments", []);
+      }
+      if (selectedRole === "hod") {
+        const ceoManager = sessionUserRole === "ceo" ? (sessionUserName || "CEO") : "CEO";
+        if (currentManagerName !== ceoManager) {
+          setValue("managerName", ceoManager);
+        }
+      }
+      return;
+    }
+
+    if (!currentRoleTypes?.length && selectedDepartmentNames.length > 0 && availableSkills.length > 0) {
       setValue("roleTypes", [availableSkills[0].name as any]);
     }
 
-    if (selectedRole === "hod") {
-      if (currentManagerName !== "Admin") {
-        setValue("managerName", "Admin");
-      }
-      return;
-    }
-
-    if (selectedRole === "team_lead" || selectedRole === "report_manager") {
+    if (selectedRole === "team_lead") {
       if (currentManagerName && !hodOptions.some((manager) => manager.name === currentManagerName)) {
         setValue("managerName", "");
       }
-      return;
-    }
-
-    if (selectedRole === "team_member") {
+    } else if (selectedRole === "team_member") {
       if (currentManagerName && !managerSelectOptions.some((manager) => manager.name === currentManagerName)) {
         setValue("managerName", "");
       }
     }
-  }, [availableSkills, currentManagerName, currentRoleTypes, hodOptions, managerSelectOptions, selectedRole, setValue]);
-
-  useEffect(() => {
-    if (selectedCompanyId) {
-      setValue("workspaceId", selectedCompanyId);
-    }
-  }, [selectedCompanyId, setValue]);
+  }, [
+    selectedRole,
+    sessionUserRole,
+    sessionUserName,
+    selectedDepartmentNames.length,
+    availableSkills.length,
+    currentRoleTypes?.length,
+    currentTeamNames?.length,
+    currentDepartments.length,
+    currentManagerName,
+    hodOptions,
+    managerSelectOptions,
+    setValue
+  ]);
 
   useEffect(() => {
     // Clear invalid role types when available skills change
-    if (currentRoleTypes && currentRoleTypes.length > 0) {
+    if (selectedRole !== "report_manager" && selectedRole !== "ceo" && selectedRole !== "hod" && currentRoleTypes && currentRoleTypes.length > 0) {
       const validSkillNames = availableSkills.map((s) => s.name);
       const filteredRoleTypes = currentRoleTypes.filter((rt) => validSkillNames.includes(rt));
       if (filteredRoleTypes.length !== currentRoleTypes.length) {
         setValue("roleTypes", filteredRoleTypes as AdminUserValues["roleTypes"]);
       }
     }
-  }, [availableSkills, currentRoleTypes, setValue]);
-
-  useEffect(() => {
-    if (selectedRole === "team_member") {
-      if (!availableTeamOptions.length) {
-        if (currentTeamNames?.length) {
-          setValue("teamNames", []);
-        }
-        return;
-      }
-
-      const validTeamNames = currentTeamNames?.filter((teamName) => availableTeamOptions.some((team) => team.name === teamName)) ?? [];
-      if (validTeamNames.length !== currentTeamNames?.length) {
-        setValue("teamNames", validTeamNames);
-      }
-      return;
-    }
-
-    const validTeamNames = currentTeamNames?.filter((teamName) => availableTeamOptions.some((team) => team.name === teamName)) ?? [];
-    if (validTeamNames.length !== currentTeamNames?.length) {
-      setValue("teamNames", validTeamNames);
-    }
-  }, [availableTeamOptions, currentTeamNames, selectedRole, setValue]);
+  }, [availableSkills, currentRoleTypes, selectedRole, setValue]);
 
   const toggleDepartment = (deptName: "Construction" | "Software" | "Finance" | "Marketing") => {
     const exists = currentDepartments.some((d) => d.name === deptName);
@@ -321,7 +317,10 @@ const availableSkills = useMemo(
     } else {
       next = [...currentDepartments, { name: deptName, subTeams: deptName === "Marketing" ? ["Physical"] : [] }];
     }
-    setValue("departments", next);
+    setValue("departments", next, { shouldValidate: true, shouldDirty: true, shouldTouch: true });
+    if (next.length > 0) {
+      clearErrors("departments");
+    }
   };
 
   const toggleMarketingSubTeam = (sub: "Physical" | "Digital") => {
@@ -332,7 +331,8 @@ const availableSkills = useMemo(
     const nextSub = exists ? currentSub.filter((s) => s !== sub) : [...currentSub, sub];
     const nextDepartments = [...currentDepartments];
     nextDepartments[marketingIndex] = { name: "Marketing", subTeams: nextSub };
-    setValue("departments", nextDepartments);
+    setValue("departments", nextDepartments, { shouldValidate: true, shouldDirty: true, shouldTouch: true });
+    clearErrors("departments");
   };
 
   const onSubmit = async (values: AdminUserValues) => {
@@ -374,10 +374,12 @@ const availableSkills = useMemo(
   };
 
   return (
-    <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSubmit(onSubmit)}>
+    <form className="grid gap-4 md:grid-cols-2" autoComplete="off" onSubmit={handleSubmit(onSubmit)}>
       <ReportField label="First name" required error={errors.firstName?.message}>
         <ReportInput
           placeholder="First name"
+          autoComplete="off"
+          data-lpignore="true"
           {...register("firstName")}
           onChange={(e) => {
             const cleaned = e.target.value.replace(/[^a-zA-Z\s'-]/g, "");
@@ -388,6 +390,8 @@ const availableSkills = useMemo(
       <ReportField label="Last name" error={errors.lastName?.message}>
         <ReportInput
           placeholder="Last name"
+          autoComplete="off"
+          data-lpignore="true"
           {...register("lastName")}
           onChange={(e) => {
             const cleaned = e.target.value.replace(/[^a-zA-Z\s'-]/g, "");
@@ -414,7 +418,7 @@ const availableSkills = useMemo(
         <ReportInput placeholder="Email" type="email" {...register("email")} />
       </ReportField>
       <ReportField label="Password" required error={errors.password?.message}>
-        <PasswordInput variant="report" placeholder="Password" {...register("password")} />
+        <PasswordInput variant="report" showRules={true} placeholder="Password" {...register("password")} />
       </ReportField>
       <ReportField label="Confirm Password" required error={errors.confirmPassword?.message}>
         <PasswordInput variant="report" placeholder="Confirm Password" {...register("confirmPassword")} />
@@ -450,10 +454,17 @@ const availableSkills = useMemo(
         </Button>
       </div>
 
-      {selectedRole !== "ceo" ? (
-        <ReportField className="md:col-span-2" label="Workspace / Company" required error={errors.workspaceId?.message}>
+      {sessionUser?.role === "ceo" ? (
+        <ReportField className="md:col-span-2" label="Company">
+          <input type="hidden" {...register("workspaceId")} />
+          <div className="flex h-11 w-full items-center rounded-xl border border-input bg-muted/40 px-3 py-2 text-sm font-medium text-foreground">
+            {activeSelectedCompany ? activeSelectedCompany.name : "Loading company..."}
+          </div>
+        </ReportField>
+      ) : selectedRole !== "ceo" ? (
+        <ReportField className="md:col-span-2" label="Company" required error={errors.workspaceId?.message}>
           <ReportSelect {...register("workspaceId")}>
-            <option value="">Select Workspace</option>
+            <option value="">Select Company</option>
             {companies?.map((company) => (
               <option key={company._id} value={company._id}>
                 {company.name} {company.type === "ceo" ? "(CEO Workspace)" : "(Company Workspace)"}
@@ -463,93 +474,62 @@ const availableSkills = useMemo(
         </ReportField>
       ) : null}
 
-      {selectedRole !== "ceo" && selectedRole !== "admin" ? (
-        <ReportField className="md:col-span-2" label={selectedRole === "team_member" ? "Team Lead" : "Manager"} error={errors.managerName?.message}>
-          <ReportSelect {...register("managerName")}>
-            <option value="">{selectedRole === "team_member" ? "Select team lead" : "Select manager"}</option>
-            {managerSelectOptions.map((manager) => (
-              <option key={manager._id} value={manager.name}>
-                {manager.name}
-              </option>
-            ))}
-          </ReportSelect>
-        </ReportField>
-      ) : null}
-
+      {/* 2. Department */}
       {selectedRole !== "ceo" ? (
-        <>
-          <div className="md:col-span-2">
-            <Controller
-              control={control}
-              name="teamNames"
-              render={({ field }) => (
-                <ReportMultiSelectCards
-                  label="Team (Team Type)"
-                  helperText={
-                    selectedRole === "team_member"
-                      ? "Choose a team managed by the selected team lead."
-                      : "Choose one or more teams for this user."
-                  }
-                  error={errors.teamNames?.message}
-                  value={field.value ?? []}
-                  onChange={field.onChange}
-                  options={availableTeamOptions.map((team) => ({
-                    value: team.name,
-                    label: team.showName ?? team.name
-                  }))}
-                />
-              )}
-            />
+        <div className="md:col-span-2 space-y-2">
+          <div className="text-sm font-medium text-foreground">
+            Departments (Assigned to User) <span className="text-danger">*</span>
           </div>
+          <div className="text-xs text-muted-foreground mb-2">Select one or more primary departments for this user.</div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {DEPARTMENT_OPTIONS.map((deptName) => {
+              const isSelected = currentDepartments.some((d) => d.name === deptName);
+              return (
+                <Button
+                  key={deptName}
+                  type="button"
+                  variant={isSelected ? "default" : "outline"}
+                  className="justify-start text-xs h-9"
+                  onClick={() => toggleDepartment(deptName)}
+                >
+                  {deptName}
+                </Button>
+              );
+            })}
+          </div>
+          {errors.departments?.message ? (
+            <p className="text-xs text-danger font-medium mt-1">{errors.departments.message}</p>
+          ) : null}
 
-          <div className="md:col-span-2 space-y-2">
-            <div className="text-sm font-medium text-foreground">Departments (Assigned to User)</div>
-            <div className="text-xs text-muted-foreground mb-2">Select one or more primary departments for this user.</div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {DEPARTMENT_OPTIONS.map((deptName) => {
-                const isSelected = currentDepartments.some((d) => d.name === deptName);
-                return (
-                  <Button
-                    key={deptName}
-                    type="button"
-                    variant={isSelected ? "default" : "outline"}
-                    className="justify-start text-xs h-9"
-                    onClick={() => toggleDepartment(deptName)}
-                  >
-                    {deptName}
-                  </Button>
-                );
-              })}
-            </div>
-
-            {currentDepartments.some((d) => d.name === "Marketing") && (
-              <div className="mt-3 p-3 border rounded-lg bg-muted/20 space-y-2">
-                <div className="text-xs font-semibold text-foreground">Marketing Sub-Teams</div>
-                <div className="flex gap-2">
-                  {MARKETING_SUB_TEAMS.map((sub) => {
-                    const marketingDept = currentDepartments.find((d) => d.name === "Marketing");
-                    const isSubSelected = marketingDept?.subTeams?.includes(sub);
-                    return (
-                      <Button
-                        key={sub}
-                        type="button"
-                        variant={isSubSelected ? "secondary" : "outline"}
-                        size="sm"
-                        className="text-xs h-8"
-                        onClick={() => toggleMarketingSubTeam(sub)}
-                      >
-                        {sub}
-                      </Button>
-                    );
-                  })}
-                </div>
+          {currentDepartments.some((d) => d.name === "Marketing") && (
+            <div className="mt-3 p-3 border rounded-lg bg-muted/20 space-y-2">
+              <div className="text-xs font-semibold text-foreground">Marketing Sub-Teams</div>
+              <div className="flex gap-2">
+                {MARKETING_SUB_TEAMS.map((sub) => {
+                  const marketingDept = currentDepartments.find((d) => d.name === "Marketing");
+                  const isSubSelected = marketingDept?.subTeams?.includes(sub);
+                  return (
+                    <Button
+                      key={sub}
+                      type="button"
+                      variant={isSubSelected ? "default" : "outline"}
+                      size="sm"
+                      className="text-xs h-8"
+                      onClick={() => toggleMarketingSubTeam(sub)}
+                    >
+                      {sub}
+                    </Button>
+                  );
+                })}
               </div>
-            )}
-          </div>
-        </>
+            </div>
+          )}
+        </div>
       ) : null}
+
+      {/* 3. Role */}
       {selectedRole !== "ceo" ? (
-        <ReportField label="Role" error={errors.role?.message}>
+        <ReportField label="Role" required error={errors.role?.message}>
           <Controller
             control={control}
             name="role"
@@ -571,7 +551,60 @@ const availableSkills = useMemo(
           />
         </ReportField>
       ) : null}
-      {selectedRole !== "report_manager" && selectedRole !== "ceo" ? (
+
+      {/* 4. Team Type */}
+      {selectedRole !== "ceo" && selectedRole !== "hod" && selectedRole !== "report_manager" ? (
+        <div className="md:col-span-2">
+          <Controller
+            control={control}
+            name="teamNames"
+            render={({ field }) => (
+              <ReportMultiSelectCards
+                label="Team (Team Type)"
+                required={selectedRole === "team_lead" || selectedRole === "team_member"}
+                helperText={
+                  selectedRole === "team_member"
+                    ? "Choose at least one team type managed by the selected team lead."
+                    : selectedRole === "team_lead"
+                    ? "Choose at least one team type for this team lead."
+                    : "Choose one or more team types for this user."
+                }
+                error={errors.teamNames?.message}
+                value={field.value ?? []}
+                onChange={field.onChange}
+                options={availableTeamOptions.map((team) => ({
+                  value: team.name,
+                  label: team.showName ?? team.name
+                }))}
+              />
+            )}
+          />
+        </div>
+      ) : null}
+
+      {/* 5. Manager */}
+      {selectedRole === "hod" ? (
+        <ReportField className="md:col-span-2" label="Manager">
+          <input type="hidden" {...register("managerName")} />
+          <div className="flex h-11 w-full items-center rounded-xl border border-input bg-muted/40 px-3 py-2 text-sm font-medium text-foreground">
+            {sessionUser?.role === "ceo" ? sessionUser.name : "CEO"}
+          </div>
+        </ReportField>
+      ) : selectedRole !== "ceo" && selectedRole !== "admin" ? (
+        <ReportField className="md:col-span-2" label={selectedRole === "team_member" ? "Team Lead" : selectedRole === "report_manager" || selectedRole === "team_lead" ? "HOD (Manager)" : "Manager"} required error={errors.managerName?.message}>
+          <ReportSelect {...register("managerName")}>
+            <option value="">{selectedRole === "team_member" ? "Select team lead" : "Select HOD"}</option>
+            {managerSelectOptions.map((manager) => (
+              <option key={manager._id} value={manager.name}>
+                {manager.name}
+              </option>
+            ))}
+          </ReportSelect>
+        </ReportField>
+      ) : null}
+
+      {/* 6. Skills */}
+      {selectedRole !== "report_manager" && selectedRole !== "ceo" && selectedRole !== "hod" ? (
         <div className="md:col-span-2">
           <Controller
             control={control}
@@ -579,6 +612,7 @@ const availableSkills = useMemo(
             render={({ field }) => (
               <ReportMultiSelectCards
                 label="Skills / Specialties"
+                required
                 helperText="Select one or more skills for this user (dynamically filtered based on chosen department)."
                 error={errors.roleTypes?.message}
                 value={field.value ?? []}
@@ -597,7 +631,7 @@ const availableSkills = useMemo(
       {error ? <p className="text-sm text-danger md:col-span-2">{error}</p> : null}
       {message ? <p className="text-sm text-success md:col-span-2">{message}</p> : null}
       <Button className="md:col-span-2 w-fit" type="submit" disabled={isSubmitting}>
-        {isSubmitting ? "Creating..." : "Create User"}
+        {isSubmitting ? "Creating..." : selectedRole === "ceo" ? "Create CEO" : "Create Employee"}
       </Button>
     </form>
   );

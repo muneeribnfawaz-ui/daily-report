@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import WorkspaceMember from "@/models/WorkspaceMember";
-import DailyReport from "@/models/DailyReport";
 
 export async function GET(request: Request) {
   const user = await getCurrentUser();
@@ -13,22 +11,17 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const workspaceId = url.searchParams.get("workspaceId") || request.headers.get("x-workspace-id") || user.workspaceId;
 
-  await connectToDatabase();
-
+  
   const filter: Record<string, any> = {};
 
   if (user.role !== "admin") {
-    const memberships = await WorkspaceMember.find({
-      userId: user.id,
-      status: "active",
-      isActive: true
-    }).select("workspaceId").lean() as any[];
+    const memberships = await db.workspaceMember.findMany({ where: { userId: user.id, status: "active", isActive: true }, select: { workspaceId: true } });
     const allowedWorkspaceIds = memberships.map(m => String(m.workspaceId));
 
     if (workspaceId && workspaceId !== "all") {
       filter.workspaceId = allowedWorkspaceIds.includes(workspaceId) ? workspaceId : "non_existent_id";
     } else {
-      filter.workspaceId = { $in: allowedWorkspaceIds };
+      filter.workspaceId = { in: allowedWorkspaceIds };
     }
   } else {
     if (workspaceId && workspaceId !== "all") {
@@ -36,10 +29,10 @@ export async function GET(request: Request) {
     }
   }
 
-  const totalUsers = await WorkspaceMember.countDocuments({ ...filter, isActive: true });
-  const totalEmployees = await WorkspaceMember.countDocuments({ ...filter, isActive: true, role: "team_member" });
-  const totalReports = await DailyReport.countDocuments(filter);
-  const activeUsers = await WorkspaceMember.countDocuments({ ...filter, status: "active", isActive: true });
+  const totalUsers = await db.workspaceMember.count({ where: { ...filter, isActive: true } });
+  const totalEmployees = await db.workspaceMember.count({ where: { ...filter, isActive: true, role: "team_member" } });
+  const totalReports = await db.dailyReport.count({ where: filter });
+  const activeUsers = await db.workspaceMember.count({ where: { ...filter, status: "active", isActive: true } });
 
   return NextResponse.json({
     success: true,

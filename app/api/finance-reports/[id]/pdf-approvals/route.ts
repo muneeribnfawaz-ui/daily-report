@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { canViewFinanceReport } from "@/lib/permissions";
-import FinanceReport from "@/models/FinanceReport";
 import { buildFinanceApprovalPdfBuffer } from "@/lib/finance-pdf";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -22,12 +21,16 @@ export async function GET(_request: Request, context: RouteContext) {
     }
 
     const { id } = await context.params;
-    await connectToDatabase();
-    const report = await FinanceReport.findById(id).lean() as LeanDoc | null;
+        const report = await db.financeReport.findUnique({
+          where: { id: String(id) },
+          include: { items: true, bankBalances: true }
+        }) as LeanDoc | null;
 
     if (!report) {
       return NextResponse.json({ success: false, message: "Finance report not found" }, { status: 404 });
     }
+
+    const items = (report.items as any[]) || [];
 
     const pdfBuffer = await buildFinanceApprovalPdfBuffer({
       reportDate: report.reportDate as Date,
@@ -37,7 +40,7 @@ export async function GET(_request: Request, context: RouteContext) {
       payments: [],
       bankBalances: [],
       cashBalance: { pettyCash: 0, total: 0 },
-      nextDayApprovals: (report.nextDayApprovals as any[]) || [],
+      nextDayApprovals: items.filter(i => i.type === "next_day"),
       summary: {
         totalExpenses: 0,
         totalReceipts: 0,

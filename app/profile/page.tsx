@@ -1,31 +1,8 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
-import User from "@/models/User";
+import db from "@/lib/db";
 import { AppShell } from "@/components/layout/app-shell";
 import { ProfileUpdateForm } from "@/components/profile/profile-update-form";
-
-type ProfileUserRecord = {
-  name?: string;
-  firstName?: string;
-  lastName?: string;
-  dateOfBirth?: string;
-  secondaryPhone?: string;
-  empID?: string;
-  email?: string;
-  phone?: string;
-  role?: string;
-  teamName?: string;
-  teamNames?: string[];
-  departments?: Array<{ name: string; subTeams?: string[] }>;
-  managerName?: string;
-  status?: "active" | "inactive" | "suspended" | string;
-  isActive?: boolean;
-  isDeleted?: boolean;
-  isAdminActive?: boolean;
-  isEmailActivated?: boolean;
-  createdAt?: string;
-};
 
 export default async function ProfilePage() {
   const user = await getCurrentUser();
@@ -33,38 +10,47 @@ export default async function ProfilePage() {
     redirect("/login");
   }
 
-  await connectToDatabase();
-  const profile = (await User.findById(user.id).lean()) as ProfileUserRecord | null;
+  const dbUser = await db.user.findUnique({
+    where: { id: user.id },
+    include: {
+      workspaceMembers: {
+        where: { workspaceId: user.workspaceId, isActive: true },
+        include: { departments: true }
+      }
+    }
+  });
 
-  const rawDepartments = profile?.departments ?? user.departments ?? [];
-  const cleanDepartments = rawDepartments.map((d) => ({
+  const member = dbUser?.workspaceMembers[0];
+
+  const rawDepartments = member?.departments ?? user.departments ?? [];
+  const cleanDepartments = rawDepartments.map((d: any) => ({
     name: String(d.name ?? ""),
-    subTeams: Array.isArray(d.subTeams) ? d.subTeams.map((st) => String(st)) : []
+    subTeams: Array.isArray(d.subTeams) ? d.subTeams.map((st: any) => String(st)) : []
   }));
 
   return (
     <AppShell title="Profile" role={user.role} sidebarVariant="daily-report">
       <ProfileUpdateForm
         profile={{
-          name: profile?.name ?? user.name,
-          firstName: profile?.firstName,
-          lastName: profile?.lastName,
-          dateOfBirth: profile?.dateOfBirth,
-          secondaryPhone: profile?.secondaryPhone,
-          email: profile?.email ?? user.email,
-          empID: profile?.empID,
-          teamName: profile?.teamName ?? user.teamName ?? undefined,
-          teamNames: profile?.teamNames ?? (profile?.teamName ? [profile.teamName] : user.teamName ? [user.teamName] : []),
+          name: dbUser?.name ?? user.name,
+          firstName: dbUser?.firstName ?? undefined,
+          lastName: dbUser?.lastName ?? undefined,
+          dateOfBirth: dbUser?.dateOfBirth ? String(dbUser.dateOfBirth) : undefined,
+          secondaryPhone: dbUser?.secondaryPhone ?? undefined,
+          email: dbUser?.email ?? user.email,
+          empID: member?.empID ?? undefined,
+          teamName: member?.teamName ?? user.teamName ?? undefined,
+          teamNames: member?.teamNames?.length ? member.teamNames : (member?.teamName ? [member.teamName] : user.teamName ? [user.teamName] : []),
           departments: cleanDepartments,
-          managerName: profile?.managerName ?? undefined,
-          status: profile?.status ?? user.status ?? undefined,
-          createdAt: profile?.createdAt ? String(profile.createdAt) : undefined,
-          role: profile?.role ?? user.role,
-          phone: profile?.phone,
-          isActive: profile?.isActive,
-          isDeleted: profile?.isDeleted,
-          isAdminActive: profile?.isAdminActive,
-          isEmailActivated: profile?.isEmailActivated
+          managerName: member?.managerName ?? undefined,
+          status: member?.status ?? user.status ?? undefined,
+          createdAt: dbUser?.createdAt ? String(dbUser.createdAt) : undefined,
+          role: member?.role ?? dbUser?.role ?? user.role,
+          phone: dbUser?.phone ?? undefined,
+          isActive: member?.isActive ?? undefined,
+          isDeleted: dbUser?.isDeleted ?? undefined,
+          isAdminActive: dbUser?.isAdminActive ?? undefined,
+          isEmailActivated: dbUser?.isEmailActivated ?? undefined
         }}
       />
     </AppShell>

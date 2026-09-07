@@ -210,14 +210,22 @@ function renderReportPdfContent(doc: PDFKit.PDFDocument, options: ReportPdfOptio
     for (const report of reports) {
       const cardX = PDF_PAGE_MARGIN_PT;
       const cardWidth = contentWidth;
-      const fields = [
+      const isConstruction = 
+        (report.teamName || "").toLowerCase().includes("construction") || 
+        (report.constructionWorkPlan && report.constructionWorkPlan.length > 0) ||
+        (report.constructionMaterialUtilization && report.constructionMaterialUtilization.length > 0) ||
+        (report.constructionTomorrowWorkPlan && report.constructionTomorrowWorkPlan.length > 0);
+
+      const fields = (isConstruction ? [
+        ...(report.attachmentLink ? [["Attachment Link", report.attachmentLink] as [string, TextValue]] : [])
+      ] : [
         ["Daily Meeting Update", report.dailyMeetingUpdate],
         ["Completed Work", report.completedWork],
         ["Pending Work", report.pendingWork],
         ["Blockers", report.blockers],
         ["Required Clarification", report.requiredClarification],
         ...(report.attachmentLink ? [["Attachment Link", report.attachmentLink] as [string, TextValue]] : [])
-      ] as Array<[string, TextValue]>;
+      ]) as Array<[string, TextValue]>;
       const fieldHeights = fields.map(([, value]) => Math.max(34, textHeight(doc, toText(value).trim() || "-", cardWidth - 178, 9) + 19));
       
       let extraHeight = 0;

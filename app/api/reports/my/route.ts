@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import DailyReport from "@/models/DailyReport";
 import { canEditDailyReport } from "@/lib/report-edit-access";
+import { mapReportRelations, reportRelationsInclude } from "@/lib/report-mapper";
 
 export async function GET(request: Request) {
   const user = await getCurrentUser();
@@ -13,22 +13,31 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const date = url.searchParams.get("date");
   const team = url.searchParams.get("team");
+  const workspaceId = url.searchParams.get("workspaceId") || request.headers.get("x-workspace-id");
 
-  await connectToDatabase();
   const filter: Record<string, unknown> = { employeeId: user.id };
-  if (team) {
+  if (team && team !== "All" && team !== "all") {
     filter.teamName = team;
+  }
+  if (workspaceId && workspaceId !== "all" && workspaceId !== "All") {
+    filter.workspaceId = workspaceId;
   }
   if (date) {
     const day = new Date(date);
     const nextDay = new Date(day);
     nextDay.setDate(nextDay.getDate() + 1);
-    filter.reportDate = { $gte: day, $lt: nextDay };
+    filter.reportDate = { gte: day, lt: nextDay };
   }
 
-  const reports = await DailyReport.find(filter).sort({ createdAt: -1 }).lean();
-  const data = reports.map((report) => ({
+  const reports = await db.dailyReport.findMany({ 
+    where: filter, 
+    orderBy: { createdAt: 'desc' },
+    include: reportRelationsInclude
+  });
+  
+  const data = reports.map((report) => mapReportRelations({
     ...report,
+    _id: report.id,
     canEdit: canEditDailyReport(report, user)
   }));
 

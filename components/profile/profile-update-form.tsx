@@ -12,9 +12,17 @@ import { ProfileActionButton } from "@/components/profile/profile-action-button"
 import { toDateInputValue } from "@/lib/date-utils";
 import { ROLE_LABELS, normalizeRole } from "@/lib/constants";
 
+import { tenDigitPhoneSchema } from "@/lib/validation";
+
 const nameUpdateSchema = z.object({
   firstName: z.string().min(2, "First name is required"),
-  lastName: z.string().min(2, "Last name is required"),
+  lastName: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .refine((val) => !val || /^[a-zA-Z\s'-]+$/.test(val), {
+      message: "Last name must contain only letters"
+    }),
   dateOfBirth: z.preprocess((value) => {
     if (typeof value !== "string") return value;
     const trimmed = value.trim();
@@ -24,7 +32,7 @@ const nameUpdateSchema = z.object({
     if (typeof value !== "string") return value;
     const trimmed = value.trim();
     return trimmed === "" ? undefined : trimmed;
-  }, z.string().min(7, "Alternate mobile number must be at least 7 digits").optional())
+  }, tenDigitPhoneSchema.optional())
 });
 
 const passwordUpdateSchema = z.object({
@@ -159,6 +167,7 @@ export function ProfileUpdateForm({ profile }: { profile: ProfileData }) {
     register: registerName,
     handleSubmit: handleNameSubmit,
     reset: resetName,
+    setValue: setNameValue,
     setError: setNameFieldError,
     clearErrors: clearNameErrors,
     formState: { errors: nameErrors, isDirty: isNameDirty }
@@ -248,7 +257,7 @@ export function ProfileUpdateForm({ profile }: { profile: ProfileData }) {
     try {
       const payload = await submitProfileUpdate({
         firstName: parsed.data.firstName,
-        lastName: parsed.data.lastName,
+        lastName: parsed.data.lastName ?? "",
         dateOfBirth: parsed.data.dateOfBirth,
         secondaryPhone: parsed.data.secondaryPhone
       });
@@ -413,18 +422,48 @@ export function ProfileUpdateForm({ profile }: { profile: ProfileData }) {
               </div>
             </CardHeader>
             <CardContent className="px-4 pt-5 sm:px-6 sm:pt-6">
-              <form className="space-y-4" onSubmit={handleNameSubmit(onNameSubmit)}>
-                <ReportField label="First name" error={nameErrors.firstName?.message}>
-                  <ReportInput className={editableInputClassName} placeholder="First name" {...registerName("firstName")} />
+              <form className="space-y-4" autoComplete="off" onSubmit={handleNameSubmit(onNameSubmit)}>
+                <ReportField label="First name" required error={nameErrors.firstName?.message}>
+                  <ReportInput
+                    className={editableInputClassName}
+                    placeholder="First name"
+                    autoComplete="off"
+                    data-lpignore="true"
+                    {...registerName("firstName")}
+                    onChange={(e) => {
+                      const cleaned = e.target.value.replace(/[^a-zA-Z\s'-]/g, "");
+                      setNameValue("firstName", cleaned, { shouldValidate: true, shouldDirty: true });
+                    }}
+                  />
                 </ReportField>
                 <ReportField label="Last name" error={nameErrors.lastName?.message}>
-                  <ReportInput className={editableInputClassName} placeholder="Last name" {...registerName("lastName")} />
+                  <ReportInput
+                    className={editableInputClassName}
+                    placeholder="Last name"
+                    autoComplete="off"
+                    data-lpignore="true"
+                    {...registerName("lastName")}
+                    onChange={(e) => {
+                      const cleaned = e.target.value.replace(/[^a-zA-Z\s'-]/g, "");
+                      setNameValue("lastName", cleaned, { shouldValidate: true, shouldDirty: true });
+                    }}
+                  />
                 </ReportField>
                 <ReportField label="Date of birth" error={nameErrors.dateOfBirth?.message}>
                   <ReportInput className={editableInputClassName} type="date" {...registerName("dateOfBirth")} />
                 </ReportField>
                 <ReportField label="Alternate mobile number" error={nameErrors.secondaryPhone?.message}>
-                  <ReportInput className={editableInputClassName} placeholder="optional" {...registerName("secondaryPhone")} />
+                  <ReportInput
+                    className={editableInputClassName}
+                    placeholder="optional"
+                    type="tel"
+                    maxLength={10}
+                    {...registerName("secondaryPhone")}
+                    onChange={(e) => {
+                      const cleaned = e.target.value.replace(/[^0-9]/g, "").slice(0, 10);
+                      setNameValue("secondaryPhone", cleaned, { shouldValidate: true, shouldDirty: true });
+                    }}
+                  />
                 </ReportField>
 
                 {nameError ? <p className="text-sm text-danger">{nameError}</p> : null}
@@ -464,6 +503,7 @@ export function ProfileUpdateForm({ profile }: { profile: ProfileData }) {
                   <ReportField label="New password" error={passwordErrors.newPassword?.message}>
                     <PasswordInput
                       variant="report"
+                      showRules={true}
                       className={editableInputClassName}
                       placeholder="New password"
                       autoComplete="new-password"

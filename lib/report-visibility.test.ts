@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { getVisibleReportEmployeeIds } from "./report-visibility";
-import WorkspaceMember from "../models/WorkspaceMember";
+
+vi.mock("@/lib/db", () => {
+  return {
+    default: {
+      workspaceMember: {
+        findMany: vi.fn()
+      }
+    }
+  };
+});
+import db from "@/lib/db";
 
 describe("Report Visibility & Hierarchical Access Boundaries", () => {
   const mockMembers = [
@@ -42,12 +52,13 @@ describe("Report Visibility & Hierarchical Access Boundaries", () => {
   ];
 
   beforeEach(() => {
-    const mockQuery = {
-      populate: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      lean: vi.fn().mockResolvedValue(mockMembers)
-    };
-    vi.spyOn(WorkspaceMember, "find").mockImplementation(() => mockQuery as any);
+    vi.mocked(db.workspaceMember.findMany).mockResolvedValue(
+      mockMembers.map((m: any) => ({
+        ...m,
+        user: m.userId,
+        userId: m.userId._id
+      })) as any
+    );
   });
 
   afterEach(() => {

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import ConsolidatedReport from "@/models/ConsolidatedReport";
 import { logAuditEntry } from "@/lib/audit";
 
 async function assertPrivilegedUser() {
@@ -15,8 +14,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (!user) return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
 
   const { id } = await Promise.resolve(params);
-  await connectToDatabase();
-  const report = await ConsolidatedReport.findById(id).lean();
+    const report = await db.consolidatedReport.findUnique({ where: { id } });
   if (!report) return NextResponse.json({ success: false, message: "Not found" }, { status: 404 });
   return NextResponse.json({ success: true, data: report });
 }
@@ -27,13 +25,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { id } = await Promise.resolve(params);
   const body = await request.json();
-  await connectToDatabase();
-  const report = await ConsolidatedReport.findById(id);
+  const report = await db.consolidatedReport.findUnique({ where: { id } });
   if (!report) return NextResponse.json({ success: false, message: "Not found" }, { status: 404 });
 
-  const previous = report.toObject();
-  Object.assign(report, body);
-  await report.save();
+  const previous = report;
+  
+  const updatedReport = await db.consolidatedReport.update({
+    where: { id },
+    data: {
+      title: body.title !== undefined ? body.title : report.title,
+      status: body.status !== undefined ? body.status : report.status,
+      remarks: body.remarks !== undefined ? body.remarks : report.remarks
+    }
+  });
 
   await logAuditEntry({
     action: "Consolidated Report Updated",
@@ -44,5 +48,5 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     newValue: body
   });
 
-  return NextResponse.json({ success: true, data: report });
+  return NextResponse.json({ success: true, data: updatedReport });
 }

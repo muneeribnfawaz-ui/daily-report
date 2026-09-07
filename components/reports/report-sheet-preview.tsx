@@ -3,9 +3,11 @@
 import { cn, formatDisplayName } from "@/lib/utils";
 import { LEAVE_DURATION_LABELS, LEAVE_HALF_LABELS } from "@/lib/constants";
 import { ConstructionReportPreview } from "./construction-report-preview";
+import { MarketingReportPreview } from "./marketing-report-preview";
 
 export type ReportSheetEntry = {
-  _id: string;
+  _id?: string;
+  id?: string;
   employeeId?: string;
   name: string;
   teamName: string;
@@ -27,6 +29,8 @@ export type ReportSheetEntry = {
   constructionWorkPlan?: Array<{ activity?: string; location?: string; unit?: string; plannedQuantity?: string; executedQuantity?: string; completionPercentage?: string; remarks?: string }>;
   constructionMaterialUtilization?: Array<{ material?: string; unit?: string; openingStock?: string; received?: string; closingStock?: string }>;
   constructionTomorrowWorkPlan?: Array<{ activity?: string; location?: string; unit?: string; plannedQuantity?: string }>;
+  marketingSelfItems?: any[];
+  marketingClientItems?: any[];
   leaveStatus?: "pending_tl" | "forwarded_to_hod" | "approved" | null;
   leaveType?: string;
   leaveReason?: string;
@@ -195,8 +199,14 @@ function VerificationReviewRow({ report }: { report: ReportSheetEntry }) {
             Verification & Review
           </span>
           {report.verificationLevel && (
-            <span className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-[9px] font-bold uppercase text-slate-800">
-              {formatDisplayName(report.verificationLevel)} Verified
+            <span className="inline-flex items-center rounded-full bg-slate-200 px-2.5 py-0.5 text-[9px] font-bold uppercase text-slate-800">
+              {report.verificationLevel === "tl"
+                ? "Verified by Team Lead"
+                : report.verificationLevel === "hod"
+                ? "Verified by HOD"
+                : report.verificationLevel === "ceo"
+                ? "Verified by CEO"
+                : `${formatDisplayName(report.verificationLevel)} Verified`}
             </span>
           )}
           {report.status && (
@@ -233,6 +243,17 @@ function VerificationReviewRow({ report }: { report: ReportSheetEntry }) {
 
 function ReportCard({ report }: { report: ReportSheetEntry }) {
   const isLead = report.employeeRole === "team_lead";
+  const isConstruction = 
+    report.teamName?.toLowerCase().includes("construction") || 
+    (report.constructionWorkPlan && report.constructionWorkPlan.length > 0) ||
+    (report.constructionMaterialUtilization && report.constructionMaterialUtilization.length > 0) ||
+    (report.constructionTomorrowWorkPlan && report.constructionTomorrowWorkPlan.length > 0);
+  
+  const isMarketing = 
+    report.teamName?.toLowerCase().includes("marketing") || 
+    (report.marketingSelfItems && report.marketingSelfItems.length > 0) ||
+    (report.marketingClientItems && report.marketingClientItems.length > 0);
+
   return (
     <div className={cn("pdf-no-break overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm", isLead ? "ring-1 ring-amber-100" : "")}>
       <div className={cn("border-b border-slate-200 px-4 py-3", isLead ? "bg-amber-50" : "bg-slate-50")}>
@@ -247,14 +268,21 @@ function ReportCard({ report }: { report: ReportSheetEntry }) {
         </div>
       </div>
 
-      <div className="px-4 py-3">
-        <AttachmentRow value={report.attachmentLink} />
-        <DetailRow label="Completed Work" value={report.completedWork} />
-        <DetailRow label="Pending Work" value={report.pendingWork} />
-        <DetailRow label="Blockers" value={report.blockers} />
-        <DetailRow label="Required Clarification" value={report.requiredClarification} />
-      </div>
+      {(!isConstruction && !isMarketing || (isConstruction && report.attachmentLink) || (isMarketing && report.attachmentLink)) && (
+        <div className="px-4 py-3">
+          <AttachmentRow value={report.attachmentLink} />
+          {(!isConstruction && !isMarketing) && (
+            <>
+              <DetailRow label="Completed Work" value={report.completedWork} />
+              <DetailRow label="Pending Work" value={report.pendingWork} />
+              <DetailRow label="Blockers" value={report.blockers} />
+              <DetailRow label="Required Clarification" value={report.requiredClarification} />
+            </>
+          )}
+        </div>
+      )}
       <ConstructionReportPreview report={report} />
+      <MarketingReportPreview report={report} />
       <VerificationReviewRow report={report} />
 
       {report.nextDayApprovalItems?.length ? (
@@ -405,7 +433,7 @@ function TeamCard({ teamGroup }: { teamGroup: ReportSheetTeamGroup }) {
 
       <div className="space-y-4 px-4 pb-4 pt-0">
         {teamGroup.reports.length ? (
-          teamGroup.reports.map((report) => <ReportCard key={report._id} report={report} />)
+          teamGroup.reports.map((report) => <ReportCard key={report.id || report._id} report={report} />)
         ) : (
           <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
             No reports submitted for this team on this date.

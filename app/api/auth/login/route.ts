@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { loginSchema } from "@/lib/validation";
 import { verifyPassword, setAuthCookie } from "@/lib/auth";
-import User from "@/models/User";
-import WorkspaceMember from "@/models/WorkspaceMember";
 import { ensureDefaultAdmin } from "@/lib/bootstrap";
 import { normalizeRole } from "@/lib/constants";
 import { ApiResponse } from "@/lib/api-response";
@@ -17,8 +15,7 @@ export async function POST(request: Request) {
   }
 
   await ensureDefaultAdmin();
-  await connectToDatabase();
-  const user = await User.findOne({ email: parsed.data.email.toLowerCase() });
+  const user = await db.user.findFirst({ where: { email: parsed.data.email.toLowerCase() } });
 
   if (!user) {
     return ApiResponse.loginError("Invalid credentials");
@@ -34,7 +31,10 @@ export async function POST(request: Request) {
   }
 
   const isExecutive = user.role === "admin" || user.role === "ceo";
-  const firstMember = await WorkspaceMember.findOne({ userId: user._id, status: "active", isActive: true }).lean() as any;
+  const firstMember = await db.workspaceMember.findFirst({ 
+    where: { userId: user.id, status: "active", isActive: true },
+    include: { departments: true }
+  });
 
   if (!firstMember && !isExecutive) {
     return ApiResponse.forbidden("You are not assigned to any active workspace.");
@@ -44,26 +44,26 @@ export async function POST(request: Request) {
   const workspaceId = firstMember ? String(firstMember.workspaceId) : "";
   
   await setAuthCookie({
-    id: String(user._id),
+    id: user.id,
     name: user.name,
     email: user.email,
     workspaceId,
     role,
-    teamName: firstMember?.departments?.[0]?.name || user.teamName || null,
-    teamNames: firstMember?.departments?.map((d: any) => d.name) || user.teamNames || [],
-    departments: firstMember?.departments || user.departments || [],
-    status: user.status || "active"
+    teamName: firstMember?.teamName || null,
+    teamNames: firstMember?.teamNames || [],
+    departments: firstMember?.departments || [],
+    status: firstMember?.status || (user.isDeleted ? "inactive" : "active")
   });
 
   return ApiResponse.loginSuccess({
-    id: String(user._id),
+    id: user.id,
     name: user.name,
     email: user.email,
     workspaceId,
     role,
-    teamName: firstMember?.departments?.[0]?.name || user.teamName || null,
-    teamNames: firstMember?.departments?.map((d: any) => d.name) || user.teamNames || [],
-    departments: firstMember?.departments || user.departments || [],
-    status: user.status || "active"
+    teamName: firstMember?.teamName || null,
+    teamNames: firstMember?.teamNames || [],
+    departments: firstMember?.departments || [],
+    status: firstMember?.status || (user.isDeleted ? "inactive" : "active")
   });
 }

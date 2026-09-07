@@ -1,42 +1,51 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import { ApiResponse } from "@/lib/api-response";
+import db from "@/lib/db";
 import { financeReportSchema } from "@/lib/validation";
 import { getCurrentUser } from "@/lib/auth";
 import { canCreateFinanceReport, canViewFinanceReport } from "@/lib/permissions";
-import FinanceReport from "@/models/FinanceReport";
-import Notification from "@/models/Notification";
-import User from "@/models/User";
-import WorkspaceMember from "@/models/WorkspaceMember";
 import { logAuditEntry } from "@/lib/audit";
+import { syncReportCashToPettyCash } from "@/lib/petty-cash-sync";
 import { getINRtoSARRate, convertINRtoSAR } from "@/lib/currency";
-import { FINANCE_TEAM_INTERNAL_NAME } from "@/lib/constants";
-
+import { encryptPayload, decryptPayload } from "@/lib/crypto";
 
 
 export async function POST(request: Request) {
   try {
     const user = await getCurrentUser();
     if (!user) {
-      return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
+      return ApiResponse.unauthorized();
     }
 
     if (!canCreateFinanceReport(user)) {
-      return NextResponse.json({ success: false, message: "You do not have permission to create finance reports" }, { status: 403 });
+      return ApiResponse.forbidden("You do not have permission to create finance reports");
     }
 
-    const body = await request.json();
+    const rawBody = await request.json();
+    let body = rawBody;
+    if (rawBody.encryptedData) {
+      try {
+        body = await decryptPayload(rawBody.encryptedData);
+      } catch (err) {
+        return ApiResponse.error("Failed to decrypt payload", 4000, 400);
+      }
+    }
+
     const parsed = financeReportSchema.safeParse(body);
     if (!parsed.success) {
       const firstError = parsed.error.issues[0]?.message || "Invalid finance report payload";
-      return NextResponse.json({ success: false, message: firstError }, { status: 400 });
+      return ApiResponse.validationError(firstError);
     }
 
-    if (!parsed.data.workspaceId) {
-      return NextResponse.json({ success: false, message: "Workspace context is required. Please refresh." }, { status: 400 });
+    const workspaceId = parsed.data.workspaceId && parsed.data.workspaceId !== "all"
+      ? parsed.data.workspaceId
+      : user.workspaceId;
+
+    if (!workspaceId) {
+      return ApiResponse.validationError("Workspace context is required. Please refresh.");
     }
 
-    await connectToDatabase();
-
+    
     // Check for existing report on the same date
     const reportDate = new Date(parsed.data.reportDate);
     const dayStart = new Date(reportDate);
@@ -44,22 +53,69 @@ export async function POST(request: Request) {
     const dayEnd = new Date(dayStart);
     dayEnd.setDate(dayEnd.getDate() + 1);
 
-    const existingReport = await FinanceReport.findOne({
-      reportDate: { $gte: dayStart, $lt: dayEnd }
+    const existingReport = await db.financeReport.findFirst({
+      where: { 
+        workspaceId,
+        submittedBy: user.id,
+        reportDate: { gte: dayStart, lt: dayEnd } 
+      }
     });
-
-    if (existingReport) {
-      return NextResponse.json(
-        { success: false, message: "A finance report already exists for this date. Please edit the existing report instead." },
-        { status: 409 }
-      );
-    }
 
     // Fetch exchange rate
     const exchangeRate = await getINRtoSARRate();
 
+    const isMoneyRequest =
+      Boolean(parsed.data.nextDayApprovals && parsed.data.nextDayApprovals.length > 0) &&
+      (!parsed.data.expenses || parsed.data.expenses.length === 0) &&
+      (!parsed.data.receipts || parsed.data.receipts.length === 0) &&
+      (!parsed.data.payments || parsed.data.payments.length === 0);
+
+    if (existingReport) {
+      if (isMoneyRequest) {
+        // Store money requests exclusively in dedicated MoneyRequest table
+        await db.moneyRequest.createMany({
+          data: (parsed.data.nextDayApprovals || []).map((i: any) => ({
+            workspaceId,
+            submittedBy: user.id,
+            submittedByName: user.name,
+            reportDate: dayStart,
+            particulars: i.particulars || "N/A",
+            description: i.description || "",
+            amountINR: Number(i.amountINR) || 0,
+            amountSAR: (Number(i.amountINR) || 0) * exchangeRate,
+            priority: i.priority || "medium",
+            bankName: i.bankName || "",
+            revisedAmountINR: i.revisedAmountINR ? Number(i.revisedAmountINR) : null,
+            revisedAmountSAR: i.revisedAmountSAR ? Number(i.revisedAmountSAR) : null,
+            revisionReference: i.revisionReference || "",
+            status: i.approval || "pending",
+            financeReportId: existingReport.id
+          }))
+        });
+
+        await logAuditEntry({
+          action: "Money Request Created",
+          userId: user.id,
+          userName: user.name,
+          financeReportId: existingReport.id,
+          newValue: parsed.data.nextDayApprovals
+        });
+
+        const encryptedData = await encryptPayload(existingReport);
+        return ApiResponse.created(
+          existingReport,
+          "Money request submitted successfully!",
+          2001,
+          201,
+          encryptedData
+        );
+      }
+
+      return ApiResponse.error("A finance report already exists for this date. Please edit the existing report instead.", 4009, 409);
+    }
+
     const reportPayload = {
-      workspaceId: parsed.data.workspaceId,
+      workspaceId,
       reportDate: dayStart,
       submittedBy: user.id,
       submittedByName: user.name,
@@ -82,52 +138,150 @@ export async function POST(request: Request) {
       ]
     };
 
-    const report = await FinanceReport.create(reportPayload);
+    // Build properly formatted payload matching Prisma schema
+    const prismaPayload = {
+      workspaceId: reportPayload.workspaceId,
+      reportDate: reportPayload.reportDate,
+      submittedBy: reportPayload.submittedBy,
+      submittedByName: reportPayload.submittedByName,
+      exchangeRate: reportPayload.exchangeRate,
+      status: reportPayload.status,
+      bankBalances: {
+        create: reportPayload.bankBalances?.map((b: any) => ({
+          bankName: b.bankName,
+          openingBalance: b.openingBalance,
+          receipts: b.receipts,
+          payments: b.payments,
+          closingBalance: b.closingBalance
+        })) ?? []
+      },
+      items: {
+        create: [
+          ...(reportPayload.expenses?.map((i: any) => ({
+            particulars: i.particulars,
+            description: i.description,
+            amountINR: i.amountINR,
+            amountSAR: i.amountSAR,
+            priority: i.priority,
+            bankName: i.bankName,
+            paymentMode: i.paymentMode,
+            revisedAmountINR: i.revisedAmountINR,
+            revisedAmountSAR: i.revisedAmountSAR,
+            revisionReference: i.revisionReference,
+            approval: i.approval,
+            type: "expense"
+          })) ?? []),
+          ...(reportPayload.receipts?.map((i: any) => ({
+            particulars: i.particulars,
+            description: i.description,
+            amountINR: i.amountINR,
+            amountSAR: i.amountSAR,
+            priority: i.priority,
+            bankName: i.bankName,
+            paymentMode: i.paymentMode,
+            revisedAmountINR: i.revisedAmountINR,
+            revisedAmountSAR: i.revisedAmountSAR,
+            revisionReference: i.revisionReference,
+            approval: i.approval,
+            type: "receipt"
+          })) ?? []),
+          ...(reportPayload.payments?.map((i: any) => ({
+            particulars: i.particulars,
+            description: i.description,
+            amountINR: i.amountINR,
+            amountSAR: i.amountSAR,
+            priority: i.priority,
+            bankName: i.bankName,
+            paymentMode: i.paymentMode,
+            revisedAmountINR: i.revisedAmountINR,
+            revisedAmountSAR: i.revisedAmountSAR,
+            revisionReference: i.revisionReference,
+            approval: i.approval,
+            type: "payment"
+          })) ?? [])
+        ]
+      },
+      statusHistory: {
+        create: reportPayload.statusHistory
+      }
+    };
+
+    const report = await db.financeReport.create({ data: prismaPayload });
+
+    if (parsed.data.nextDayApprovals && parsed.data.nextDayApprovals.length > 0) {
+      await db.moneyRequest.createMany({
+        data: parsed.data.nextDayApprovals.map((i: any) => ({
+          workspaceId,
+          submittedBy: user.id,
+          submittedByName: user.name,
+          reportDate: dayStart,
+          particulars: i.particulars || "N/A",
+          description: i.description || "",
+          amountINR: Number(i.amountINR) || 0,
+          amountSAR: (Number(i.amountINR) || 0) * exchangeRate,
+          priority: i.priority || "medium",
+          bankName: i.bankName || "",
+          revisedAmountINR: i.revisedAmountINR ? Number(i.revisedAmountINR) : null,
+          revisedAmountSAR: i.revisedAmountSAR ? Number(i.revisedAmountSAR) : null,
+          revisionReference: i.revisionReference || "",
+          status: i.approval || "pending",
+          financeReportId: String(report.id)
+        }))
+      });
+    }
+
+    // Sync Cash items to Petty Cash ledger immediately
+    await syncReportCashToPettyCash(String(report.id));
 
     // Create notifications for Finance HODs
-    const financeHods = await User.find({
-      role: "hod",
-      $or: [
-        { teamNames: FINANCE_TEAM_INTERNAL_NAME },
-        { teamName: FINANCE_TEAM_INTERNAL_NAME },
-        { "departments.name": "Finance" },
-        { "departments.name": FINANCE_TEAM_INTERNAL_NAME }
-      ],
-      status: "active",
-      isDeleted: false
-    }).lean();
+    const financeHods = await db.user.findMany({
+      where: {
+        role: "hod",
+        isDeleted: false,
+        workspaceMembers: {
+          some: {
+            OR: [
+              { departments: { some: { name: "Finance" } } }
+            ],
+            status: "active",
+            isActive: true
+          }
+        }
+      }
+    });
 
     const notifications = financeHods.map((hodUser) => ({
-      recipientId: hodUser._id,
+      recipientId: hodUser.id,
       type: "finance_approval_request",
       title: "Finance Report — Pending Forward",
       message: `${user.name} submitted a finance report for ${dayStart.toISOString().slice(0, 10)}. Closing Balance: ₹${parsed.data.summary.bankBalance.toLocaleString("en-IN")}. Awaiting your approval.`,
       metadata: {
-        financeReportId: String(report._id),
+        financeReportId: String(report.id),
         reportDate: dayStart.toISOString(),
         submittedBy: user.name,
         totalIncome: parsed.data.summary.totalReceipts,
         closingCashBalance: parsed.data.summary.bankBalance
       },
-      linkUrl: `/finance/${String(report._id)}`
+      linkUrl: `/finance/${String(report.id)}`
     }));
 
     if (notifications.length > 0) {
-      await Notification.insertMany(notifications);
+      await db.notification.createMany({ data: notifications });
     }
 
     await logAuditEntry({
       action: "Finance Report Created",
       userId: user.id,
       userName: user.name,
-      financeReportId: String(report._id),
+      financeReportId: String(report.id),
       newValue: reportPayload
     });
 
-    return NextResponse.json({ success: true, data: report, message: "Finance report submitted successfully." }, { status: 201 });
+    const encryptedData = await encryptPayload(report);
+    return ApiResponse.created(report, "Finance report submitted successfully.", 2001, 201, encryptedData);
   } catch (error) {
     console.error("Failed to create finance report", error);
-    return NextResponse.json({ success: false, message: "Failed to create finance report" }, { status: 500 });
+    return ApiResponse.serverError("Failed to create finance report");
   }
 }
 
@@ -135,11 +289,11 @@ export async function GET(request: Request) {
   try {
     const user = await getCurrentUser();
     if (!user) {
-      return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
+      return ApiResponse.unauthorized();
     }
 
     if (!canViewFinanceReport(user)) {
-      return NextResponse.json({ success: false, message: "You do not have permission to view finance reports" }, { status: 403 });
+      return ApiResponse.forbidden("You do not have permission to view finance reports");
     }
 
     const url = new URL(request.url);
@@ -148,21 +302,16 @@ export async function GET(request: Request) {
     const limit = Math.min(Number(url.searchParams.get("limit")) || 50, 100);
     const workspaceId = url.searchParams.get("workspaceId") || request.headers.get("x-workspace-id") || user.workspaceId;
 
-    await connectToDatabase();
-    const filter: Record<string, any> = {};
+        const filter: Record<string, any> = {};
 
     if (user.role !== "admin") {
-      const memberships = await WorkspaceMember.find({
-        userId: user.id,
-        status: "active",
-        isActive: true
-      }).select("workspaceId").lean() as any[];
+      const memberships = await db.workspaceMember.findMany({ where: { userId: user.id, status: "active", isActive: true }, select: { workspaceId: true } });
       const allowedWorkspaceIds = memberships.map(m => String(m.workspaceId));
 
       if (workspaceId && workspaceId !== "all") {
         filter.workspaceId = allowedWorkspaceIds.includes(workspaceId) ? workspaceId : "non_existent_id";
       } else {
-        filter.workspaceId = { $in: allowedWorkspaceIds };
+        filter.workspaceId = { in: allowedWorkspaceIds };
       }
     } else {
       if (workspaceId && workspaceId !== "all") {
@@ -170,26 +319,33 @@ export async function GET(request: Request) {
       }
     }
 
+    const submittedByParam = url.searchParams.get("submittedBy");
+    if (submittedByParam) {
+      filter.submittedBy = submittedByParam === "me" ? user.id : submittedByParam;
+    }
+
     if (status) {
       filter.status = status;
     } else if (user.role === "ceo") {
-      filter.status = { $in: ["forwarded_to_ceo", "approved", "rejected"] };
+      filter.status = { in: ["forwarded_to_ceo", "approved", "rejected"] };
     }
     if (date) {
       const day = new Date(date);
       const nextDay = new Date(day);
       nextDay.setDate(nextDay.getDate() + 1);
-      filter.reportDate = { $gte: day, $lt: nextDay };
+      filter.reportDate = { gte: day, lt: nextDay };
     }
 
-    const reports = await FinanceReport.find(filter)
-      .sort({ reportDate: -1 })
-      .limit(limit)
-      .lean();
+    const reports = await db.financeReport.findMany({
+      where: filter,
+      orderBy: { reportDate: 'desc' },
+      take: limit
+    });
 
-    return NextResponse.json({ success: true, data: reports });
+    const encryptedData = await encryptPayload(reports);
+    return ApiResponse.success(reports, "Operation completed successfully", 1000, null, 200, encryptedData);
   } catch (error) {
     console.error("Failed to fetch finance reports", error);
-    return NextResponse.json({ success: false, message: "Failed to fetch finance reports" }, { status: 500 });
+    return ApiResponse.serverError("Failed to fetch finance reports");
   }
 }

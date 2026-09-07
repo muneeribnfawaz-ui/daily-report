@@ -5,6 +5,7 @@ import { DashboardStatCard, DashboardPanel } from "@/components/dashboard/ui";
 import { Badge } from "@/components/ui/badge";
 import { formatDisplayName } from "@/lib/utils";
 import { Loader2, TrendingUp, TrendingDown, Wallet, Clock } from "lucide-react";
+import { decryptPayload } from "@/lib/crypto";
 
 import { useSelectedCompany } from "@/hooks/use-selected-company";
 
@@ -45,7 +46,8 @@ export function FinanceDashboardSection() {
       const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) throw new Error("Failed to fetch");
       const json = await res.json();
-      return json.data as FinanceDashboardData;
+      const payloadData = json.encryptedData ? await decryptPayload(json.encryptedData) : json.data;
+      return payloadData as FinanceDashboardData;
     },
     staleTime: 60_000
   });

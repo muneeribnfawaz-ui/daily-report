@@ -6,19 +6,34 @@ import { getCurrentUser } from "@/lib/auth";
 
 export default async function ReportManagerCreateUserPage() {
   const user = await getCurrentUser();
-  if (!user || (user.role !== "team_lead" && user.role !== "hod" && user.role !== "admin" && user.role !== "ceo")) {
-    redirect("/report-manager/users");
+  if (!user) {
+    redirect("/login");
   }
 
+  if (user.role === "admin") {
+    redirect("/admin/users/create");
+  }
+  if (user.role === "ceo") {
+    redirect("/ceo/users/create");
+  }
+  if (user.role === "hod") {
+    redirect("/hod/users/create");
+  }
+  if (user.role !== "report_manager") {
+    redirect("/login");
+  }
+
+  const plainUser = JSON.parse(JSON.stringify(user));
+
   return (
-    <AppShell title="Create User" role={user.role}>
+    <AppShell title="Create Employee" role={user.role}>
       <div className="space-y-6">
         <DashboardPageHeader
           eyebrow="Team Access"
-          title="Add User"
-          description="Create staff profiles with manager and team values filled in automatically where appropriate."
+          title="Add Employee"
+          description="Create staff profiles with manager and team values filled in automatically for your report manager scope."
         />
-        <UserCreateScreen currentUser={user} />
+        <UserCreateScreen currentUser={plainUser} />
       </div>
     </AppShell>
   );

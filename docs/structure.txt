@@ -1,0 +1,255 @@
+.
+├── .env.example
+├── .env.local
+├── .gitignore
+├── app
+│   ├── admin
+│   │   ├── audit-logs
+│   │   │   └── page.tsx
+│   │   ├── consolidated-reports
+│   │   │   ├── [date]
+│   │   │   │   └── page.tsx
+│   │   │   └── page.tsx
+│   │   ├── dashboard
+│   │   │   └── page.tsx
+│   │   ├── reports
+│   │   │   ├── [id]
+│   │   │   │   └── page.tsx
+│   │   │   └── page.tsx
+│   │   ├── settings
+│   │   │   └── page.tsx
+│   │   ├── team-types
+│   │   │   ├── [id]
+│   │   │   │   └── edit
+│   │   │   │       └── page.tsx
+│   │   │   ├── create
+│   │   │   │   └── page.tsx
+│   │   │   └── page.tsx
+│   │   └── users
+│   │       ├── [id]
+│   │       │   ├── edit
+│   │       │   │   └── page.tsx
+│   │       │   └── page.tsx
+│   │       ├── create
+│   │       │   └── page.tsx
+│   │       └── page.tsx
+│   ├── api
+│   │   ├── admin
+│   │   │   ├── team-types
+│   │   │   │   ├── [id]
+│   │   │   │   │   └── route.ts
+│   │   │   │   └── route.ts
+│   │   │   └── users
+│   │   │       └── route.ts
+│   │   ├── audit-logs
+│   │   │   └── route.ts
+│   │   ├── auth
+│   │   │   ├── login
+│   │   │   │   └── route.ts
+│   │   │   ├── logout
+│   │   │   │   └── route.ts
+│   │   │   ├── me
+│   │   │   │   └── route.ts
+│   │   │   └── register
+│   │   │       └── route.ts
+│   │   ├── consolidated-reports
+│   │   │   ├── [id]
+│   │   │   │   ├── finalize
+│   │   │   │   │   └── route.ts
+│   │   │   │   ├── lock
+│   │   │   │   │   └── route.ts
+│   │   │   │   ├── pdf
+│   │   │   │   │   └── route.ts
+│   │   │   │   ├── route.ts
+│   │   │   │   └── unlock
+│   │   │   │       └── route.ts
+│   │   │   ├── pdf
+│   │   │   │   └── route.ts
+│   │   │   └── route.ts
+│   │   ├── leave-requests
+│   │   │   ├── [id]
+│   │   │   │   └── route.ts
+│   │   │   └── route.ts
+│   │   ├── profile
+│   │   │   └── route.ts
+│   │   ├── report-manager
+│   │   │   ├── reports
+│   │   │   │   ├── [id]
+│   │   │   │   │   ├── approve
+│   │   │   │   │   │   └── route.ts
+│   │   │   │   │   ├── edit-access
+│   │   │   │   │   │   └── route.ts
+│   │   │   │   │   ├── reject
+│   │   │   │   │   │   └── route.ts
+│   │   │   │   │   └── route.ts
+│   │   │   │   ├── preview
+│   │   │   │   │   ├── pdf
+│   │   │   │   │   │   └── route.ts
+│   │   │   │   │   └── route.ts
+│   │   │   │   └── route.ts
+│   │   │   └── users
+│   │   │       └── route.ts
+│   │   ├── reports
+│   │   │   ├── [id]
+│   │   │   │   ├── edit-request
+│   │   │   │   │   └── route.ts
+│   │   │   │   └── route.ts
+│   │   │   ├── my
+│   │   │   │   └── route.ts
+│   │   │   ├── pdf
+│   │   │   │   └── route.ts
+│   │   │   └── route.ts
+│   │   ├── team-types
+│   │   │   └── route.ts
+│   │   └── users
+│   │       └── [id]
+│   │           └── route.ts
+│   ├── daily-report
+│   │   ├── [id]
+│   │   │   ├── page.tsx
+│   │   │   └── preview
+│   │   │       └── page.tsx
+│   │   ├── create
+│   │   │   └── page.tsx
+│   │   └── my-reports
+│   │       └── page.tsx
+│   ├── dashboard
+│   │   └── page.tsx
+│   ├── globals.css
+│   ├── layout.tsx
+│   ├── leave-requests
+│   │   ├── create
+│   │   │   └── page.tsx
+│   │   └── page.tsx
+│   ├── login
+│   │   └── page.tsx
+│   ├── page.tsx
+│   ├── profile
+│   │   └── page.tsx
+│   ├── report-manager
+│   │   ├── consolidated-reports
+│   │   │   ├── [date]
+│   │   │   │   └── page.tsx
+│   │   │   ├── create
+│   │   │   │   └── page.tsx
+│   │   │   └── page.tsx
+│   │   ├── dashboard
+│   │   │   └── page.tsx
+│   │   ├── reports
+│   │   │   ├── [id]
+│   │   │   │   └── page.tsx
+│   │   │   └── page.tsx
+│   │   └── users
+│   │       ├── [id]
+│   │       │   ├── edit
+│   │       │   │   └── page.tsx
+│   │       │   └── page.tsx
+│   │       ├── create
+│   │       │   └── page.tsx
+│   │       └── page.tsx
+│   └── signup
+│       └── page.tsx
+├── components
+│   ├── admin
+│   │   ├── admin-add-user-form.tsx
+│   │   ├── admin-add-user-panel.tsx
+│   │   ├── create-user-button.tsx
+│   │   ├── manager-add-user-form.tsx
+│   │   ├── report-manager-form.tsx
+│   │   ├── team-type-form.tsx
+│   │   ├── team-types-manager.tsx
+│   │   ├── user-create-screen.tsx
+│   │   ├── user-edit-form.tsx
+│   │   ├── user-list.tsx
+│   │   └── user-view-screen.tsx
+│   ├── consolidated
+│   │   ├── consolidated-report-browser.tsx
+│   │   └── consolidated-report-preview-screen.tsx
+│   ├── dashboard
+│   │   └── ui.tsx
+│   ├── form-controls.ts
+│   ├── forms
+│   │   ├── daily-report-form.tsx
+│   │   ├── login-form.tsx
+│   │   ├── password-input.tsx
+│   │   ├── report-controls.tsx
+│   │   ├── signup-form.tsx
+│   │   └── task-list-editor.tsx
+│   ├── layout
+│   │   ├── app-shell.tsx
+│   │   ├── sidebar.tsx
+│   │   └── theme-toggle.tsx
+│   ├── leave
+│   │   ├── leave-rejection-note-modal.tsx
+│   │   ├── leave-request-center.tsx
+│   │   └── leave-request-create-form.tsx
+│   ├── profile
+│   │   ├── profile-action-button.tsx
+│   │   └── profile-update-form.tsx
+│   ├── providers.tsx
+│   ├── reports
+│   │   ├── edit-report-form.tsx
+│   │   ├── my-report-list.tsx
+│   │   ├── my-report-preview.tsx
+│   │   ├── report-date-list.tsx
+│   │   ├── report-detail-explorer.tsx
+│   │   ├── report-list.tsx
+│   │   └── report-sheet-preview.tsx
+│   └── ui
+│       ├── badge.tsx
+│       ├── button.tsx
+│       ├── card.tsx
+│       ├── input.tsx
+│       ├── select.tsx
+│       ├── table.tsx
+│       └── textarea.tsx
+├── config
+│   └── app-data.json
+├── hooks
+│   └── use-session.ts
+├── lib
+│   ├── api.ts
+│   ├── audit.ts
+│   ├── auth.ts
+│   ├── bootstrap.ts
+│   ├── browser-pdf.ts
+│   ├── consolidated-report-data.ts
+│   ├── consolidated-report-pdf.ts
+│   ├── constants.ts
+│   ├── daily-report-indexes.ts
+│   ├── date-utils.ts
+│   ├── db.ts
+│   ├── leave-requests.ts
+│   ├── pdf-page.ts
+│   ├── pdf.ts
+│   ├── permissions.ts
+│   ├── report-edit-access.ts
+│   ├── report-visibility.ts
+│   ├── team-types.ts
+│   ├── types.ts
+│   ├── user-directory-sort.ts
+│   ├── utils.ts
+│   └── validation.ts
+├── middleware.ts
+├── models
+│   ├── AuditLog.ts
+│   ├── ConsolidatedReport.ts
+│   ├── DailyReport.ts
+│   ├── LeaveRequest.ts
+│   ├── TeamType.ts
+│   └── User.ts
+├── next-env.d.ts
+├── next.config.mjs
+├── package-lock.json
+├── package.json
+├── postcss.config.mjs
+├── profile_format.html
+├── project_format.html
+├── README.md
+├── report_format.html
+├── structure.txt
+├── tailwind.config.ts
+├── tsconfig.json
+└── tsconfig.tsbuildinfo
+
+92 directories, 161 files

@@ -10,8 +10,8 @@ export default async function TopLevelReportDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const user = await getCurrentUser();
-  if (!user || (user.role !== "team_lead" && user.role !== "report_manager" && user.role !== "hod" && user.role !== "admin" && user.role !== "ceo")) {
-    redirect("/reports");
+  if (!user) {
+    redirect("/login");
   }
 
   const { id } = await params;

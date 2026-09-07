@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import LeaveRequest from "@/models/LeaveRequest";
 import { logAuditEntry } from "@/lib/audit";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -9,14 +8,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (!user) return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
 
   const { id } = await Promise.resolve(params);
-  await connectToDatabase();
-  const leaveRequest = (await LeaveRequest.findById(id).lean()) as
-    | {
-        employeeId: string;
-        teamName: string;
-        [key: string]: unknown;
-      }
-    | null;
+    const leaveRequest = await db.leaveRequest.findUnique({
+      where: { id: String(id) }
+    }) as any;
 
   if (!leaveRequest) {
     return NextResponse.json({ success: false, message: "Leave request not found" }, { status: 404 });
@@ -42,8 +36,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const action = String(body.action ?? "");
   const comment = typeof body.comment === "string" ? body.comment.trim() : "";
 
-  await connectToDatabase();
-  const leaveRequest = await LeaveRequest.findById(id);
+  const leaveRequest = await db.leaveRequest.findUnique({
+    where: { id: String(id) }
+  });
 
   if (!leaveRequest) {
     return NextResponse.json({ success: false, message: "Leave request not found" }, { status: 404 });
@@ -57,9 +52,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (!isOwner || (leaveRequest.status !== "pending_tl" && leaveRequest.status !== "forwarded_to_hod")) {
       return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
     }
-    const previous = leaveRequest.toObject();
-    leaveRequest.status = "cancelled";
-    await leaveRequest.save();
+    const previous = leaveRequest;
+    const updatedLeaveRequest = await db.leaveRequest.update({
+      where: { id: leaveRequest.id },
+      data: { status: "cancelled" }
+    });
 
     await logAuditEntry({
       action: "Leave Request Cancelled",
@@ -67,10 +64,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       userName: user.name,
       leaveRequestId: id,
       oldValue: previous,
-      newValue: leaveRequest.toObject()
+      newValue: updatedLeaveRequest
     });
 
-    return NextResponse.json({ success: true, data: leaveRequest });
+    return NextResponse.json({ success: true, data: updatedLeaveRequest });
   }
 
   if (action === "reject") {
@@ -85,18 +82,22 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return NextResponse.json({ success: false, message: "Rejection description is required" }, { status: 400 });
     }
 
-    const previous = leaveRequest.toObject();
-    leaveRequest.status = "rejected";
+    const previous = leaveRequest;
+    
+    const updateData: any = { status: "rejected" };
     if (canRejectPending) {
-      leaveRequest.tlReviewedBy = user.id;
-      leaveRequest.tlReviewedAt = new Date();
-      leaveRequest.tlComment = comment;
+      updateData.tlReviewedBy = user.id;
+      updateData.tlReviewedAt = new Date();
+      updateData.tlComment = comment;
     } else {
-      leaveRequest.hodReviewedBy = user.id;
-      leaveRequest.hodReviewedAt = new Date();
-      leaveRequest.hodComment = comment;
+      updateData.hodReviewedBy = user.id;
+      updateData.hodReviewedAt = new Date();
+      updateData.hodComment = comment;
     }
-    await leaveRequest.save();
+    const updatedLeaveRequest = await db.leaveRequest.update({
+      where: { id: leaveRequest.id },
+      data: updateData
+    });
 
     await logAuditEntry({
       action: "Leave Request Rejected",
@@ -104,11 +105,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       userName: user.name,
       leaveRequestId: id,
       oldValue: previous,
-      newValue: leaveRequest.toObject(),
+      newValue: updatedLeaveRequest,
       reason: comment || null
     });
 
-    return NextResponse.json({ success: true, data: leaveRequest });
+    return NextResponse.json({ success: true, data: updatedLeaveRequest });
   }
 
   if (action === "approve") {
@@ -119,18 +120,22 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
     }
 
-    const previous = leaveRequest.toObject();
-    leaveRequest.status = "approved";
+    const previous = leaveRequest;
+    
+    const updateData: any = { status: "approved" };
     if (canApprovePending) {
-      leaveRequest.tlReviewedBy = user.id;
-      leaveRequest.tlReviewedAt = new Date();
-      leaveRequest.tlComment = comment;
+      updateData.tlReviewedBy = user.id;
+      updateData.tlReviewedAt = new Date();
+      updateData.tlComment = comment;
     } else {
-      leaveRequest.hodReviewedBy = user.id;
-      leaveRequest.hodReviewedAt = new Date();
-      leaveRequest.hodComment = comment;
+      updateData.hodReviewedBy = user.id;
+      updateData.hodReviewedAt = new Date();
+      updateData.hodComment = comment;
     }
-    await leaveRequest.save();
+    const updatedLeaveRequest = await db.leaveRequest.update({
+      where: { id: leaveRequest.id },
+      data: updateData
+    });
 
     await logAuditEntry({
       action: "Leave Request Approved",
@@ -138,11 +143,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       userName: user.name,
       leaveRequestId: id,
       oldValue: previous,
-      newValue: leaveRequest.toObject(),
+      newValue: updatedLeaveRequest,
       reason: comment || null
     });
 
-    return NextResponse.json({ success: true, data: leaveRequest });
+    return NextResponse.json({ success: true, data: updatedLeaveRequest });
   }
 
   return NextResponse.json({ success: false, message: "Unsupported action" }, { status: 400 });

@@ -31,6 +31,11 @@ describe("Report Edit & Lock Access Rights", () => {
       expect(canEditDailyReport(lockedReport, { role: "team_member" }, now)).toBe(false);
     });
 
+    it("denies edit access for CEO role across all reports", () => {
+      const todayReport = { isLocked: false, reportDate: todayStr, editAccessGranted: true };
+      expect(canEditDailyReport(todayReport, { role: "ceo" }, now)).toBe(false);
+    });
+
     it("requires explicit editAccessGranted for team_member, even if report date is today", () => {
       const todayReportWithoutAccess = { isLocked: false, reportDate: todayStr, editAccessGranted: false };
       const todayReportWithAccess = { isLocked: false, reportDate: todayStr, editAccessGranted: true };

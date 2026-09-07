@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import { Search } from "lucide-react";
@@ -35,7 +35,7 @@ type ReportItem = {
   attachmentLink?: string;
 };
 
-function getReviewEligibility(
+export function getReviewEligibility(
   report: ReportItem,
   currentUserId?: string | null,
   currentUserRole?: string | null
@@ -47,34 +47,45 @@ function getReviewEligibility(
   }
 
   const role = currentUserRole.toLowerCase();
+  const authorRole = (report.employeeRole || "team_member").toLowerCase();
 
-  if (role === "team_lead" || role === "report_manager") {
-    if (report.verificationLevel) {
-      return { allowed: false, label: `Verified (${report.verificationLevel.toUpperCase()})` };
+  // Admin & CEO can verify any reports
+  if (role === "admin" || role === "ceo") {
+    if (report.verificationLevel === "ceo") {
+      return { allowed: false, label: "Verified by CEO" };
     }
     return { allowed: true };
   }
 
+  // TM to TL: Team Lead verifies Team Member reports
+  if (role === "team_lead") {
+    if (authorRole !== "team_member") {
+      return { allowed: false, label: "Senior Review Required" };
+    }
+    if (report.verificationLevel) {
+      return {
+        allowed: false,
+        label: report.verificationLevel === "tl" ? "Verified by TL" : `Verified (${report.verificationLevel.toUpperCase()})`
+      };
+    }
+    return { allowed: true };
+  }
+
+  // TL to HOD: HOD verifies Team Lead reports
   if (role === "hod") {
-    const isAuthorTL = report.employeeRole === "team_lead";
-    if (!isAuthorTL) {
-      if (report.verificationLevel === "tl" || report.verificationLevel === "hod" || report.verificationLevel === "ceo") {
-        return { allowed: false, label: "Verified by TL" };
-      }
-      return { allowed: true };
-    } else {
+    if (authorRole === "team_lead") {
       if (report.verificationLevel === "hod" || report.verificationLevel === "ceo") {
         return { allowed: false, label: "Verified by HOD" };
       }
       return { allowed: true };
     }
-  }
-
-  if (role === "ceo" || role === "admin") {
-    if (report.verificationLevel === "ceo") {
-      return { allowed: false, label: "Verified by CEO" };
+    if (authorRole === "team_member") {
+      if (report.verificationLevel === "tl" || report.verificationLevel === "hod" || report.verificationLevel === "ceo") {
+        return { allowed: false, label: "Verified by TL" };
+      }
+      return { allowed: true, label: "Pending TL Approval" };
     }
-    return { allowed: true };
+    return { allowed: false, label: "Senior Review Required" };
   }
 
   return { allowed: false };
@@ -95,40 +106,52 @@ type PaginatedReportResponse = {
   totalPages: number;
 };
 
-const PAGE_SIZE = 1;
+
 
 export function ReportDateList({
   endpoint,
   title,
   detailBaseHref,
   userRole,
-  currentUserId
+  currentUserId,
+  pageSize = 10
 }: {
   endpoint: string;
   title: string;
   detailBaseHref?: Route;
   userRole?: string;
-  currentUserId?: string;
+  currentUserId?: string | null;
+  pageSize?: number;
 }) {
   const searchParams = useSearchParams();
   const [search, setSearch] = useState(searchParams.get("employee") ?? "");
   const [page, setPage] = useState(1);
-  const [ceoScope, setCeoScope] = useState<"hod" | "all">("hod");
   const [reviewingReport, setReviewingReport] = useState<ReportItem | null>(null);
+  const [selectedDept, setSelectedDept] = useState<string>("all");
 
-  const isCeo = userRole === "ceo";
-  const activeScope = isCeo ? ceoScope : undefined;
+  useEffect(() => {
+    const stored = localStorage.getItem("daily_report_selected_department");
+    if (stored) setSelectedDept(stored);
+
+    const handleDeptChange = (e: Event) => {
+      const customEvent = e as CustomEvent<string>;
+      if (customEvent.detail) setSelectedDept(customEvent.detail);
+    };
+
+    window.addEventListener("department-changed", handleDeptChange);
+    return () => window.removeEventListener("department-changed", handleDeptChange);
+  }, []);
 
   const query = useQuery({
-    queryKey: [endpoint, search, page, activeScope],
+    queryKey: [endpoint, search, page, pageSize, selectedDept],
     queryFn: async () => {
       const response = await api.get(endpoint, {
         params: {
           view: "date-paginated",
           employee: search || undefined,
+          team: selectedDept && selectedDept !== "all" ? selectedDept : undefined,
           page,
-          limit: PAGE_SIZE,
-          ...(activeScope ? { scope: activeScope } : {})
+          limit: pageSize
         }
       });
       return response.data?.data as PaginatedReportResponse;
@@ -167,66 +190,11 @@ export function ReportDateList({
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {isCeo && (
-              <div className="flex items-center rounded-lg border bg-muted p-1 text-xs">
-                <button
-                  type="button"
-                  onClick={() => { setCeoScope("hod"); setPage(1); }}
-                  className={`rounded-md px-3 py-1 font-semibold transition ${
-                    ceoScope === "hod" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  HOD Reports Only
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setCeoScope("all"); setPage(1); }}
-                  className={`rounded-md px-3 py-1 font-semibold transition ${
-                    ceoScope === "all" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  All Organization Reports
-                </button>
-              </div>
-            )}
             <Badge variant="soft">{totalDates} date{totalDates === 1 ? "" : "s"}</Badge>
             <Badge variant="outline">
               Page {currentPage || 1} of {totalPages || 1}
             </Badge>
           </div>
-        </div>
-
-        <div className="rounded-xl border border-cardBorder bg-muted/20 px-4 py-4">
-          {query.isLoading ? (
-            <div className="text-sm text-muted-foreground">Loading reports...</div>
-          ) : query.isError ? (
-            <div className="text-sm text-danger">Failed to load reports.</div>
-          ) : currentGroup ? (
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="space-y-2">
-                <div className="inline-flex w-fit rounded-full bg-background px-3 py-1 text-sm font-semibold text-textPrimary">
-                  {new Intl.DateTimeFormat("en-IN", { dateStyle: "medium" }).format(new Date(`${currentGroup.date}T00:00:00`))}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline" className="rounded-full">
-                    {currentGroup.reportCount} report{currentGroup.reportCount === 1 ? "" : "s"}
-                  </Badge>
-                  <Badge variant="outline" className="rounded-full">
-                    {currentGroup.teamNames.length} team{currentGroup.teamNames.length === 1 ? "" : "s"}
-                  </Badge>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {currentGroup.teamNames.map((teamName) => (
-                  <Badge key={teamName} variant="soft" className="rounded-full">
-                    {formatDisplayName(teamName)}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="text-sm text-muted-foreground">No reports found.</div>
-          )}
         </div>
 
         <div className="space-y-4">
@@ -240,29 +208,19 @@ export function ReportDateList({
             <Card className="overflow-hidden border border-cardBorder">
               <CardContent className="p-0">
                 <div className="hidden grid-cols-12 gap-3 border-b bg-muted/40 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground md:grid">
-                  <div className="col-span-2">Date</div>
-                  <div className="col-span-3">Employee</div>
-                  <div className="col-span-2">Team</div>
+                  <div className="col-span-3">Date</div>
+                  <div className="col-span-4">Team</div>
                   <div className="col-span-3">Status & Review</div>
                   <div className="col-span-2">Action</div>
                 </div>
                 <div className="divide-y">
                   {currentGroup.reports.map((report) => (
                     <div key={report._id} className="grid grid-cols-1 gap-3 px-4 py-4 text-sm md:grid-cols-12">
-                      <div className="text-muted-foreground md:col-span-2">
+                      <div className="text-muted-foreground md:col-span-3">
                         <span className="mr-2 text-xs font-semibold uppercase tracking-[0.18em] md:hidden">Date</span>
                         {formatDate(report.reportDate)}
                       </div>
-                      <div className="font-medium md:col-span-3">
-                        {detailBaseHref ? (
-                          <Link className="text-primary hover:text-primary/80" href={`${detailBaseHref}/${report._id}` as Route}>
-                            {report.name}
-                          </Link>
-                        ) : (
-                          report.name
-                        )}
-                      </div>
-                      <div className="text-muted-foreground md:col-span-2">
+                      <div className="text-muted-foreground md:col-span-4">
                         <span className="mr-2 text-xs font-semibold uppercase tracking-[0.18em] md:hidden">Team</span>
                         {formatDisplayName(report.teamName)}
                       </div>

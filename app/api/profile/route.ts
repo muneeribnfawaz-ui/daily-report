@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { toDateInputValue } from "@/lib/date-utils";
 import { getCurrentUser, hashPassword, setAuthCookie, verifyPassword } from "@/lib/auth";
-import User from "@/models/User";
 import { profileUpdateSchema } from "@/lib/validation";
 
 function normalizeStoredDate(value?: string | null) {
@@ -33,8 +32,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ success: false, message: "Invalid profile payload" }, { status: 400 });
   }
 
-  await connectToDatabase();
-  const profile = await User.findById(user.id);
+    const profile = await db.user.findUnique({ where: { id: String(user.id) } });
   if (!profile) {
     return NextResponse.json({ success: false, message: "Not found" }, { status: 404 });
   }
@@ -54,41 +52,50 @@ export async function PATCH(request: Request) {
     if (parsed.data.newPassword !== parsed.data.confirmPassword) {
       return NextResponse.json({ success: false, message: "Passwords do not match" }, { status: 400 });
     }
-
-    profile.password = await hashPassword(parsed.data.newPassword);
   }
 
-  profile.firstName = parsed.data.firstName.trim();
-  profile.lastName = parsed.data.lastName.trim();
+  const updateData: any = {
+    firstName: parsed.data.firstName.trim(),
+    lastName: parsed.data.lastName?.trim() ?? "",
+  };
+  
+  updateData.name = `${updateData.firstName} ${updateData.lastName}`.trim();
+
+  if (wantsPasswordChange && parsed.data.newPassword) {
+    updateData.password = await hashPassword(parsed.data.newPassword);
+  }
+
   if (parsed.data.dateOfBirth !== undefined) {
-    profile.dateOfBirth = normalizeStoredDate(parsed.data.dateOfBirth);
+    updateData.dateOfBirth = normalizeStoredDate(parsed.data.dateOfBirth);
   }
   if (parsed.data.secondaryPhone !== undefined) {
-    profile.secondaryPhone = parsed.data.secondaryPhone;
+    updateData.secondaryPhone = parsed.data.secondaryPhone;
   }
-  profile.name = `${profile.firstName} ${profile.lastName}`.trim();
 
-  await profile.save();
+  const updatedProfile = await db.user.update({
+    where: { id: profile.id },
+    data: updateData
+  });
 
   await setAuthCookie({
     ...user,
-    name: profile.name
+    name: updatedProfile.name
   });
 
   return NextResponse.json({
     success: true,
     data: {
-      _id: String(profile._id),
-      firstName: profile.firstName,
-      lastName: profile.lastName,
-      dateOfBirth: profile.dateOfBirth,
-      secondaryPhone: profile.secondaryPhone,
-      name: profile.name,
-      email: profile.email,
-      isEmailActivated: profile.isEmailActivated,
-      empID: profile.empID,
-      createdAt: profile.createdAt,
-      updatedAt: profile.updatedAt
+      _id: String(updatedProfile.id),
+      firstName: updatedProfile.firstName,
+      lastName: updatedProfile.lastName,
+      dateOfBirth: updatedProfile.dateOfBirth,
+      secondaryPhone: updatedProfile.secondaryPhone,
+      name: updatedProfile.name,
+      email: updatedProfile.email,
+      isEmailActivated: updatedProfile.isEmailActivated,
+      empID: (updatedProfile as any).empID,
+      createdAt: updatedProfile.createdAt,
+      updatedAt: updatedProfile.updatedAt
     }
   });
 }

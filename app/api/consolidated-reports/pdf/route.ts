@@ -29,7 +29,7 @@ export async function GET(request: Request) {
   let user: SessionUser | null;
   try {
     user = await getCurrentUser();
-    if (!user || (user.role !== "team_lead" && user.role !== "report_manager" && user.role !== "hod" && user.role !== "admin" && user.role !== "ceo" && user.role !== "finance_team")) {
+    if (!user || (user.role !== "team_member" && user.role !== "team_lead" && user.role !== "report_manager" && user.role !== "hod" && user.role !== "admin" && user.role !== "ceo" && (user.role as string) !== "finance_team")) {
       return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
     }
   } catch (error) {
@@ -58,7 +58,10 @@ export async function GET(request: Request) {
   const reportGroup: "finance" | "operations" | "all" =
     groupParam === "finance" ? "finance" : groupParam === "all" ? "all" : "operations";
 
-
+  const periodStr = url.searchParams.get("period");
+  const period = periodStr === "weekly" || periodStr === "monthly" ? periodStr : "daily";
+  const team = url.searchParams.get("team") ?? undefined;
+  const mine = url.searchParams.get("mine") === "true";
   const isFinanceRequested = reportGroup === "finance" || department === "Finance";
   const isUserEnrolledInFinance = user.departments?.some((d) => d.name === "Finance");
 
@@ -67,7 +70,7 @@ export async function GET(request: Request) {
       user.role === "ceo" ||
       user.role === "admin" ||
       user.role === "hod" ||
-      user.role === "finance_team" ||
+      (user.role as string) === "finance_team" ||
       Boolean(isUserEnrolledInFinance) ||
       canViewFinanceReport(user);
 
@@ -84,7 +87,7 @@ export async function GET(request: Request) {
 
   let stage = "loading report data";
   try {
-    const data = await getConsolidatedReportDetail(date, user.name, user.role, user.teamName, reportGroup, department, workspaceId);
+    const data = await getConsolidatedReportDetail(date, user.name, user.role, user.teamName, reportGroup, department, workspaceId, period, team, mine);
     stage = "building report HTML";
     const html = buildConsolidatedReportHtml({
       date: data.date,

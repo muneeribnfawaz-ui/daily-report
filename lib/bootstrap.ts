@@ -1,30 +1,25 @@
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { hashPassword } from "@/lib/auth";
-import User from "@/models/User";
-import Workspace from "@/models/Workspace";
-import WorkspaceMember from "@/models/WorkspaceMember";
-import TeamType from "@/models/TeamType";
 import { DEFAULT_ADMIN_SEED, DEFAULT_TEAM_TYPE_SEEDS } from "@/lib/constants";
-
 let defaultAdminSeeded = false;
 let defaultTeamTypesSeeded = false;
 
 export async function ensureDefaultAdmin() {
   if (defaultAdminSeeded) return;
 
-  await connectToDatabase();
-
-  let admin = await User.findOne({ email: DEFAULT_ADMIN_SEED.email.toLowerCase() }).lean();
+  let admin = await db.user.findFirst({ where: { email: DEFAULT_ADMIN_SEED.email.toLowerCase() } });
   if (!admin) {
     const password = await hashPassword(DEFAULT_ADMIN_SEED.password);
-    admin = await User.create({
-      ...DEFAULT_ADMIN_SEED,
-      firstName: "Admin",
-      lastName: "System",
-      email: DEFAULT_ADMIN_SEED.email.toLowerCase(),
-      password,
-      role: "admin",
-      isAdminActive: true
+    admin = await db.user.create({
+      data: {
+        name: DEFAULT_ADMIN_SEED.name,
+        email: DEFAULT_ADMIN_SEED.email.toLowerCase(),
+        password,
+        role: "admin",
+        firstName: "Admin",
+        lastName: "System",
+        isAdminActive: true
+      }
     });
   }
 
@@ -38,11 +33,10 @@ export async function ensureDefaultAdmin() {
 export async function ensureDefaultTeamTypes() {
   if (defaultTeamTypesSeeded) return;
 
-  await connectToDatabase();
   if (DEFAULT_TEAM_TYPE_SEEDS.length > 0) {
-    const existingCount = await TeamType.countDocuments();
+    const existingCount = await db.teamType.count();
     if (existingCount === 0) {
-      await TeamType.insertMany(DEFAULT_TEAM_TYPE_SEEDS);
+      await db.teamType.createMany({ data: DEFAULT_TEAM_TYPE_SEEDS });
     }
   }
 

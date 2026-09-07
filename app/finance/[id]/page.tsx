@@ -3,8 +3,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { DashboardPageHeader } from "@/components/dashboard/ui";
 import { getCurrentUser } from "@/lib/auth";
 import { canViewFinanceReport, canEditFinanceReport, canApproveFinanceReport, canForwardFinanceReport } from "@/lib/permissions";
-import { connectToDatabase } from "@/lib/db";
-import FinanceReport from "@/models/FinanceReport";
+import db from "@/lib/db";
 import { FinanceReportDetail } from "@/components/finance/finance-report-detail";
 
 type PageProps = { params: Promise<{ id: string }> };
@@ -15,12 +14,19 @@ export default async function FinanceDetailPage({ params }: PageProps) {
   if (!canViewFinanceReport(user)) redirect("/dashboard");
 
   const { id } = await params;
-  await connectToDatabase();
-
+  
   let report: any;
   try {
-    report = await FinanceReport.findById(id).lean();
-  } catch {
+    report = await db.financeReport.findUnique({
+      where: { id },
+      include: {
+        items: true,
+        bankBalances: true,
+        statusHistory: true
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching finance report details:", error);
     notFound();
   }
 
@@ -30,23 +36,48 @@ export default async function FinanceDetailPage({ params }: PageProps) {
   const canForward = canForwardFinanceReport(user);
   const canEdit = canEditFinanceReport(user);
 
+  const txs = report.items || [];
+  const mapTx = (t: any) => ({
+    ...t,
+    _id: t.id,
+    bankAccountId: null,
+    bankName: t.bankName || "-"
+  });
+  
+  const expenses = txs.filter((t: any) => t.type === "expense").map(mapTx);
+  const receipts = txs.filter((t: any) => t.type === "receipt").map(mapTx);
+  const payments = txs.filter((t: any) => t.type === "payment").map(mapTx);
+
+  const totalExpenses = expenses.reduce((sum: number, item: any) => sum + (Number(item.amountINR) || 0), 0);
+  const totalReceipts = receipts.reduce((sum: number, item: any) => sum + (Number(item.amountINR) || 0), 0);
+  const totalPayments = payments.reduce((sum: number, item: any) => sum + (Number(item.amountINR) || 0), 0);
+  const bankBalancesList = report.bankBalances || [];
+  const bankBalance = bankBalancesList.reduce((sum: number, b: any) => sum + (Number(b.closingBalance) || 0), 0);
+  
+  // Try to extract cash closing balance from bank balances if it exists
+  const cashObj = bankBalancesList.find((b: any) => b.bankName === "Cash");
+  const pettyCashBalance = cashObj ? (Number(cashObj.closingBalance) || 0) : 0;
+
   const serializedReport = {
-    _id: String(report._id),
-    reportDate: (report.reportDate as Date).toISOString(),
-    submittedByName: (report.submittedByName as string) || "",
-    expenses: Array.isArray(report.expenses) ? report.expenses : [],
-    receipts: Array.isArray(report.receipts) ? report.receipts : [],
-    payments: Array.isArray(report.payments) ? report.payments : [],
-    bankBalances: Array.isArray(report.bankBalances) ? report.bankBalances : [],
-    cashBalance: report.cashBalance || { pettyCash: 0, total: 0 },
-    nextDayApprovals: Array.isArray(report.nextDayApprovals) ? report.nextDayApprovals : [],
-    summary: report.summary || { totalExpenses: 0, totalReceipts: 0, totalPayments: 0, bankBalance: 0, pettyCashBalance: 0, description: "" },
-    exchangeRate: (report.exchangeRate as number) || 0,
-    status: (report.status as string) || "pending",
-    approvedByName: (report.approvedByName as string) || "",
-    approvedAt: report.approvedAt ? (report.approvedAt as Date).toISOString() : undefined,
-    rejectionReason: (report.rejectionReason as string) || "",
-    createdAt: (report.createdAt as Date).toISOString()
+    _id: report.id,
+    reportDate: report.reportDate ? new Date(report.reportDate).toISOString() : "",
+    submittedByName: report.submittedByName || "",
+    expenses,
+    receipts,
+    payments,
+    bankBalances: bankBalancesList,
+    cashBalance: { pettyCash: pettyCashBalance, total: pettyCashBalance },
+    nextDayApprovals: [], // Temporarily hardcoded until schema supports it
+    summary: { totalExpenses, totalReceipts, totalPayments, bankBalance, pettyCashBalance, description: "" },
+    exchangeRate: report.exchangeRate || 0,
+    status: report.status || "pending",
+    approvedByName: report.approvedByName || "",
+    approvedAt: report.approvedAt ? new Date(report.approvedAt).toISOString() : undefined,
+    rejectionReason: report.rejectionReason || "",
+    createdAt: report.createdAt ? new Date(report.createdAt).toISOString() : "",
+    editAccessRequested: Boolean(report.editAccessRequested),
+    editAccessRequestReason: report.editAccessRequestReason || "",
+    editAccessGranted: Boolean(report.editAccessGranted)
   };
 
   return (
@@ -62,6 +93,7 @@ export default async function FinanceDetailPage({ params }: PageProps) {
           canApprove={canApprove}
           canForward={canForward}
           canEdit={canEdit}
+          userRole={user.role}
         />
       </div>
     </AppShell>

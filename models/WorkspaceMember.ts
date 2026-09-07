@@ -8,6 +8,8 @@ const WorkspaceMemberSchema = new Schema(
     empID: { type: String, default: "" },
     role: { type: String, required: true, enum: AUTH_ROLE_OPTIONS },
     roleTypes: { type: [String], default: [] },
+    teamNames: { type: [String], default: [] },
+    teamName: { type: String, default: "" },
     departments: {
       type: [
         {

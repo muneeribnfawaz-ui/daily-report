@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
-import { AuditLogsViewer } from "@/components/admin/audit-logs-viewer";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessAdminArea } from "@/lib/permissions";
 
@@ -12,7 +12,14 @@ export default async function CeoAuditLogsPage() {
 
   return (
     <AppShell title="Audit Logs" role={user.role}>
-      <AuditLogsViewer />
+      <Card>
+        <CardHeader>
+          <CardTitle>Audit Trail</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground">
+          Action history, before/after values, timestamps, and unlock reasons are exposed here.
+        </CardContent>
+      </Card>
     </AppShell>
   );
 }

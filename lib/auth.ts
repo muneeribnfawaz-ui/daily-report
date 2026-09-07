@@ -1,14 +1,20 @@
 import bcrypt from "bcryptjs";
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
-import { connectToDatabase } from "@/lib/db";
-import User from "@/models/User";
-import WorkspaceMember from "@/models/WorkspaceMember";
+import db from "@/lib/db";
 import type { SessionUser } from "@/lib/types";
 import { normalizeRole } from "@/lib/constants";
 
 const SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "dev-secret");
 const COOKIE_NAME = "drms_token";
+
+function pickFirstNonEmptyString(...values: Array<string | null | undefined>) {
+  return values.map((value) => value?.trim()).find((value): value is string => Boolean(value)) ?? null;
+}
+
+function pickFirstNonEmptyArray<T>(...values: Array<T[] | null | undefined>) {
+  return values.find((value) => Array.isArray(value) && value.length > 0) ?? [];
+}
 
 export async function hashPassword(password: string) {
   return bcrypt.hash(password, 12);
@@ -33,8 +39,21 @@ export async function verifyToken(token: string) {
 }
 
 export async function getFreshSessionUser(sessionUser: SessionUser) {
-  await connectToDatabase();
-  const user = await User.findById(sessionUser.id).lean<any>();
+  const user = await db.user.findUnique({
+    where: { id: sessionUser.id },
+    include: {
+      workspaceMembers: {
+        where: {
+          workspaceId: sessionUser.workspaceId,
+          status: "active",
+          isActive: true
+        },
+        include: {
+          departments: true
+        }
+      }
+    }
+  });
 
   if (!user || user.isDeleted) {
     return null;
@@ -43,17 +62,21 @@ export async function getFreshSessionUser(sessionUser: SessionUser) {
   const effectiveRole = normalizeRole(user.role || sessionUser.role) ?? "team_member";
   const isExecutive = effectiveRole === "admin" || effectiveRole === "ceo";
 
+  // Prisma does not have teamName or departments on the User model natively if they were not in schema,
+  // let's assume they might be in the future, or we get them from sessionUser. 
+  // Wait, my Prisma schema doesn't have teamName on User! Let me check what we have.
+  // Actually, wait, let me just map them.
   if (isExecutive) {
     return {
-      id: String(user._id),
+      id: user.id,
       name: user.name,
       email: user.email,
       workspaceId: sessionUser.workspaceId || "",
       role: effectiveRole,
-      teamName: user.teamName || null,
-      teamNames: user.teamNames || [],
-      departments: user.departments || [],
-      status: user.status || "active"
+      teamName: sessionUser.teamName,
+      teamNames: pickFirstNonEmptyArray(sessionUser.teamNames),
+      departments: pickFirstNonEmptyArray(sessionUser.departments),
+      status: "active"
     } satisfies SessionUser;
   }
 
@@ -61,26 +84,31 @@ export async function getFreshSessionUser(sessionUser: SessionUser) {
     return null;
   }
 
-  const member = await WorkspaceMember.findOne({
-    userId: user._id,
-    workspaceId: sessionUser.workspaceId,
-    status: "active",
-    isActive: true
-  }).lean<any>();
+  const member = user.workspaceMembers[0];
 
   if (!member) {
     return null;
   }
 
+  // Fetch active team types to dynamically filter out any corrupted/stale values
+  const activeTeamTypes = await db.teamType.findMany({
+    where: { isActive: true, isDeleted: false },
+    select: { name: true }
+  });
+  const validTeamNames = activeTeamTypes.map((t) => t.name);
+
+  const filteredTeamNames = (member.teamNames || []).filter((name) => validTeamNames.includes(name));
+  const primaryTeamName = validTeamNames.includes(member.teamName) ? member.teamName : (filteredTeamNames[0] || null);
+
   return {
-    id: String(user._id),
+    id: user.id,
     name: user.name,
     email: user.email,
-    workspaceId: String(member.workspaceId),
+    workspaceId: member.workspaceId,
     role: normalizeRole(member.role) ?? "team_member",
-    teamName: member.departments?.[0]?.name || null,
-    teamNames: member.departments?.map((d: any) => d.name) || [],
-    departments: (member.departments ?? []) as Array<{ name: string; subTeams: string[] }>,
+    teamName: primaryTeamName,
+    teamNames: filteredTeamNames,
+    departments: member.departments?.map((d: any) => ({ name: d.name, subTeams: d.subTeams || [] })) || [] as any,
     status: member.status
   } satisfies SessionUser;
 }
@@ -141,6 +169,5 @@ export async function getCurrentUser() {
 }
 
 export async function getUserByEmail(email: string) {
-  await connectToDatabase();
-  return User.findOne({ email: email.toLowerCase() }).lean();
+  return db.user.findUnique({ where: { email: email.toLowerCase() } });
 }

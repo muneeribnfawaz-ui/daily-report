@@ -63,7 +63,7 @@ export function UserProfileMenu({ onLogout }: { onLogout: () => Promise<void> })
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 z-50 mt-2 w-64 origin-top-right rounded-2xl border border-cardBorder bg-card/95 p-2 text-card-foreground shadow-xl backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/95">
+        <div className="absolute right-0 top-full z-50 mt-2 w-64 max-w-[calc(100vw-24px)] origin-top-right rounded-2xl border border-cardBorder bg-card/95 p-2 text-card-foreground shadow-2xl backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/95">
           {/* User Info Header */}
           <div className="border-b border-cardBorder p-3 pb-3">
             <div className="flex items-center gap-3">
@@ -98,23 +98,6 @@ export function UserProfileMenu({ onLogout }: { onLogout: () => Promise<void> })
               <User className="h-4 w-4 text-sky-500" />
               <span>Profile</span>
             </Link>
-
-            {/* Dark/Light Mode Toggle */}
-            <button
-              type="button"
-              onClick={() => setTheme(isDark ? "light" : "dark")}
-              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-            >
-              <div className="flex items-center gap-2.5">
-                {isDark ? (
-                  <Sun className="h-4 w-4 text-amber-500" />
-                ) : (
-                  <Moon className="h-4 w-4 text-indigo-500" />
-                )}
-                <span>{isDark ? "Light Mode" : "Dark Mode"}</span>
-              </div>
-              <span className="text-[10px] text-muted-foreground capitalize">{isDark ? "Dark" : "Light"}</span>
-            </button>
           </div>
 
           {/* Logout Option */}

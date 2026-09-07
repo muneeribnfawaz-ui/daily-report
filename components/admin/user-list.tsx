@@ -13,12 +13,14 @@ import { Button } from "@/components/ui/button";
 import { formatDisplayName } from "@/lib/utils";
 
 import { useSearchParams } from "next/navigation";
+import { useSelectedCompany } from "@/hooks/use-selected-company";
 
 type UserItem = {
   _id: string;
   name: string;
   email: string;
   displayTeamName?: string;
+  memberId?: string;
 };
 
 export function AdminUserList({
@@ -35,28 +37,16 @@ export function AdminUserList({
   const searchParams = useSearchParams();
   const roleParam = searchParams.get("role");
   const [search, setSearch] = useState("");
-  const [selectedCompanyId, setSelectedCompanyId] = useState("");
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("daily_report_selected_company");
-      if (stored) setSelectedCompanyId(stored);
-
-      const handleCompanyChange = (e: any) => {
-        setSelectedCompanyId(e.detail);
-      };
-      window.addEventListener("company-changed", handleCompanyChange);
-      return () => window.removeEventListener("company-changed", handleCompanyChange);
-    }
-  }, []);
+  const selectedCompanyId = useSelectedCompany();
+  const effectiveCompanyId = selectedCompanyId || "all";
 
   const query = useQuery({
-    queryKey: [endpoint, search, selectedCompanyId, roleParam],
+    queryKey: [endpoint, search, effectiveCompanyId, roleParam],
     queryFn: async () => {
       const response = await api.get(endpoint, {
         params: {
           ...(search ? { search } : {}),
-          ...(selectedCompanyId ? { workspaceId: selectedCompanyId } : {}),
+          workspaceId: effectiveCompanyId,
           ...(roleParam ? { role: roleParam } : {})
         }
       });
@@ -64,14 +54,23 @@ export function AdminUserList({
     }
   });
 
-  const users = useMemo(() => query.data ?? [], [query.data]);
+  const users = useMemo(() => {
+    const raw = query.data ?? [];
+    const seen = new Set<string>();
+    return raw.filter((user) => {
+      const id = String(user._id || user.memberId || "");
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  }, [query.data]);
 
   return (
     <Card className="border-none shadow-none">
       <CardContent className="space-y-4 p-0 px-4 pb-4 dark:px-0 dark:pb-0">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="w-full md:max-w-sm">
-            <div className="mb-1 text-sm font-medium text-foreground">Search users</div>
+            <div className="mb-1 text-sm font-medium text-foreground">Search employees</div>
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -82,7 +81,7 @@ export function AdminUserList({
               />
             </div>
           </div>
-          <Badge variant="soft">{users.length} users</Badge>
+          <Badge variant="soft">{users.length} employees</Badge>
         </div>
 
           <div className="overflow-hidden rounded-xl border border-cardBorder">
@@ -103,16 +102,17 @@ export function AdminUserList({
           )}
           <div className="divide-y">
             {query.isLoading ? (
-              <div className="px-4 py-6 text-sm text-muted-foreground">Loading users...</div>
+              <div className="px-4 py-6 text-sm text-muted-foreground">Loading employees...</div>
             ) : query.isError ? (
-              <div className="px-4 py-6 text-sm text-danger">Failed to load users.</div>
+              <div className="px-4 py-6 text-sm text-danger">Failed to load employees.</div>
             ) : users.length === 0 ? (
-              <div className="px-4 py-6 text-sm text-muted-foreground">No users found.</div>
+              <div className="px-4 py-6 text-sm text-muted-foreground">No employees found.</div>
             ) : (
-              users.map((user) => {
+              users.map((user, index) => {
+                const itemKey = user._id ? String(user._id) : (user.memberId ? String(user.memberId) : `user-${index}`);
                 if (roleParam === "ceo") {
                   return (
-                    <div key={user._id} className="grid grid-cols-12 items-center gap-3 px-4 py-4 text-sm hover:bg-muted/30 dark:hover:bg-muted/10 transition-colors">
+                    <div key={itemKey} className="grid grid-cols-12 items-center gap-3 px-4 py-4 text-sm hover:bg-muted/30 dark:hover:bg-muted/10 transition-colors">
                       <div className="col-span-10">
                         <Link href={`${viewBaseHref}/${user._id}` as Route} className="grid grid-cols-10 items-center gap-3 cursor-pointer">
                           <div className="min-w-0 col-span-6">
@@ -135,7 +135,7 @@ export function AdminUserList({
                 }
 
                 return (
-                  <div key={user._id} className="grid grid-cols-1 items-start gap-3 px-4 py-4 text-sm md:grid-cols-12">
+                  <div key={itemKey} className="grid grid-cols-1 items-start gap-3 px-4 py-4 text-sm md:grid-cols-12">
                     <div className="min-w-0 md:col-span-4">
                       <div className="font-medium leading-5">{user.name}</div>
                       <div className="mt-1 break-all text-sm text-muted-foreground">{user.email}</div>

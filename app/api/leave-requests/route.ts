@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { leaveRequestSchema } from "@/lib/validation";
-import LeaveRequest from "@/models/LeaveRequest";
-import User from "@/models/User";
-import WorkspaceMember from "@/models/WorkspaceMember";
 import { logAuditEntry } from "@/lib/audit";
 
 function getLeaveNumberPrefix() {
@@ -23,15 +20,11 @@ function canManageLeave(role: string) {
   return role === "team_lead" || role === "report_manager" || role === "hod" || role === "admin" || role === "ceo";
 }
 
-type CreatedLeaveRequest = {
-  _id: unknown;
-  toObject: () => Record<string, unknown>;
-};
 
 async function generateLeaveNumber() {
   const leaveNumberPrefix = getLeaveNumberPrefix();
-  const existingCount = await LeaveRequest.countDocuments({
-    leaveNumber: { $regex: `^${leaveNumberPrefix}` }
+  const existingCount = await db.leaveRequest.count({
+    where: { leaveNumber: { startsWith: leaveNumberPrefix } }
   });
 
   return `${leaveNumberPrefix}${existingCount + 1}`;
@@ -50,32 +43,33 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Invalid leave request payload" }, { status: 400 });
     }
 
-    await connectToDatabase();
-
+    
     const { day: fromDate } = toDateRange(parsed.data.fromDate);
     const { day: toDate } = toDateRange(parsed.data.toDate);
 
     const workspaceId = body.workspaceId || request.headers.get("x-workspace-id") || user.workspaceId;
 
-    let leaveRequest: CreatedLeaveRequest | null = null;
+    let leaveRequest: any = null;
     for (let attempt = 0; attempt < 3 && !leaveRequest; attempt += 1) {
       const leaveNumber = await generateLeaveNumber();
       try {
-        leaveRequest = (await LeaveRequest.create({
-          workspaceId,
-          employeeId: user.id,
-          leaveNumber,
-          name: user.name,
-          teamName: user.teamName ?? "",
-          requestedByRole: user.role === "team_lead" ? "team_lead" : "team_member",
-          leaveType: parsed.data.leaveType,
-          leaveDuration: parsed.data.leaveDuration,
-          leaveHalf: parsed.data.leaveDuration === "half_day" ? parsed.data.leaveHalf : null,
-          fromDate,
-          toDate: parsed.data.leaveDuration === "half_day" ? fromDate : toDate,
-          reason: parsed.data.reason,
-          status: "pending_tl"
-        })) as CreatedLeaveRequest;
+        leaveRequest = await db.leaveRequest.create({
+          data: {
+            workspaceId,
+            employeeId: user.id,
+            leaveNumber,
+            name: user.name,
+            teamName: user.teamName ?? "",
+            requestedByRole: user.role === "team_lead" ? "team_lead" : "team_member",
+            leaveType: parsed.data.leaveType,
+            leaveDuration: parsed.data.leaveDuration,
+            leaveHalf: parsed.data.leaveDuration === "half_day" ? parsed.data.leaveHalf : null,
+            fromDate,
+            toDate: parsed.data.leaveDuration === "half_day" ? fromDate : toDate,
+            reason: parsed.data.reason,
+            status: "pending_tl"
+          }
+        }) as any;
       } catch (error) {
         if (!(error instanceof Error) || !("code" in error) || (error as { code?: number }).code !== 11000) {
           throw error;
@@ -91,8 +85,8 @@ export async function POST(request: Request) {
       action: "Leave Request Created",
       userId: user.id,
       userName: user.name,
-      leaveRequestId: String(leaveRequest._id),
-      newValue: leaveRequest.toObject()
+      leaveRequestId: String(leaveRequest.id),
+      newValue: leaveRequest
     });
 
     return NextResponse.json({ success: true, data: leaveRequest, message: "Leave request submitted successfully." }, { status: 201 });
@@ -118,21 +112,16 @@ export async function GET(request: Request) {
   const requestedLimit = Number(url.searchParams.get("limit") ?? "10");
   const workspaceId = url.searchParams.get("workspaceId") || request.headers.get("x-workspace-id") || user.workspaceId;
 
-  await connectToDatabase();
-  const conditions: Record<string, any>[] = [];
+    const conditions: Record<string, any>[] = [];
 
   if (user.role !== "admin") {
-    const memberships = await WorkspaceMember.find({
-      userId: user.id,
-      status: "active",
-      isActive: true
-    }).select("workspaceId").lean() as any[];
+    const memberships = await db.workspaceMember.findMany({ where: { userId: user.id, status: "active", isActive: true }, select: { workspaceId: true } });
     const allowedWorkspaceIds = memberships.map(m => String(m.workspaceId));
 
     if (workspaceId && workspaceId !== "all") {
       conditions.push({ workspaceId: allowedWorkspaceIds.includes(workspaceId) ? workspaceId : "non_existent_id" });
     } else {
-      conditions.push({ workspaceId: { $in: allowedWorkspaceIds } });
+      conditions.push({ workspaceId: { in: allowedWorkspaceIds } });
     }
   } else {
     if (workspaceId && workspaceId !== "all") {
@@ -143,7 +132,7 @@ export async function GET(request: Request) {
   if (user.role === "team_member") {
     conditions.push({ employeeId: user.id });
   } else if (user.role === "team_lead") {
-    conditions.push({ $or: [{ teamName: user.teamName }, { employeeId: user.id }] });
+    conditions.push({ OR: [{ teamName: user.teamName }, { employeeId: user.id }] });
   } else if (!canManageLeave(user.role)) {
     conditions.push({ employeeId: user.id });
   }
@@ -154,19 +143,24 @@ export async function GET(request: Request) {
 
   if (date) {
     const { day, nextDay } = toDateRange(date);
-    conditions.push({ fromDate: { $lte: nextDay }, toDate: { $gte: day } });
+    conditions.push({ fromDate: { lte: nextDay }, toDate: { gte: day } });
   }
 
-  const filter = conditions.length ? { $and: conditions } : {};
+  const filter = conditions.length ? { AND: conditions } : {};
 
   const safePage = Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1;
   const safeLimit = Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.floor(requestedLimit) : 10;
-  const totalCount = await LeaveRequest.countDocuments(filter);
+  const totalCount = await db.leaveRequest.count({ where: filter });
   const totalPages = totalCount === 0 ? 0 : Math.ceil(totalCount / safeLimit);
   const currentPage = totalPages === 0 ? 1 : Math.min(safePage, totalPages);
   const skip = (currentPage - 1) * safeLimit;
 
-  const leaveRequests = await LeaveRequest.find(filter).sort({ createdAt: -1 }).skip(skip).limit(safeLimit).lean();
+  const leaveRequests = await db.leaveRequest.findMany({
+    where: filter,
+    orderBy: { createdAt: 'desc' },
+    skip,
+    take: safeLimit
+  });
 
   const reviewerIds = Array.from(
     new Set(
@@ -176,17 +170,17 @@ export async function GET(request: Request) {
         .map((value) => String(value))
     )
   );
-  const reviewers = reviewerIds.length ? await User.find({ _id: { $in: reviewerIds } }).lean() : [];
+  const reviewers = reviewerIds.length ? await db.user.findMany({ where: { id: { in: reviewerIds } } }) : [];
   const reviewerMap = new Map<string, { name?: string | null; role?: string | null }>();
   for (const reviewer of reviewers) {
-    reviewerMap.set(String(reviewer._id), { name: reviewer.name, role: reviewer.role });
+    reviewerMap.set(String(reviewer.id), { name: reviewer.name, role: reviewer.role });
   }
 
   return NextResponse.json({
     success: true,
     data: {
-      items: leaveRequests.map((requestItem) => ({
-        _id: String(requestItem._id),
+      items: leaveRequests.map((requestItem: any) => ({
+        _id: String(requestItem.id),
         employeeId: String(requestItem.employeeId),
         leaveNumber: requestItem.leaveNumber,
         name: requestItem.name,

@@ -25,9 +25,15 @@ export function CreateUserButton({
     return null;
   }
 
+  let targetHref = href;
+  if (currentUser.role === "admin") targetHref = "/admin/users/create";
+  else if (currentUser.role === "ceo") targetHref = "/ceo/users/create";
+  else if (currentUser.role === "hod") targetHref = "/hod/users/create";
+  else if (currentUser.role === "team_lead") targetHref = "/team-lead/users/create";
+
   return (
     <Button asChild variant="outline">
-      <Link href={href}>Create User</Link>
+      <Link href={targetHref as Route}>Create User</Link>
     </Button>
   );
 }

@@ -1,16 +1,14 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
-import TeamType from "@/models/TeamType";
+import db from "@/lib/db";
 import { ensureDefaultTeamTypes } from "@/lib/bootstrap";
 import { formatTeamTypeShowName } from "@/lib/team-types";
 
 export async function GET() {
   await ensureDefaultTeamTypes();
-  await connectToDatabase();
-  const teamTypes = await TeamType.find({ isActive: true, isDeleted: false }).sort({ name: 1 }).lean();
+    const teamTypes = await db.teamType.findMany({ where: { isActive: true, isDeleted: false }, orderBy: { name: 'asc' } });
   return NextResponse.json({
     success: true,
-    data: teamTypes.map((teamType) => ({
+    data: teamTypes.map((teamType: any) => ({
       ...teamType,
       showName: formatTeamTypeShowName(teamType)
     }))

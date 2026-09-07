@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import DailyReport from "@/models/DailyReport";
-import User from "@/models/User";
+import { mapReportRelations, reportRelationsInclude } from "@/lib/report-mapper";
 import { getActiveLeaveRequestsForRange } from "@/lib/leave-requests";
 import { getVisibleReportEmployeeIds } from "@/lib/report-visibility";
 import { canEditDailyReport } from "@/lib/report-edit-access";
@@ -68,46 +67,71 @@ export async function GET(request: Request) {
   const requestedLimit = Number(url.searchParams.get("limit") ?? "5");
   const workspaceId = url.searchParams.get("workspaceId") || request.headers.get("x-workspace-id") || user.workspaceId;
 
-  await connectToDatabase();
-  const conditions: Record<string, unknown>[] = [];
-  if (workspaceId) {
+    const conditions: Record<string, unknown>[] = [];
+  if (workspaceId && workspaceId !== "all") {
     conditions.push({ workspaceId });
   }
   const visibleEmployeeIds = await getVisibleReportEmployeeIds(user, { scope });
   if (visibleEmployeeIds) {
     if (user.role === "ceo" && scope === "hod") {
       conditions.push({
-        $or: [
-          { employeeId: { $in: visibleEmployeeIds } },
+        OR: [
+          { employeeId: { in: visibleEmployeeIds } },
           { verificationLevel: "hod" }
         ]
       });
     } else {
-      conditions.push({ employeeId: { $in: visibleEmployeeIds } });
+      conditions.push({ employeeId: { in: visibleEmployeeIds } });
     }
   }
-  if (team) conditions.push({ teamName: team });
+  if (team && team !== "All" && team !== "all") {
+    const matchingTeamTypes = await db.teamType.findMany({
+      where: {
+        isDeleted: false,
+        OR: [
+          { name: team },
+          { showName: team },
+          { department: team }
+        ]
+      },
+      select: { name: true, showName: true }
+    });
+
+    const matchedNames = new Set<string>([team]);
+    for (const tt of matchingTeamTypes) {
+      if (tt.name) matchedNames.add(tt.name);
+      if (tt.showName) matchedNames.add(tt.showName);
+    }
+
+    conditions.push({ teamName: { in: Array.from(matchedNames) } });
+  }
   if (status) conditions.push({ status });
   if (locked !== null && locked !== undefined && locked !== "") conditions.push({ isLocked: locked === "true" });
-  if (employee) conditions.push({ name: { $regex: employee, $options: "i" } });
+  if (employee) conditions.push({ name: { contains: employee, mode: "insensitive" } });
   if (dateFrom || dateTo) {
     const dateFilter: Record<string, unknown> = {};
-    if (dateFrom) dateFilter.$gte = new Date(dateFrom);
+    if (dateFrom) dateFilter.gte = new Date(dateFrom);
     if (dateTo) {
       const end = new Date(dateTo);
       end.setDate(end.getDate() + 1);
-      dateFilter.$lt = end;
+      dateFilter.lt = end;
     }
     conditions.push({ reportDate: dateFilter });
   }
 
-  const filter = conditions.length <= 1 ? conditions[0] ?? {} : { $and: conditions };
-  const reports = (await DailyReport.find(filter).sort({ createdAt: -1 }).lean()) as unknown as ReportItem[];
+  const filter = conditions.length <= 1 ? conditions[0] ?? {} : { AND: conditions };
+  const rawReports = await db.dailyReport.findMany({ 
+    where: filter, 
+    orderBy: { createdAt: "desc" },
+    include: reportRelationsInclude
+  });
+
+  const reports = rawReports.map(mapReportRelations) as unknown as ReportItem[];
   const employeeIds = Array.from(new Set(reports.map((report) => String(report.employeeId)).filter(Boolean)));
-  const users = employeeIds.length ? await User.find({ _id: { $in: employeeIds } }).lean() : [];
+  const users = employeeIds.length ? await db.user.findMany({ where: { id: { in: employeeIds } } }) : [];
   const userMap = new Map<string, { role?: string | null }>();
   for (const item of users) {
-    userMap.set(String(item._id), { role: item.role });
+    userMap.set(String(item.id), { role: item.role });
   }
 
   if (view === "date-paginated") {
@@ -127,6 +151,7 @@ export async function GET(request: Request) {
       current.reportCount += 1;
       current.reports.push({
         ...report,
+        _id: (report as any).id,
         teamName: formattedTeamName,
         employeeRole: userMap.get(String(report.employeeId))?.role ?? null
       });
@@ -181,8 +206,9 @@ export async function GET(request: Request) {
     });
   }
 
-  const data = reports.map((report) => ({
-    _id: String(report._id),
+  const data = reports.map((report: any) => ({
+    id: String(report.id),
+    _id: String(report.id),
     employeeId: String(report.employeeId),
     employeeRole: userMap.get(String(report.employeeId))?.role ?? null,
     name: report.name ?? "",

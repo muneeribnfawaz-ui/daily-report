@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import TeamType from "@/models/TeamType";
 import { z } from "zod";
 import { ensureDefaultTeamTypes } from "@/lib/bootstrap";
 import { formatTeamTypeShowName } from "@/lib/team-types";
+import { authorizeApi } from "@/lib/api-auth";
 
 function toInternalTeamTypeName(value: string) {
   return value
@@ -23,15 +23,46 @@ const teamTypeSchema = z.object({
   isDeleted: z.boolean().optional().default(false)
 });
 
-export async function GET() {
-  const user = await getCurrentUser();
-  if (!user || (user.role !== "admin" && user.role !== "ceo")) {
-    return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
-  }
+export async function GET(request: Request) {
+  const auth = await authorizeApi(["admin", "ceo", "hod", "report_manager", "team_lead"]);
+  if (!auth.authorized) return auth.response;
+  const user = auth.user;
+
+  const url = new URL(request.url);
+  const department = url.searchParams.get("department");
+  const includeInactive = url.searchParams.get("includeInactive") === "true";
 
   await ensureDefaultTeamTypes();
-  await connectToDatabase();
-  const teamTypes = await TeamType.find().sort({ createdAt: -1 }).lean();
+  
+  const filter: Record<string, any> = {};
+  if (department && department !== "all") {
+    filter.department = department;
+  }
+  if (!includeInactive) {
+    filter.isActive = true;
+  }
+
+  if (user.role !== "admin" && user.role !== "ceo") {
+    const allowedDepartments = user.departments?.map((d: any) => d.name) || [];
+    const allowedTeamNames = user.teamNames || [];
+
+    if (allowedDepartments.length > 0 || allowedTeamNames.length > 0) {
+      const roleFilter: Record<string, any>[] = [];
+      if (allowedDepartments.length > 0) {
+        roleFilter.push({ department: { in: allowedDepartments } });
+      }
+      if (allowedTeamNames.length > 0) {
+        roleFilter.push({ name: { in: allowedTeamNames } });
+      }
+      
+      filter.AND = filter.AND || [];
+      filter.AND.push({ OR: roleFilter });
+    } else {
+      filter.id = "none"; // Return empty if no assignments
+    }
+  }
+
+  const teamTypes = await db.teamType.findMany({ where: filter, orderBy: { createdAt: 'desc' } });
   return NextResponse.json({
     success: true,
     data: teamTypes.map((teamType) => ({
@@ -42,10 +73,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const user = await getCurrentUser();
-  if (!user || (user.role !== "admin" && user.role !== "ceo")) {
-    return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
-  }
+  const auth = await authorizeApi(["admin", "ceo", "hod"]);
+  if (!auth.authorized) return auth.response;
+  const user = auth.user;
 
   const body = await request.json();
   const parsed = teamTypeSchema.safeParse(body);
@@ -58,26 +88,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, message: "Invalid team type name" }, { status: 400 });
   }
 
-  await connectToDatabase();
-  const existing = await TeamType.findOne({ name: internalName });
+    const existing = await db.teamType.findFirst({ where: { name: internalName } });
   if (existing) {
     return NextResponse.json({ success: false, message: "A team type with this name already exists" }, { status: 409 });
   }
 
-  const newTeamType = await TeamType.create({
-    name: internalName,
-    showName: parsed.data.showName,
-    department: parsed.data.department,
-    subTeams: parsed.data.department === "Marketing" ? parsed.data.subTeams : [],
-    isActive: parsed.data.isActive,
-    isDeleted: parsed.data.isDeleted,
-    createdBy: user.name || "System"
+  const newTeamType = await db.teamType.create({
+    data: {
+      name: internalName,
+      showName: parsed.data.showName,
+      department: parsed.data.department ?? "",
+      subTeams: parsed.data.department === "Marketing" ? parsed.data.subTeams : [],
+      isActive: parsed.data.isActive,
+      isDeleted: parsed.data.isDeleted,
+      createdBy: user.name || "System"
+    }
   });
 
   return NextResponse.json({
     success: true,
     data: {
-      ...newTeamType.toObject(),
+      ...newTeamType,
       showName: formatTeamTypeShowName(newTeamType)
     }
   }, { status: 201 });

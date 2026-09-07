@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { canViewFinanceReport } from "@/lib/permissions";
-import FinanceReport from "@/models/FinanceReport";
-import WorkspaceMember from "@/models/WorkspaceMember";
+import { encryptPayload } from "@/lib/crypto";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type LeanDoc = Record<string, any>;
@@ -22,26 +21,28 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const workspaceId = url.searchParams.get("workspaceId") || request.headers.get("x-workspace-id") || user.workspaceId;
 
-    await connectToDatabase();
-
-    const filter: Record<string, any> = {};
+    
+    const where: Record<string, any> = {};
 
     if (user.role !== "admin") {
-      const memberships = await WorkspaceMember.find({
-        userId: user.id,
-        status: "active",
-        isActive: true
-      }).select("workspaceId").lean() as any[];
+      const memberships = await db.workspaceMember.findMany({
+        where: {
+          userId: user.id,
+          status: "active",
+          isActive: true
+        },
+        select: { workspaceId: true }
+      });
       const allowedWorkspaceIds = memberships.map(m => String(m.workspaceId));
 
       if (workspaceId && workspaceId !== "all") {
-        filter.workspaceId = allowedWorkspaceIds.includes(workspaceId) ? workspaceId : "non_existent_id";
+        where.workspaceId = allowedWorkspaceIds.includes(workspaceId) ? workspaceId : "non_existent_id";
       } else {
-        filter.workspaceId = { $in: allowedWorkspaceIds };
+        where.workspaceId = { in: allowedWorkspaceIds };
       }
     } else {
       if (workspaceId && workspaceId !== "all") {
-        filter.workspaceId = workspaceId;
+        where.workspaceId = workspaceId;
       }
     }
 
@@ -52,32 +53,48 @@ export async function GET(request: Request) {
     todayEnd.setDate(todayEnd.getDate() + 1);
 
     // Today's finance report
-    const todayReport = await FinanceReport.findOne({
-      ...filter,
-      reportDate: { $gte: todayStart, $lt: todayEnd }
-    }).lean() as LeanDoc | null;
+    const todayReport = await db.financeReport.findFirst({
+      where: {
+        ...where,
+        reportDate: { gte: todayStart, lt: todayEnd }
+      },
+      include: { items: true, bankBalances: true }
+    });
 
     // Pending approvals count
-    const pendingCount = await FinanceReport.countDocuments({ ...filter, status: "pending" });
+    const pendingCount = await db.financeReport.count({ where: { ...where, status: "pending" } });
 
     // Last submitted report
-    const lastReport = await FinanceReport.findOne(filter)
-      .sort({ reportDate: -1 })
-      .lean() as LeanDoc | null;
+    const lastReport = await db.financeReport.findFirst({
+      where,
+      orderBy: { reportDate: 'desc' }
+    });
+
+    let todayRevenue = 0;
+    let todayExpenses = 0;
+    let closingCashBalance = 0;
+
+    if (todayReport) {
+      todayRevenue = todayReport.items.filter(i => i.type === "receipt").reduce((sum, item) => sum + (item.amountINR || 0), 0);
+      todayExpenses = todayReport.items.filter(i => i.type === "expense" || i.type === "payment").reduce((sum, item) => sum + (item.amountINR || 0), 0);
+      closingCashBalance = todayReport.bankBalances.reduce((sum, b) => sum + (b.closingBalance || 0), 0);
+    }
+    const sarRate = todayReport?.exchangeRate || 0.0428;
 
     const dashboard = {
-      todayRevenue: (todayReport?.totalIncome as number) || 0,
-      todayExpenses: (todayReport?.totalExpenses as number) || 0,
-      netProfitLoss: (todayReport?.netBalance as number) || 0,
-      closingCashBalance: (todayReport?.closingCashBalance as number) || 0,
-      closingCashBalanceSAR: (todayReport?.closingCashBalanceSAR as number) || 0,
+      todayRevenue: todayRevenue,
+      todayExpenses: todayExpenses,
+      netProfitLoss: todayRevenue - todayExpenses,
+      closingCashBalance: closingCashBalance,
+      closingCashBalanceSAR: closingCashBalance * sarRate,
       pendingApprovals: pendingCount,
       lastReportDate: lastReport?.reportDate || null,
-      lastReportStatus: (lastReport?.status as string) || null,
+      lastReportStatus: lastReport?.status || null,
       hasTodayReport: Boolean(todayReport)
     };
 
-    return NextResponse.json({ success: true, data: dashboard });
+    const encryptedData = await encryptPayload(dashboard);
+    return NextResponse.json({ success: true, encryptedData, data: dashboard });
   } catch (error) {
     console.error("Failed to fetch finance dashboard data", error);
     return NextResponse.json({ success: false, message: "Failed to fetch dashboard data" }, { status: 500 });

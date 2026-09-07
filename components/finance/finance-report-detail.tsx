@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,8 +17,11 @@ import {
   User,
   ArrowRightLeft
 } from "lucide-react";
+import { FinanceEditButton } from "@/components/finance/finance-edit-button";
+import { PAYMENT_MODE_LABELS, type PaymentMode } from "@/lib/constants";
+import { encryptPayload } from "@/lib/crypto";
 
-type FinanceItem = { particulars: string; description?: string; amountINR: number; amountSAR: number; _id?: string };
+type FinanceItem = { particulars: string; description?: string; amountINR: number; amountSAR: number; priority?: string; bankName?: string; paymentMode?: string; _id?: string };
 type BankBalance = { bankName: string; openingBalance: number; receipts: number; payments: number; closingBalance: number; _id?: string };
 
 type FinanceReportData = {
@@ -47,6 +52,10 @@ type FinanceReportData = {
   approvedAt?: string;
   rejectionReason?: string;
   createdAt: string;
+
+  editAccessRequested?: boolean;
+  editAccessRequestReason?: string;
+  editAccessGranted?: boolean;
 };
 
 type FinanceReportDetailProps = {
@@ -54,6 +63,7 @@ type FinanceReportDetailProps = {
   canApprove: boolean;
   canForward?: boolean;
   canEdit: boolean;
+  userRole?: string;
 };
 
 function formatCurrency(amount: number, currency: "INR" | "SAR" = "INR"): string {
@@ -63,53 +73,88 @@ function formatCurrency(amount: number, currency: "INR" | "SAR" = "INR"): string
   return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(amount);
 }
 
-function formatDate(value: string | Date) {
-  return new Intl.DateTimeFormat("en-IN", { dateStyle: "medium" }).format(new Date(value));
+function formatDate(date: string | Date): string {
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(date));
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const variants: Record<string, { className: string; label: string }> = {
-    pending: { className: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-600 dark:bg-amber-950/50 dark:text-amber-300", label: "Pending Approval" },
-    forwarded_to_ceo: { className: "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-600 dark:bg-blue-950/50 dark:text-blue-300", label: "Forwarded to CEO" },
-    approved: { className: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-300", label: "Approved" },
-    rejected: { className: "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-600 dark:bg-rose-950/50 dark:text-rose-300", label: "Rejected" }
+  const variants: Record<string, { className: string; label: string; icon: any }> = {
+    pending: {
+      className: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-600 dark:bg-amber-950/50 dark:text-amber-300",
+      label: "Pending",
+      icon: Clock
+    },
+    approved: {
+      className: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-300",
+      label: "Approved",
+      icon: Check
+    },
+    rejected: {
+      className: "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-600 dark:bg-rose-950/50 dark:text-rose-300",
+      label: "Rejected",
+      icon: X
+    }
   };
   const v = variants[status] || variants.pending;
-  return <Badge className={`rounded-full px-3 py-1 text-xs font-semibold ${v.className}`}>{v.label}</Badge>;
+  const Icon = v.icon;
+  return (
+    <Badge className={`flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${v.className}`}>
+      <Icon className="h-3 w-3" />
+      <span>{v.label}</span>
+    </Badge>
+  );
 }
 
-export function FinanceReportDetail({ report, canApprove, canForward = false, canEdit }: FinanceReportDetailProps) {
+export function FinanceReportDetail({ report, canApprove, canEdit, userRole }: FinanceReportDetailProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [rejectReason, setRejectReason] = useState("");
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [isDownloadingApprovals, setIsDownloadingApprovals] = useState(false);
+  const [isUpdatingEdit, setIsUpdatingEdit] = useState(false);
 
   const approvalMutation = useMutation({
-    mutationFn: async ({ action, reason }: { action: "approve" | "reject" | "forward"; reason?: string }) => {
+    mutationFn: async ({ action, reason }: { action: "approve" | "reject"; reason?: string }) => {
+      const encryptedData = await encryptPayload({ action, reason });
       const res = await fetch(`/api/finance-reports/${report._id}/approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, reason })
+        body: JSON.stringify({ encryptedData })
       });
-      const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.message || "Failed");
-      return json;
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Action failed");
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["finance-report", report._id] });
-      queryClient.invalidateQueries({ queryKey: ["finance-reports"] });
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
       router.refresh();
     }
   });
 
-  const handleDownloadPdf = async () => {
-    setIsDownloading(true);
+  const handleEditApproval = async (approve: boolean) => {
+    setIsUpdatingEdit(true);
     try {
+      const encryptedData = await encryptPayload({ approve });
+      const res = await fetch(`/api/finance-reports/${report._id}/approve-edit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ encryptedData })
+      });
+      if (res.ok) {
+        queryClient.invalidateQueries({ queryKey: ["finance-report", report._id] });
+        queryClient.invalidateQueries({ queryKey: ["finance-reports"] });
+        router.refresh();
+      }
+    } finally {
+      setIsUpdatingEdit(false);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    try {
+      setIsDownloading(true);
       const res = await fetch(`/api/finance-reports/${report._id}/pdf`);
-      if (!res.ok) throw new Error("Failed to generate PDF");
+      if (!res.ok) throw new Error("Failed to download PDF");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -124,62 +169,79 @@ export function FinanceReportDetail({ report, canApprove, canForward = false, ca
     }
   };
 
-  const handleDownloadApprovalsPdf = async () => {
-    setIsDownloadingApprovals(true);
-    try {
-      const res = await fetch(`/api/finance-reports/${report._id}/pdf-approvals`);
-      if (!res.ok) throw new Error("Failed to generate PDF");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `finance-approval-${new Date(report.reportDate).toISOString().slice(0, 10)}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("PDF download failed", error);
-    } finally {
-      setIsDownloadingApprovals(false);
-    }
-  };
+  const renderTable = (title: string, items: FinanceItem[] = []) => {
+    const gridCols = "grid-cols-[1.2fr_1.5fr_1fr_1fr_1fr_1fr] min-w-[800px]";
 
-  const renderTable = (title: string, items: FinanceItem[] = []) => (
-    <div className="overflow-hidden rounded-xl border border-cardBorder bg-card shadow-soft mb-6">
-      <div className="border-b bg-gradient-to-r from-slate-900 to-slate-800 px-4 py-3 text-white">
-        <h3 className="font-semibold">{title}</h3>
-      </div>
-      <div className="overflow-x-auto">
-        <div className="grid grid-cols-[1.2fr_1.8fr_1fr_1fr] gap-2 px-4 py-2 bg-muted/30 text-sm font-semibold border-b min-w-[650px]">
-          <div>Particulars</div>
-          <div>Description</div>
-          <div className="text-right">Amount (INR)</div>
-          <div className="text-right">Amount (Riyal)</div>
+    return (
+      <div className="overflow-hidden rounded-xl border border-cardBorder bg-card shadow-soft mb-6">
+        <div className="border-b border-primary/20 bg-sidebar px-4 py-3 text-sidebarText">
+          <h3 className="font-semibold">{title}</h3>
         </div>
-        {items.length === 0 && (
-          <div className="p-4 text-center text-sm text-muted-foreground">No records</div>
-        )}
-        {items.map((item, idx) => (
-          <div key={idx} className="grid grid-cols-[1.2fr_1.8fr_1fr_1fr] gap-2 px-4 py-2 items-center border-b last:border-0 text-sm min-w-[650px]">
-            <div className="font-medium">{item.particulars}</div>
-            <div className="text-muted-foreground text-xs">{item.description || "-"}</div>
-            <div className="text-right tabular-nums">{formatCurrency(item.amountINR)}</div>
-            <div className="text-right tabular-nums text-muted-foreground">{formatCurrency(item.amountSAR, "SAR")}</div>
+        <div className="overflow-x-auto">
+          <div className={`grid ${gridCols} gap-2 px-4 py-2 bg-muted/30 text-sm font-semibold border-b`}>
+            <div>Particulars</div>
+            <div>Description / Reason</div>
+            <div>Bank Account</div>
+            <div>Payment Mode</div>
+            <div className="text-right">Amount (INR)</div>
+            <div className="text-right">Amount (Riyal)</div>
           </div>
-        ))}
-        {items.length > 0 && (
-          <div className="grid grid-cols-[1.2fr_1.8fr_1fr_1fr] gap-2 px-4 py-3 bg-muted/10 font-bold items-center text-sm min-w-[650px]">
-            <div className="col-span-2">Total</div>
-            <div className="text-right tabular-nums text-primary">
-              {formatCurrency(items.reduce((sum, i) => sum + i.amountINR, 0))}
+          {items.length === 0 && (
+            <div className="p-4 text-center text-sm text-muted-foreground">No records</div>
+          )}
+          {items.map((item, idx) => {
+            const isInternalTransfer = item.particulars === "Bank to Cash";
+            return (
+              <div key={idx} className={`grid ${gridCols} gap-2 px-4 py-2 items-center border-b last:border-0 text-sm`}>
+                <div className="font-medium flex items-center gap-1.5 flex-wrap">
+                  <span>{item.particulars}</span>
+                  {isInternalTransfer && (
+                    <span className="rounded-md border border-amber-300/60 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                      Internal Transfer
+                    </span>
+                  )}
+                </div>
+                <div className="text-muted-foreground text-xs">{item.description || "-"}</div>
+                <div className="text-muted-foreground text-xs">{item.bankName || "-"}</div>
+                <div className="text-muted-foreground text-xs">
+                  {PAYMENT_MODE_LABELS[item.paymentMode as PaymentMode] || item.paymentMode || "-"}
+                </div>
+                <div className="text-right tabular-nums">{formatCurrency(item.amountINR)}</div>
+                <div className="text-right tabular-nums text-muted-foreground">{formatCurrency(item.amountSAR, "SAR")}</div>
+              </div>
+            );
+          })}
+          {items.length > 0 && (
+            <div className={`grid ${gridCols} gap-2 px-4 py-3 bg-muted/10 font-bold items-center text-sm`}>
+              <div className="col-span-4 flex items-center justify-between pr-4">
+                <span>Total</span>
+                {title === "Receipts" && items.some(i => i.particulars === "Bank to Cash") && (
+                  <span className="text-[11px] font-normal text-muted-foreground">
+                    (Excludes internal cash transfers)
+                  </span>
+                )}
+              </div>
+              <div className="text-right tabular-nums text-primary">
+                {formatCurrency(
+                  title === "Receipts"
+                    ? items.filter(i => i.particulars !== "Bank to Cash").reduce((sum, i) => sum + i.amountINR, 0)
+                    : items.reduce((sum, i) => sum + i.amountINR, 0)
+                )}
+              </div>
+              <div className="text-right tabular-nums text-muted-foreground">
+                {formatCurrency(
+                  title === "Receipts"
+                    ? items.filter(i => i.particulars !== "Bank to Cash").reduce((sum, i) => sum + i.amountSAR, 0)
+                    : items.reduce((sum, i) => sum + i.amountSAR, 0),
+                  "SAR"
+                )}
+              </div>
             </div>
-            <div className="text-right tabular-nums text-muted-foreground">
-              {formatCurrency(items.reduce((sum, i) => sum + i.amountSAR, 0), "SAR")}
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -187,7 +249,7 @@ export function FinanceReportDetail({ report, canApprove, canForward = false, ca
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1.5">
           <div className="flex items-center gap-3">
-            <h2 className="text-xl font-semibold tracking-tight">
+            <h2 className="text-xl font-bold tracking-tight text-textPrimary">
               Finance Report — {formatDate(report.reportDate)}
             </h2>
             <StatusBadge status={report.status} />
@@ -198,19 +260,66 @@ export function FinanceReportDetail({ report, canApprove, canForward = false, ca
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {canEdit && report.status === "pending" && (
-            <Button variant="outline" size="sm" onClick={() => router.push(`/finance/${report._id}/edit`)}>Edit Report</Button>
+          {report.status === "pending" && (
+            <FinanceEditButton
+              reportId={report._id}
+              canEdit={canEdit}
+              editAccessRequested={Boolean(report.editAccessRequested)}
+              editAccessGranted={Boolean(report.editAccessGranted)}
+              isTMorTL={["team_member", "team_lead"].includes(userRole || "")}
+            />
           )}
-          <Button variant="default" size="sm" onClick={handleDownloadApprovalsPdf} disabled={isDownloadingApprovals}>
-            {isDownloadingApprovals ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileDown className="mr-2 h-4 w-4" />}
-            Download Approvals
-          </Button>
-          <Button variant="default" size="sm" onClick={handleDownloadPdf} disabled={isDownloading}>
+          <Button onClick={handleDownloadPdf} disabled={isDownloading} className="bg-primary hover:bg-primaryDark text-primary-foreground font-bold shadow-md">
             {isDownloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileDown className="mr-2 h-4 w-4" />}
             Generate PDF
           </Button>
         </div>
       </div>
+
+      {report.editAccessRequested && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/60 bg-amber-500/10 px-4 py-3.5 shadow-sm">
+          <div className="flex flex-col gap-1 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-amber-700 dark:text-amber-300">Edit Access Requested</span>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded bg-amber-500/20 text-amber-800 dark:text-amber-200">Pending Review</span>
+            </div>
+            <p className="text-xs text-textPrimary font-medium">
+              {report.submittedByName ? `${report.submittedByName} has` : "The creator has"} requested permission to edit this report.
+            </p>
+            {report.editAccessRequestReason ? (
+              <div className="mt-1 text-xs bg-card/90 border border-amber-300/40 rounded-lg p-2.5 text-textPrimary">
+                <span className="font-semibold text-amber-800 dark:text-amber-300">Reason for Request: </span>
+                <span className="italic">"{report.editAccessRequestReason}"</span>
+              </div>
+            ) : null}
+          </div>
+          {userRole && ["admin", "ceo", "hod", "team_lead"].includes(userRole) && (
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" className="border-danger/30 text-danger hover:bg-danger/10" onClick={() => handleEditApproval(false)} disabled={isUpdatingEdit}>
+                Reject Edit
+              </Button>
+              <Button size="sm" className="bg-primary hover:bg-primaryDark text-primary-foreground font-bold" onClick={() => handleEditApproval(true)} disabled={isUpdatingEdit}>
+                Approve Edit
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {report.editAccessGranted && !report.editAccessRequested && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-300/60 bg-emerald-500/10 px-4 py-3 shadow-sm">
+          <div className="flex items-center gap-2.5 text-sm">
+            <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span className="font-bold text-emerald-700 dark:text-emerald-300">Edit Access Granted</span>
+            <span className="text-xs text-textPrimary">Edit permission is currently active for this report.</span>
+          </div>
+          {canEdit && (
+            <Button asChild size="sm" className="bg-primary hover:bg-primaryDark text-primary-foreground font-bold">
+              <Link href={`/finance/${report._id}/edit`}>Edit Report</Link>
+            </Button>
+          )}
+        </div>
+      )}
 
       {report.status === "approved" && report.approvedByName && (
         <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/50 px-4 py-3 dark:border-emerald-800 dark:bg-emerald-950/30">
@@ -247,96 +356,42 @@ export function FinanceReportDetail({ report, canApprove, canForward = false, ca
       {renderTable("Payments", report.payments)}
 
       {/* Bank Balances */}
-      <div className="overflow-hidden rounded-xl border border-cardBorder bg-card shadow-soft mb-6">
-        <div className="border-b bg-gradient-to-r from-slate-900 to-slate-800 px-4 py-3 text-white">
-          <h3 className="font-semibold">Bank Balance</h3>
-        </div>
-        <div className="overflow-x-auto">
-          <div className="grid grid-cols-[1.5fr_1fr_1fr_1fr_1fr] gap-2 px-4 py-2 bg-muted/30 text-sm font-semibold border-b min-w-[600px]">
-            <div>Bank Name</div>
-            <div className="text-right">Opening Bal</div>
-            <div className="text-right">Receipts</div>
-            <div className="text-right">Payments</div>
-            <div className="text-right">Closing Bal</div>
+      {userRole !== "hod" && (
+        <div className="overflow-hidden rounded-xl border border-cardBorder bg-card shadow-soft mb-6">
+          <div className="border-b border-primary/20 bg-sidebar px-4 py-3 text-sidebarText">
+            <h3 className="font-semibold">Bank Balance</h3>
           </div>
-          {report.bankBalances?.length === 0 && (
-            <div className="p-4 text-center text-sm text-muted-foreground">No bank accounts</div>
-          )}
-          {report.bankBalances?.map((bank, idx) => (
-            <div key={idx} className="grid grid-cols-[1.5fr_1fr_1fr_1fr_1fr] gap-2 px-4 py-2 items-center border-b last:border-0 text-sm min-w-[600px]">
-              <div>{bank.bankName}</div>
-              <div className="text-right tabular-nums">{formatCurrency(bank.openingBalance)}</div>
-              <div className="text-right tabular-nums">{formatCurrency(bank.receipts)}</div>
-              <div className="text-right tabular-nums">{formatCurrency(bank.payments)}</div>
-              <div className="text-right tabular-nums font-semibold">{formatCurrency(bank.closingBalance)}</div>
+          <div className="overflow-x-auto">
+            <div className="grid grid-cols-[1.5fr_1fr_1fr_1fr_1fr] gap-2 px-4 py-2 bg-muted/30 text-sm font-semibold border-b min-w-[600px]">
+              <div>Bank Name</div>
+              <div className="text-right">Opening Bal</div>
+              <div className="text-right">Receipts</div>
+              <div className="text-right">Payments</div>
+              <div className="text-right">Closing Bal</div>
             </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Cash Balance */}
-      <div className="overflow-hidden rounded-xl border border-cardBorder bg-card shadow-soft mb-6">
-        <div className="border-b bg-gradient-to-r from-slate-900 to-slate-800 px-4 py-3 text-white">
-          <h3 className="font-semibold">Cash Balance</h3>
-        </div>
-        <div className="grid grid-cols-2 gap-4 p-4">
-          <div>
-            <label className="text-sm font-semibold text-foreground mb-1 block">Petty Cash (INR)</label>
-            <div className="text-sm tabular-nums">{formatCurrency(report.cashBalance?.pettyCash || 0)}</div>
-          </div>
-          <div>
-            <label className="text-sm font-semibold text-foreground mb-1 block">Total (INR)</label>
-            <div className="h-10 flex items-center font-bold text-lg text-primary tabular-nums">
-              {formatCurrency(report.cashBalance?.total || 0)}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Next Day Approval Required (Only show if exists) */}
-      {report.nextDayApprovals?.length > 0 && (
-        <div className="mb-6">
-          {renderTable("Next Day Approval Required", report.nextDayApprovals)}
-          
-          {/* CEO Approval section for next day items */}
-          {canApprove && report.status === "forwarded_to_ceo" && (
-            <div className="space-y-4 rounded-xl border border-blue-200 bg-blue-50/50 p-5 shadow-soft dark:border-blue-800 dark:bg-blue-950/30">
-              <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-200">Next Day Approval Required - Actions</h3>
-              <p className="text-xs text-blue-700 dark:text-blue-300">The Finance Team has requested approval for the next day's particulars.</p>
-              
-              {showRejectForm ? (
-                <div className="space-y-3">
-                  <Textarea
-                    placeholder="Enter rejection reason (optional)..."
-                    value={rejectReason}
-                    onChange={(e) => setRejectReason(e.target.value)}
-                    className="min-h-[80px]"
-                  />
-                  <div className="flex gap-2">
-                    <Button variant="destructive" disabled={approvalMutation.isPending} onClick={() => approvalMutation.mutate({ action: "reject", reason: rejectReason })}>
-                      {approvalMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <X className="mr-2 h-4 w-4" />} Confirm Reject
-                    </Button>
-                    <Button variant="outline" onClick={() => setShowRejectForm(false)} disabled={approvalMutation.isPending}>Cancel</Button>
-                  </div>
+            {report.bankBalances?.length === 0 && (
+              <div className="p-4 text-center text-sm text-muted-foreground">No bank accounts</div>
+            )}
+            {report.bankBalances?.map((bank, idx) => (
+              <div key={idx} className="grid grid-cols-[1.5fr_1fr_1fr_1fr_1fr] gap-2 px-4 py-2 items-center border-b last:border-0 text-sm min-w-[600px]">
+                <div>
+                  <Link href="/finance/banks" className="hover:underline text-primary font-semibold">
+                    {bank.bankName}
+                  </Link>
                 </div>
-              ) : (
-                <div className="flex gap-3">
-                  <Button onClick={() => approvalMutation.mutate({ action: "approve" })} disabled={approvalMutation.isPending} className="bg-emerald-600 hover:bg-emerald-700">
-                    {approvalMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />} Approve All
-                  </Button>
-                  <Button variant="destructive" onClick={() => setShowRejectForm(true)} disabled={approvalMutation.isPending}>
-                    <X className="mr-2 h-4 w-4" /> Reject
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
+                <div className="text-right tabular-nums">{formatCurrency(bank.openingBalance)}</div>
+                <div className="text-right tabular-nums">{formatCurrency(bank.receipts)}</div>
+                <div className="text-right tabular-nums">{formatCurrency(bank.payments)}</div>
+                <div className="text-right tabular-nums font-semibold">{formatCurrency(bank.closingBalance)}</div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
       {/* Summary */}
       <div className="overflow-hidden rounded-xl border border-cardBorder bg-card shadow-soft mb-6">
-        <div className="border-b bg-gradient-to-r from-slate-900 to-slate-800 px-4 py-3 text-white">
+        <div className="border-b border-primary/20 bg-sidebar px-4 py-3 text-sidebarText">
           <h3 className="font-semibold">Summary</h3>
         </div>
         <div className="grid grid-cols-[1.5fr_1fr_2fr] gap-4 p-4 bg-muted/10 items-start">
@@ -353,14 +408,18 @@ export function FinanceReportDetail({ report, canApprove, canForward = false, ca
               <span className="text-sm">Total Payments</span>
               <span className="font-semibold tabular-nums text-danger">{formatCurrency(report.summary?.totalPayments || 0)}</span>
             </div>
-            <div className="flex justify-between border-b pb-1">
-              <span className="text-sm">Bank Balance</span>
-              <span className="font-semibold tabular-nums text-primary">{formatCurrency(report.summary?.bankBalance || 0)}</span>
-            </div>
-            <div className="flex justify-between pb-1">
-              <span className="text-sm">Petty Cash Balance</span>
-              <span className="font-semibold tabular-nums">{formatCurrency(report.summary?.pettyCashBalance || 0)}</span>
-            </div>
+            {userRole !== "hod" && (
+              <>
+                <div className="flex justify-between border-b pb-1">
+                  <span className="text-sm">Bank Balance</span>
+                  <span className="font-semibold tabular-nums text-primary">{formatCurrency(report.summary?.bankBalance || 0)}</span>
+                </div>
+                <div className="flex justify-between border-b pb-1">
+                  <span className="text-sm">Petty Cash</span>
+                  <span className="font-semibold tabular-nums text-primary">{formatCurrency(report.summary?.pettyCashBalance || 0)}</span>
+                </div>
+              </>
+            )}
           </div>
           <div></div>
           <div className="flex flex-col gap-2">
@@ -372,10 +431,10 @@ export function FinanceReportDetail({ report, canApprove, canForward = false, ca
         </div>
       </div>
 
-      {/* Standard Approval Actions if no Next Day Approvals exist */}
-      {(!report.nextDayApprovals || report.nextDayApprovals.length === 0) && canApprove && report.status === "forwarded_to_ceo" && (
+      {/* Approval Actions */}
+      {canApprove && (report.status === "pending" || report.status === "forwarded_to_ceo") && (
         <div className="space-y-4 rounded-xl border border-cardBorder bg-card p-5 shadow-soft mt-6">
-          <h3 className="text-sm font-semibold">Approval Actions</h3>
+          <h3 className="text-sm font-semibold">Executive Actions</h3>
           {showRejectForm ? (
             <div className="space-y-3">
               <Textarea
@@ -393,7 +452,7 @@ export function FinanceReportDetail({ report, canApprove, canForward = false, ca
             </div>
           ) : (
             <div className="flex gap-3">
-              <Button onClick={() => approvalMutation.mutate({ action: "approve" })} disabled={approvalMutation.isPending} className="bg-emerald-600 hover:bg-emerald-700">
+              <Button onClick={() => approvalMutation.mutate({ action: "approve" })} disabled={approvalMutation.isPending} className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">
                 {approvalMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />} Approve Report
               </Button>
               <Button variant="destructive" onClick={() => setShowRejectForm(true)} disabled={approvalMutation.isPending}>
@@ -401,21 +460,6 @@ export function FinanceReportDetail({ report, canApprove, canForward = false, ca
               </Button>
             </div>
           )}
-        </div>
-      )}
-
-      {/* Forward Action */}
-      {canForward && report.status === "pending" && (
-        <div className="space-y-4 rounded-xl border border-cardBorder bg-card p-5 shadow-soft mt-6">
-          <h3 className="text-sm font-semibold">Forward to CEO</h3>
-          <Button
-            onClick={() => approvalMutation.mutate({ action: "forward" })}
-            disabled={approvalMutation.isPending}
-            className="bg-blue-600 hover:bg-blue-700"
-          >
-            {approvalMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
-            Forward to CEO
-          </Button>
         </div>
       )}
     </div>

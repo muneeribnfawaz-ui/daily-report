@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import DailyReport from "@/models/DailyReport";
 import { logAuditEntry } from "@/lib/audit";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -12,15 +11,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { id } = await Promise.resolve(params);
   const body = await request.json().catch(() => ({}));
-  await connectToDatabase();
-  const report = await DailyReport.findByIdAndUpdate(
-    id,
-    {
+    const report = await db.dailyReport.update({
+    where: { id: String(id) },
+    data: {
       status: "rejected",
       rejectionReason: body.rejectionReason ?? "Rejected by manager"
-    },
-    { new: true }
-  );
+    }
+  });
 
   if (!report) return NextResponse.json({ success: false, message: "Report not found" }, { status: 404 });
 

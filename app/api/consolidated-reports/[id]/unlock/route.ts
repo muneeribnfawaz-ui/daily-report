@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import DailyReport from "@/models/DailyReport";
 import { unlockReportSchema } from "@/lib/validation";
 import { logAuditEntry } from "@/lib/audit";
 
@@ -18,11 +17,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 
   const { id } = await Promise.resolve(params);
-  await connectToDatabase();
-  await DailyReport.updateMany(
-    { consolidatedReportId: id },
-    { $set: { isLocked: false, lockedAt: null, lockedBy: null, status: "approved" } }
-  );
+    await db.dailyReport.updateMany({
+      where: { consolidatedReportId: id },
+      data: { isLocked: false, lockedAt: null, lockedBy: null, status: "approved" }
+    });
 
   await logAuditEntry({
     action: "Report Unlocked",

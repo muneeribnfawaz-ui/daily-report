@@ -1,24 +1,37 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { getConsolidatedReportDetail } from "@/lib/consolidated-report-data";
-import User from "@/models/User";
-import DailyReport from "@/models/DailyReport";
-import { getFinanceTeamInternalNames, getTeamNamesByDepartment } from "@/lib/team-types";
+import { getTeamNamesByDepartment } from "@/lib/team-types";
 import { getVisibleReportEmployeeIds } from "@/lib/report-visibility";
 import { canViewFinanceReport } from "@/lib/permissions";
 
-function toDateKey(value: Date | string | null | undefined) {
+function getStartOfWeek(date: Date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Monday is start
+  return new Date(d.setDate(diff));
+}
+
+function toPeriodKey(value: Date | string | null | undefined, period: "daily" | "weekly" | "monthly") {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
+
+  if (period === "monthly") {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-01`;
+  }
+  if (period === "weekly") {
+    const startOfWeek = getStartOfWeek(date);
+    return startOfWeek.toISOString().slice(0, 10);
+  }
   return date.toISOString().slice(0, 10);
 }
 
 export async function GET(request: Request) {
   try {
     const user = await getCurrentUser();
-    if (!user || (user.role !== "team_lead" && user.role !== "report_manager" && user.role !== "hod" && user.role !== "admin" && user.role !== "ceo" && user.role !== "finance_team")) {
+    if (!user || (user.role !== "team_member" && user.role !== "team_lead" && user.role !== "report_manager" && user.role !== "hod" && user.role !== "admin" && user.role !== "ceo" && (user.role as string) !== "finance_team")) {
       return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
     }
 
@@ -32,13 +45,17 @@ export async function GET(request: Request) {
     }
 
     const date = url.searchParams.get("date");
+    const team = url.searchParams.get("team");
+    const mine = url.searchParams.get("mine") === "true";
 
     const requestedGroup = (() => {
       const g = url.searchParams.get("group");
       return g === "finance" ? "finance" : g === "operations" ? "operations" : g === "all" ? "all" : undefined;
     })();
 
-    // Resolve user's primary department
+    const periodStr = url.searchParams.get("period");
+    const period = periodStr === "weekly" || periodStr === "monthly" ? periodStr : "daily";
+
     const userPrimaryDepartment = user.departments && user.departments.length > 0 ? user.departments[0].name : undefined;
 
     let department = url.searchParams.get("department") ?? undefined;
@@ -53,8 +70,7 @@ export async function GET(request: Request) {
       const isAuthorizedForFinance =
         user.role === "ceo" ||
         user.role === "admin" ||
-        user.role === "hod" ||
-        user.role === "finance_team" ||
+        (user.role as string) === "finance_team" ||
         Boolean(isUserEnrolledInFinance) ||
         canViewFinanceReport(user);
 
@@ -63,60 +79,94 @@ export async function GET(request: Request) {
       }
     }
 
-    await connectToDatabase();
-
     if (!date) {
-      const conditions: Record<string, any>[] = [{ workspaceId }];
-      const visibleEmployeeIds = await getVisibleReportEmployeeIds(user);
-      if (visibleEmployeeIds) {
-        conditions.push({ employeeId: { $in: visibleEmployeeIds } });
+      const conditions: Record<string, any>[] = [];
+      if (workspaceId && workspaceId !== "all") {
+        conditions.push({ workspaceId });
+      }
+
+      if (user.role === "team_member" || mine) {
+        conditions.push({ employeeId: user.id });
+      } else if (user.role === "ceo") {
+        const hodUsers = await db.user.findMany({
+          where: { role: "hod", isDeleted: false },
+          select: { id: true }
+        });
+        const hodUserIds = hodUsers.map((u) => String(u.id));
+
+        const memberFilter: Record<string, any> = {
+          role: "hod",
+          status: "active",
+          isActive: true
+        };
+        if (workspaceId && workspaceId !== "all") {
+          memberFilter.workspaceId = workspaceId;
+        }
+        const hodMembers = await db.workspaceMember.findMany({ where: memberFilter, select: { userId: true } });
+        for (const m of hodMembers) {
+          if (m.userId) hodUserIds.push(String(m.userId));
+        }
+
+        const uniqueHodUserIds = Array.from(new Set(hodUserIds));
+        conditions.push({ employeeId: { in: uniqueHodUserIds } });
+      } else {
+        const visibleEmployeeIds = await getVisibleReportEmployeeIds(user);
+        if (visibleEmployeeIds) {
+          conditions.push({ employeeId: { in: visibleEmployeeIds } });
+        }
       }
 
       if (department && department !== "All") {
         const deptTeams = await getTeamNamesByDepartment(department);
-        const deptUsers = await User.find(
-          {
-            isDeleted: { $ne: true },
-            $or: [
-              { "departments.name": department },
-              { department: department },
-              { teamName: department },
-              { teamNames: department },
-              { teamName: { $in: deptTeams } },
-              { teamNames: { $in: deptTeams } }
-            ]
+        const deptUsers = await db.user.findMany({
+          where: {
+            isDeleted: false,
+            workspaceMembers: {
+              some: {
+                OR: [
+                  { departments: { some: { name: department } } },
+                  { teamName: department },
+                  { teamNames: { has: department } },
+                  { teamName: { in: deptTeams } },
+                  { teamNames: { hasSome: deptTeams } }
+                ]
+              }
+            }
           },
-          { _id: 1, teamName: 1, teamNames: 1 }
-        ).lean();
+          select: { id: true, workspaceMembers: { select: { teamName: true, teamNames: true } } }
+        });
 
-        const deptUserIds = deptUsers.map((u) => String(u._id));
-        const deptUserTeamNames = deptUsers.flatMap((u) => [u.teamName, ...(u.teamNames ?? [])]).filter(Boolean) as string[];
+        const deptUserIds = deptUsers.map((u) => u.id);
+        const deptUserTeamNames = deptUsers.flatMap((u) => u.workspaceMembers.flatMap((m) => [m.teamName, ...m.teamNames])).filter(Boolean) as string[];
 
-        const matchedTeamNames = Array.from(
-          new Set([department, ...deptTeams, ...deptUserTeamNames])
-        );
+        const matchedTeamNames = Array.from(new Set([department, ...deptTeams, ...deptUserTeamNames]));
 
-        const deptConditions: Record<string, any>[] = [
-          { teamName: { $in: matchedTeamNames } },
-          { department: department }
-        ];
+        const deptConditions: Record<string, any>[] = [{ teamName: { in: matchedTeamNames } }];
         if (deptUserIds.length > 0) {
-          deptConditions.push({ employeeId: { $in: deptUserIds } });
+          deptConditions.push({ employeeId: { in: deptUserIds } });
         }
 
-        conditions.push({ $or: deptConditions });
+        conditions.push({ OR: deptConditions });
       } else {
         if (user.role !== "ceo" && user.role !== "hod" && user.role !== "admin") {
-          const financeTeams = await getFinanceTeamInternalNames();
-          if (financeTeams.length > 0) {
-            conditions.push({ teamName: { $nin: financeTeams } });
+          const financeMembers = await db.workspaceMember.findMany({
+            where: { departments: { some: { name: "Finance" } }, isActive: true, status: "active" },
+            select: { userId: true }
+          });
+          const financeUserIds = financeMembers.map((m) => m.userId);
+          if (financeUserIds.length > 0) {
+            conditions.push({ employeeId: { notIn: financeUserIds } });
           }
         }
       }
 
-      const filter = conditions.length === 0 ? {} : conditions.length === 1 ? conditions[0] : { $and: conditions };
+      if (team && team !== "All") {
+        conditions.push({ teamName: team });
+      }
 
-      const reports = await DailyReport.find(filter).sort({ reportDate: -1, createdAt: -1 }).lean();
+      const filter = conditions.length === 0 ? {} : conditions.length === 1 ? conditions[0] : { AND: conditions };
+
+      const reports = await db.dailyReport.findMany({ where: filter, orderBy: [{ reportDate: "desc" }, { createdAt: "desc" }] });
       const byDate = new Map<
         string,
         {
@@ -127,7 +177,7 @@ export async function GET(request: Request) {
       >();
 
       for (const report of reports) {
-        const key = toDateKey(report.reportDate);
+        const key = toPeriodKey(report.reportDate, period);
         if (!key) continue;
         const current = byDate.get(key) ?? { date: key, reportCount: 0, teamNames: new Set<string>() };
         current.reportCount += 1;
@@ -159,7 +209,10 @@ export async function GET(request: Request) {
       user.teamName,
       requestedGroup,
       department,
-      workspaceId
+      workspaceId,
+      period,
+      team ?? undefined,
+      mine
     );
 
     return NextResponse.json({

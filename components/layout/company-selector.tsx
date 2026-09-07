@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState, useRef, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { Building2, ChevronDown, Plus, UserCheck } from "lucide-react";
+import { Building2, ChevronDown, Layers, Plus, UserCheck } from "lucide-react";
 import { useSession } from "@/hooks/use-session";
+import { DEPARTMENT_OPTIONS } from "@/lib/constants";
+import { formatDisplayName } from "@/lib/utils";
 
 export type CompanyItem = {
   _id: string;
@@ -17,6 +19,7 @@ export type CompanyItem = {
 };
 
 const STORAGE_KEY = "daily_report_selected_company";
+const DEPT_STORAGE_KEY = "daily_report_selected_department";
 
 const ALL_CEOS_ITEM: CompanyItem = {
   _id: "all",
@@ -32,25 +35,39 @@ const ALL_COMPANIES_ITEM: CompanyItem = {
   isActive: true
 };
 
+const ALL_DEPARTMENTS_ITEM: CompanyItem = {
+  _id: "all",
+  name: "All Departments",
+  code: "ALL",
+  isActive: true
+};
+
+const ALL_TEAMS_ITEM: CompanyItem = {
+  _id: "all",
+  name: "All Teams",
+  code: "ALL",
+  isActive: true
+};
+
 export function CompanySelector() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedCompanyId, setSelectedCompanyId] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem(STORAGE_KEY) || "";
-    }
-    return "";
-  });
-
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string>("");
   const containerRef = useRef<HTMLDivElement>(null);
   const { data: sessionUser } = useSession();
+  
   const isAdmin = sessionUser?.role === "admin";
   const isCeo = sessionUser?.role === "ceo";
+  const isHod = sessionUser?.role === "hod";
+  const isTeamLead = sessionUser?.role === "team_lead";
+  const isTeamMember = sessionUser?.role === "team_member" || sessionUser?.role === "report_manager";
+  const isTeamRole = isTeamLead || isTeamMember;
 
-  // Fetch Companies for non-admin users
+  // Fetch Companies for non-admin, non-team/dept roles
   const { data: fetchedCompanies = [], isLoading: isLoadingCompanies } = useQuery<CompanyItem[]>({
     queryKey: ["header-active-companies"],
-    enabled: !isAdmin,
+    enabled: !isAdmin && !isHod && !isTeamRole,
     queryFn: async () => {
       const res = await fetch("/api/companies");
       if (!res.ok) return [];
@@ -68,25 +85,102 @@ export function CompanySelector() {
       if (!res.ok) return [];
       const json = await res.json();
       const ceos = (json.data || []) as Array<{ _id: string; name: string; email: string }>;
-      return ceos.map((c) => ({
-        _id: String(c._id),
-        name: c.name ? `CEO: ${c.name}` : c.email,
-        code: "CEO",
-        isActive: true
-      }));
+      const uniqueMap = new Map<string, CompanyItem>();
+      for (const c of ceos) {
+        const idStr = String(c._id);
+        if (!uniqueMap.has(idStr)) {
+          uniqueMap.set(idStr, {
+            _id: idStr,
+            name: c.name ? `CEO: ${c.name}` : c.email,
+            code: "CEO",
+            isActive: true
+          });
+        }
+      }
+      return Array.from(uniqueMap.values());
     }
   });
 
-  const isLoading = isAdmin ? isLoadingCeos : isLoadingCompanies;
+  // Department Items for HOD
+  const hodDepartmentItems = useMemo<CompanyItem[]>(() => {
+    if (!isHod) return [];
+    const deptItems = sessionUser?.departments && sessionUser.departments.length > 0
+      ? sessionUser.departments.map((d: any) => {
+          const deptName = typeof d === "string" ? d : (d?.name || String(d));
+          return {
+            _id: deptName,
+            name: deptName,
+            code: "DEPT",
+            isActive: true
+          };
+        })
+      : DEPARTMENT_OPTIONS.map((dept) => ({
+          _id: dept,
+          name: dept,
+          code: "DEPT",
+          isActive: true
+        }));
 
-  const items = isAdmin
-    ? [ALL_CEOS_ITEM, ...fetchedCeos]
-    : isCeo
-    ? [ALL_COMPANIES_ITEM, ...fetchedCompanies]
-    : fetchedCompanies;
+    return [ALL_DEPARTMENTS_ITEM, ...deptItems];
+  }, [isHod, sessionUser?.departments]);
+
+  // Team Items for Team Lead & Team Member
+  const userTeamNames = useMemo<string[]>(() => {
+    if (!isTeamRole || !sessionUser) return [];
+    const names = [
+      ...(sessionUser.teamNames ?? []),
+      sessionUser.teamName
+    ].filter((name): name is string => Boolean(name?.trim()));
+    return Array.from(new Set(names));
+  }, [isTeamRole, sessionUser]);
+
+  const userTeamItems = useMemo<CompanyItem[]>(() => {
+    if (!isTeamRole) return [];
+    const teamItems = userTeamNames.map((name) => ({
+      _id: name,
+      name: name,
+      code: "TEAM",
+      isActive: true
+    }));
+    return [ALL_TEAMS_ITEM, ...teamItems];
+  }, [isTeamRole, userTeamNames]);
+
+  const isLoading = isAdmin ? isLoadingCeos : (isHod || isTeamRole) ? false : isLoadingCompanies;
+
+  const items = useMemo(() => {
+    const raw = isTeamRole
+      ? userTeamItems
+      : isHod
+      ? hodDepartmentItems
+      : isAdmin
+      ? [ALL_CEOS_ITEM, ...fetchedCeos]
+      : isCeo
+      ? [ALL_COMPANIES_ITEM, ...fetchedCompanies]
+      : fetchedCompanies;
+
+    const seen = new Set<string>();
+    return raw.filter((item) => {
+      if (seen.has(item._id)) return false;
+      seen.add(item._id);
+      return true;
+    });
+  }, [isTeamRole, userTeamItems, isHod, hodDepartmentItems, isAdmin, fetchedCeos, isCeo, fetchedCompanies]);
 
   // Handle Initial & Stored Selection without resetting stored value
   useEffect(() => {
+    if (isHod || isTeamRole) {
+      const storedDept = typeof window !== "undefined" ? localStorage.getItem(DEPT_STORAGE_KEY) : null;
+      if (storedDept && items.some((i) => i._id === storedDept)) {
+        setSelectedCompanyId(storedDept);
+      } else if (items.length > 0) {
+        setSelectedCompanyId("all");
+        if (typeof window !== "undefined") {
+          localStorage.setItem(DEPT_STORAGE_KEY, "all");
+        }
+      }
+      return;
+    }
+
     const stored = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
 
     if (stored) {
@@ -98,7 +192,7 @@ export function CompanySelector() {
         localStorage.setItem(STORAGE_KEY, defaultId);
       }
     }
-  }, [items, isAdmin, isCeo]);
+  }, [items, isAdmin, isCeo, isHod, isTeamRole]);
 
   // Outside click listener to close popover
   useEffect(() => {
@@ -113,6 +207,18 @@ export function CompanySelector() {
 
   const handleSelectItem = async (item: CompanyItem) => {
     setSelectedCompanyId(item._id);
+
+    if (isHod || isTeamRole) {
+      if (typeof window !== "undefined") {
+        localStorage.setItem(DEPT_STORAGE_KEY, item._id);
+        window.dispatchEvent(new CustomEvent("department-changed", { detail: item._id }));
+      }
+      setIsOpen(false);
+      await queryClient.invalidateQueries();
+      router.refresh();
+      return;
+    }
+
     if (typeof window !== "undefined") {
       localStorage.setItem(STORAGE_KEY, item._id);
       window.dispatchEvent(new CustomEvent("company-changed", { detail: item._id }));
@@ -148,16 +254,18 @@ export function CompanySelector() {
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
         disabled={isLoading || items.length <= 0}
-        aria-label={isAdmin ? "Toggle CEO Menu" : "Toggle Companies Menu"}
+        aria-label={isAdmin ? "Toggle CEO Menu" : isHod ? "Toggle Department Menu" : isTeamRole ? "Toggle Team Menu" : "Toggle Companies Menu"}
         className="flex h-9 items-center gap-2 rounded-full border border-border bg-background/80 px-3 py-1.5 text-xs font-semibold text-textPrimary shadow-sm transition-all hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-2 focus:ring-ring dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-100 sm:text-sm disabled:cursor-default disabled:opacity-100 disabled:hover:bg-background/80"
       >
         {isAdmin ? (
           <UserCheck className="h-4 w-4 shrink-0 text-purple-500" />
+        ) : (isHod || isTeamRole) ? (
+          <Layers className="h-4 w-4 shrink-0 text-emerald-500" />
         ) : (
           <Building2 className="h-4 w-4 shrink-0 text-sky-500" />
         )}
         <span className="max-w-[130px] truncate sm:max-w-[170px]">
-          {currentItem ? currentItem.name : isLoading ? "Loading..." : isAdmin ? "Select CEO" : "Select Company"}
+          {currentItem ? formatDisplayName(currentItem.name) : isLoading ? "Loading..." : isAdmin ? "Select CEO" : isHod ? "Select Department" : isTeamRole ? "Select Team" : "Select Company"}
         </span>
         <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-70" />
       </button>
@@ -169,7 +277,7 @@ export function CompanySelector() {
           <div className="max-h-60 overflow-y-auto space-y-1 py-1">
             {items.length === 0 ? (
               <div className="py-4 text-center text-xs text-muted-foreground">
-                {isAdmin ? "No CEOs found." : "No companies available."}
+                {isAdmin ? "No CEOs found." : isHod ? "No departments found." : isTeamRole ? "No teams found." : "No companies available."}
               </div>
             ) : (
               items.map((item) => {
@@ -188,7 +296,7 @@ export function CompanySelector() {
                     }`}
                   >
                     <div className="min-w-0 flex-1 pr-2">
-                      <div className="truncate font-medium">{item.name}</div>
+                      <div className="truncate font-medium">{formatDisplayName(item.name)}</div>
                       {item.code && <div className="text-[10px] text-muted-foreground font-mono">{item.code}</div>}
                     </div>
                     {item.isActive ? (

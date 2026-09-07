@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import Notification from "@/models/Notification";
 
 export async function GET() {
   try {
@@ -10,16 +9,18 @@ export async function GET() {
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
     }
 
-    await connectToDatabase();
+    
+    const notifications = await db.notification.findMany({
+      where: { recipientId: user.id },
+      orderBy: { createdAt: 'desc' },
+      take: 30
+    });
 
-    const notifications = await Notification.find({ recipientId: user.id })
-      .sort({ createdAt: -1 })
-      .limit(30)
-      .lean();
-
-    const unreadCount = await Notification.countDocuments({
-      recipientId: user.id,
-      isRead: false
+    const unreadCount = await db.notification.count({
+      where: {
+        recipientId: user.id,
+        isRead: false
+      }
     });
 
     return NextResponse.json({
@@ -42,18 +43,17 @@ export async function PATCH(request: Request) {
     const body = await request.json();
     const { notificationIds, markAllRead } = body;
 
-    await connectToDatabase();
-
+    
     if (markAllRead) {
-      await Notification.updateMany(
-        { recipientId: user.id, isRead: false },
-        { $set: { isRead: true } }
-      );
+      await db.notification.updateMany({
+        where: { recipientId: user.id, isRead: false },
+        data: { isRead: true }
+      });
     } else if (Array.isArray(notificationIds) && notificationIds.length > 0) {
-      await Notification.updateMany(
-        { _id: { $in: notificationIds }, recipientId: user.id },
-        { $set: { isRead: true } }
-      );
+      await db.notification.updateMany({
+        where: { id: { in: notificationIds }, recipientId: user.id },
+        data: { isRead: true }
+      });
     }
 
     return NextResponse.json({ success: true, message: "Notifications updated" });

@@ -4,8 +4,14 @@ const FinanceItemSchema = new Schema({
   particulars: { type: String, required: true },
   description: { type: String, default: "" },
   amountINR: { type: Number, required: true, default: 0 },
-  amountSAR: { type: Number, required: true, default: 0 }
-}, { _id: false });
+  amountSAR: { type: Number, required: true, default: 0 },
+  priority: { type: String, enum: ["low", "medium", "high", "urgent"], default: "medium" },
+  bankName: { type: String, default: "" },
+  revisedAmountINR: { type: Number, default: null },
+  revisedAmountSAR: { type: Number, default: null },
+  revisionReference: { type: String, default: "" },
+  approval: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" }
+}, { _id: true });
 
 const BankBalanceSchema = new Schema({
   bankName: { type: String, required: true },
@@ -22,9 +28,6 @@ const FinanceReportSchema = new Schema(
     submittedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     submittedByName: { type: String, required: true },
 
-    expenses: { type: [FinanceItemSchema], default: [] },
-    receipts: { type: [FinanceItemSchema], default: [] },
-    payments: { type: [FinanceItemSchema], default: [] },
     bankBalances: { type: [BankBalanceSchema], default: [] },
     cashBalance: {
       pettyCash: { type: Number, default: 0 },

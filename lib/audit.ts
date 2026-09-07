@@ -1,5 +1,4 @@
-import { connectToDatabase } from "@/lib/db";
-import AuditLog from "@/models/AuditLog";
+import db from "@/lib/db";
 
 export async function logAuditEntry(input: {
   action: string;
@@ -13,17 +12,18 @@ export async function logAuditEntry(input: {
   newValue?: unknown;
   reason?: string | null;
 }) {
-  await connectToDatabase();
-  return AuditLog.create({
-    action: input.action,
-    userId: input.userId ?? null,
-    userName: input.userName ?? null,
-    reportId: input.reportId ?? null,
-    consolidatedReportId: input.consolidatedReportId ?? null,
-    financeReportId: input.financeReportId ?? null,
-    leaveRequestId: input.leaveRequestId ?? null,
-    oldValue: input.oldValue ?? null,
-    newValue: input.newValue ?? null,
-    reason: input.reason ?? null
+  return db.auditLog.create({
+    data: {
+      action: input.action,
+      userId: input.userId ?? null,
+      userName: input.userName ?? null,
+      reportId: input.reportId ?? null,
+      consolidatedReportId: input.consolidatedReportId ?? null,
+      financeReportId: input.financeReportId ?? null,
+      leaveRequestId: input.leaveRequestId ?? null,
+      oldValue: input.oldValue !== undefined ? (input.oldValue as any) : null,
+      newValue: input.newValue !== undefined ? (input.newValue as any) : null,
+      reason: input.reason ?? null
+    }
   });
 }

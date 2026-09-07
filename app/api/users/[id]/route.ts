@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/db";
+import db from "@/lib/db";
 import { getCurrentUser, hashPassword } from "@/lib/auth";
-import User from "@/models/User";
-import WorkspaceMember from "@/models/WorkspaceMember";
-import { isValidObjectId } from "mongoose";
+
 import { adminUpdateUserSchema } from "@/lib/validation";
 import { getActiveTeamTypeNames } from "@/lib/team-types";
 import { ApiResponse } from "@/lib/api-response";
 import { authorizeApi } from "@/lib/api-auth";
+import { canUpdateEmail } from "@/lib/permissions";
 
 type TargetUser = {
   managerName?: string | null;
@@ -37,33 +36,41 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
   const { id } = await Promise.resolve(params);
   const url = new URL(request.url);
-  const workspaceId = url.searchParams.get("workspaceId");
+  let workspaceId = url.searchParams.get("workspaceId") || request.headers.get("x-workspace-id");
+  
+  if (!workspaceId && user.role !== "admin" && user.role !== "ceo") {
+    workspaceId = user.workspaceId;
+  }
 
-  await connectToDatabase();
-  const targetUser = await User.findById(id).lean() as any;
+  const targetUser = await db.user.findUnique({ where: { id: String(id) } }) as any;
   if (!targetUser) {
     return ApiResponse.notFound("User not found");
   }
 
   let targetMember = null;
-  if (workspaceId && workspaceId !== "all" && isValidObjectId(workspaceId)) {
-    targetMember = await WorkspaceMember.findOne({ userId: id, workspaceId }).lean() as any;
+  if (workspaceId && workspaceId !== "all") {
+    targetMember = await db.workspaceMember.findFirst({ where: { userId: id, workspaceId }, include: { departments: true } }) as any;
   }
 
   const flattened = targetMember ? { ...targetUser, ...targetMember } : targetUser;
 
   // CEO Details Access Control: CEO details can only be viewed by Admin and that CEO himself
   if (targetUser.role === "ceo" || flattened.role === "ceo") {
-    if (user.role !== "admin" && user.id !== String(targetUser._id)) {
+    if (user.role !== "admin" && user.id !== String(targetUser.id)) {
       return ApiResponse.forbidden("CEO details can only be accessed by Administrators or the CEO themselves.");
     }
   } else if (!canEditUser(user, flattened)) {
     return ApiResponse.forbidden("Forbidden");
   }
 
+  const validTeamNames = await getActiveTeamTypeNames();
+  const filteredTeamNames = (flattened.teamNames || []).filter((name: string) => validTeamNames.includes(name));
+  const primaryTeamName = validTeamNames.includes(flattened.teamName) ? flattened.teamName : (filteredTeamNames[0] || null);
+
   return ApiResponse.success({
     ...flattened,
-    teamNames: flattened.departments?.map((d: any) => d.name) || []
+    teamName: primaryTeamName,
+    teamNames: filteredTeamNames
   }, "User details fetched successfully");
 }
 
@@ -79,10 +86,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return ApiResponse.validationError("Invalid user payload", parsed.error.format());
   }
 
-  await connectToDatabase();
-  const validTeamNames = await getActiveTeamTypeNames();
+    const validTeamNames = await getActiveTeamTypeNames();
   
-  const targetUser = await User.findById(id);
+  const targetUser = await db.user.findUnique({ where: { id: String(id) } });
   if (!targetUser) {
     return ApiResponse.notFound("User not found");
   }
@@ -90,8 +96,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const isExecutive = targetUser.role === "admin" || targetUser.role === "ceo" || parsed.data.role === "admin" || parsed.data.role === "ceo";
 
   let targetMember = null;
-  if (parsed.data.workspaceId && parsed.data.workspaceId !== "all" && isValidObjectId(parsed.data.workspaceId)) {
-    targetMember = await WorkspaceMember.findOne({ userId: id, workspaceId: parsed.data.workspaceId });
+  if (parsed.data.workspaceId && parsed.data.workspaceId !== "all") {
+    targetMember = await db.workspaceMember.findFirst({ where: { userId: id, workspaceId: parsed.data.workspaceId } });
   }
 
   // Only require workspaceId and targetMember for non-executive users
@@ -102,11 +108,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return ApiResponse.notFound("Workspace member not found");
   }
 
-  const flattenedTarget = targetMember ? { ...targetUser.toObject(), ...targetMember.toObject() } : targetUser.toObject();
+  const flattenedTarget = targetMember ? { ...targetUser, ...targetMember } : targetUser;
 
   // CEO Details Access Control: CEO profile can only be edited by Admin and that CEO himself
   if (targetUser.role === "ceo" || flattenedTarget.role === "ceo") {
-    if (user.role !== "admin" && user.id !== String(targetUser._id)) {
+    if (user.role !== "admin" && user.id !== String(targetUser.id)) {
       return ApiResponse.forbidden("CEO profile can only be edited by Administrators or the CEO themselves.");
     }
   } else if (!canEditUser(user, flattenedTarget)) {
@@ -122,11 +128,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return ApiResponse.forbidden("Forbidden");
   }
 
-  if (parsed.data.email !== undefined && user.role !== "admin" && user.role !== "ceo") {
-    return ApiResponse.forbidden("Only admin can update email");
+  if (parsed.data.email !== undefined) {
+    const isSelfUpdate = user.id === targetUser.id;
+    const targetRole = targetUser.role || flattenedTarget.role;
+
+    if (!canUpdateEmail(user.role, targetRole, isSelfUpdate)) {
+      return ApiResponse.forbidden("Only admin can update email or update email of senior/peer roles");
+    }
   }
 
-  if (parsed.data.managerName && user.role !== "admin" && user.role !== "ceo" && user.role !== "hod") {
+  if (parsed.data.managerName !== undefined && parsed.data.managerName !== ((flattenedTarget as any).managerName || "") && user.role !== "admin" && user.role !== "ceo" && user.role !== "hod") {
     return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
   }
 
@@ -135,20 +146,24 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 
   if (parsed.data.email) {
-    const duplicate = await User.findOne({
-      email: parsed.data.email.toLowerCase(),
-      _id: { $ne: targetUser._id }
-    }).lean();
+    const duplicate = await db.user.findFirst({
+      where: {
+        email: parsed.data.email.toLowerCase(),
+        id: { not: targetUser.id }
+      }
+    });
     if (duplicate) {
       return NextResponse.json({ success: false, message: "A user with this email already exists" }, { status: 409 });
     }
   }
 
   if (parsed.data.phone !== undefined && parsed.data.phone.trim() !== "") {
-    const duplicatePhone = await User.findOne({
-      phone: parsed.data.phone,
-      _id: { $ne: targetUser._id }
-    }).lean();
+    const duplicatePhone = await db.user.findFirst({
+      where: {
+        phone: parsed.data.phone,
+        id: { not: targetUser.id }
+      }
+    });
     if (duplicatePhone) {
       return NextResponse.json({ success: false, message: "A user with this phone number already exists" }, { status: 409 });
     }
@@ -167,46 +182,75 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 
   // Update Global User
-  if (parsed.data.firstName !== undefined) targetUser.firstName = parsed.data.firstName;
-  if (parsed.data.lastName !== undefined) targetUser.lastName = parsed.data.lastName;
-  if (parsed.data.phone !== undefined) targetUser.phone = parsed.data.phone;
-  if (parsed.data.email !== undefined) targetUser.email = parsed.data.email.toLowerCase();
-  if (parsed.data.isDeleted !== undefined) targetUser.isDeleted = parsed.data.isDeleted;
-  if (parsed.data.isAdminActive !== undefined) targetUser.isAdminActive = parsed.data.isAdminActive;
-  if (parsed.data.isEmailActivated !== undefined) targetUser.isEmailActivated = parsed.data.isEmailActivated;
+  const updateUserData: any = {};
+  if (parsed.data.firstName !== undefined) updateUserData.firstName = parsed.data.firstName;
+  if (parsed.data.lastName !== undefined) updateUserData.lastName = parsed.data.lastName;
+  if (parsed.data.phone !== undefined) updateUserData.phone = parsed.data.phone;
+  if (parsed.data.email !== undefined) updateUserData.email = parsed.data.email.toLowerCase();
+  if (parsed.data.isDeleted !== undefined) updateUserData.isDeleted = parsed.data.isDeleted;
+  if (parsed.data.isAdminActive !== undefined) updateUserData.isAdminActive = parsed.data.isAdminActive;
+  if (parsed.data.isEmailActivated !== undefined) updateUserData.isEmailActivated = parsed.data.isEmailActivated;
+  if (parsed.data.firstName !== undefined || parsed.data.lastName !== undefined) {
+    const fn = parsed.data.firstName ?? targetUser.firstName;
+    const ln = parsed.data.lastName ?? targetUser.lastName;
+    updateUserData.name = `${fn} ${ln}`.trim();
+  }
+  if (parsed.data.resetPassword) updateUserData.password = targetUser.password;
 
-  targetUser.name = `${targetUser.firstName} ${targetUser.lastName}`.trim();
-  await targetUser.save();
+  const updatedUser = await db.user.update({
+    where: { id: targetUser.id },
+    data: updateUserData
+  });
 
   // Update Workspace Member if it exists
   if (targetMember) {
-    if (parsed.data.empID !== undefined) targetMember.empID = parsed.data.empID;
-    if (parsed.data.role !== undefined) targetMember.role = parsed.data.role;
-    if (parsed.data.roleTypes !== undefined) targetMember.roleTypes = parsed.data.roleTypes;
-    if (parsed.data.departments !== undefined) targetMember.departments = parsed.data.departments;
-    if (parsed.data.managerName !== undefined) targetMember.managerName = parsed.data.managerName;
-    if (parsed.data.status !== undefined) targetMember.status = parsed.data.status;
-    if (parsed.data.isActive !== undefined) targetMember.isActive = parsed.data.isActive;
+    const updateMemberData: any = {};
+    if (parsed.data.empID !== undefined) updateMemberData.empID = parsed.data.empID;
+    if (parsed.data.role !== undefined) updateMemberData.role = parsed.data.role;
+    if (parsed.data.roleTypes !== undefined) updateMemberData.roleTypes = parsed.data.roleTypes;
+    if (parsed.data.teamNames !== undefined) {
+      updateMemberData.teamNames = parsed.data.teamNames;
+      updateMemberData.teamName = parsed.data.teamNames[0] || "";
+    }
+    if (parsed.data.managerName !== undefined) updateMemberData.managerName = parsed.data.managerName;
+    if (parsed.data.status !== undefined) updateMemberData.status = parsed.data.status;
+    if (parsed.data.isActive !== undefined) updateMemberData.isActive = parsed.data.isActive;
 
-    await targetMember.save();
-    return ApiResponse.success({ ...targetUser.toObject(), ...targetMember.toObject() }, "User updated successfully");
+    const updatedMember = await db.workspaceMember.update({
+      where: { id: targetMember.id },
+      data: {
+        ...updateMemberData,
+        departments: parsed.data.departments ? {
+          deleteMany: {},
+          create: parsed.data.departments.map((d: any) => ({ name: d.name, subTeams: d.subTeams }))
+        } : undefined
+      },
+      include: { departments: true }
+    });
+    return ApiResponse.success({ ...updatedUser, ...updatedMember }, "User updated successfully");
   }
 
   // Create WorkspaceMember if workspaceId is provided but not found
   if (parsed.data.workspaceId && parsed.data.workspaceId.trim() !== "") {
-    const newMember = await WorkspaceMember.create({
-      userId: targetUser._id,
-      workspaceId: parsed.data.workspaceId,
-      empID: parsed.data.empID || "EMP",
-      role: parsed.data.role || targetUser.role,
-      roleTypes: parsed.data.roleTypes ?? [],
-      departments: parsed.data.departments ?? [],
-      managerName: parsed.data.managerName ?? "",
-      status: "active",
-      isActive: true
+    const newMember = await db.workspaceMember.create({
+      data: {
+        userId: updatedUser.id,
+        workspaceId: parsed.data.workspaceId,
+        empID: parsed.data.empID || "EMP",
+        role: parsed.data.role || updatedUser.role,
+        roleTypes: parsed.data.roleTypes ?? [],
+        teamNames: parsed.data.teamNames ?? [],
+        departments: {
+          create: parsed.data.departments?.map((d: any) => ({ name: d.name, subTeams: d.subTeams })) || []
+        },
+        managerName: parsed.data.managerName ?? "",
+        status: "active",
+        isActive: true
+      },
+      include: { departments: true }
     });
-    return ApiResponse.success({ ...targetUser.toObject(), ...newMember.toObject() }, "User updated successfully");
+    return ApiResponse.success({ ...updatedUser, ...newMember }, "User updated successfully");
   }
 
-  return ApiResponse.success(targetUser.toObject(), "User updated successfully");
+  return ApiResponse.success(updatedUser, "User updated successfully");
 }
