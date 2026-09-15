@@ -28,6 +28,11 @@ type ReportItem = {
   reviewedByName?: string | null;
   reviewedAt?: string | Date | null;
   verificationLevel?: string | null;
+  reportManagerStatus?: string | null;
+  reportManagerReview?: string | null;
+  reportManagerReviewedBy?: unknown;
+  reportManagerReviewedByName?: string | null;
+  reportManagerReviewedAt?: string | Date | null;
   isLocked?: boolean | null;
   editAccessRequested?: boolean | null;
   editAccessGranted?: boolean | null;
@@ -129,9 +134,89 @@ export async function GET(request: Request) {
   const reports = rawReports.map(mapReportRelations) as unknown as ReportItem[];
   const employeeIds = Array.from(new Set(reports.map((report) => String(report.employeeId)).filter(Boolean)));
   const users = employeeIds.length ? await db.user.findMany({ where: { id: { in: employeeIds } } }) : [];
-  const userMap = new Map<string, { role?: string | null }>();
+  const members = employeeIds.length ? await db.workspaceMember.findMany({
+    where: { userId: { in: employeeIds }, isActive: true },
+    select: { userId: true, role: true, teamNames: true, teamName: true }
+  }) : [];
+  const userMap = new Map<string, { role?: string | null; teamNames?: string[]; teamName?: string | null }>();
   for (const item of users) {
-    userMap.set(String(item.id), { role: item.role });
+    userMap.set(String(item.id), { role: item.role, teamNames: [], teamName: null });
+  }
+  for (const item of members) {
+    const existing = userMap.get(String(item.userId)) || {};
+    userMap.set(String(item.userId), {
+      ...existing,
+      role: item.role || existing.role,
+      teamNames: item.teamNames || existing.teamNames || [],
+      teamName: item.teamName || existing.teamName || null
+    });
+  }
+
+  const resolveDisplayTeamName = (report: any) => {
+    const empId = String(report.employeeId);
+    const authorInfo = userMap.get(empId);
+    const authorRole = authorInfo?.role || report.employeeRole;
+    const assignedTeams = (authorInfo?.teamNames || []).filter(Boolean);
+
+    // Report Manager, HOD, CEO, and Admin are not assigned to teams
+    if (authorRole === "report_manager" || authorRole === "hod" || authorRole === "ceo" || authorRole === "admin") {
+      return "-";
+    }
+
+    // If user has specific assigned team(s)
+    if (assignedTeams.length > 0) {
+      if (report.teamName && assignedTeams.includes(report.teamName)) {
+        return formatDisplayName(report.teamName);
+      }
+      return formatDisplayName(assignedTeams[0]);
+    }
+
+    if (authorInfo?.teamName) {
+      return formatDisplayName(authorInfo.teamName);
+    }
+
+    if (report.teamName && !["Software", "Marketing", "Construction", "Finance", "General"].includes(report.teamName.trim())) {
+      return formatDisplayName(report.teamName);
+    }
+
+    return "-";
+  };
+
+  // Pre-fetch team lead reviews given by report managers
+  const rmUserIds = employeeIds.filter((id) => userMap.get(id)?.role === "report_manager" || userMap.get(id)?.role === "admin" || userMap.get(id)?.role === "ceo" || userMap.get(id)?.role === "hod");
+  let allTlReviews: any[] = [];
+  if (rmUserIds.length > 0) {
+    allTlReviews = await db.dailyReport.findMany({
+      where: {
+        reportManagerReviewedBy: { in: rmUserIds },
+        ...(workspaceId && workspaceId !== "all" ? { workspaceId } : {})
+      },
+      select: {
+        id: true,
+        name: true,
+        teamName: true,
+        reportType: true,
+        reportDate: true,
+        status: true,
+        reportManagerStatus: true,
+        reportManagerReview: true,
+        reportManagerReviewedBy: true,
+        reportManagerReviewedByName: true,
+        reportManagerReviewedAt: true
+      },
+      orderBy: { createdAt: "asc" }
+    });
+  }
+
+  const tlReviewsByManagerAndDate = new Map<string, any[]>();
+  for (const tlr of allTlReviews) {
+    if (tlr.reportManagerStatus || tlr.reportManagerReview) {
+      const dateKey = toDateKey(tlr.reportDate);
+      const managerKey = `${String(tlr.reportManagerReviewedBy)}_${dateKey}`;
+      const list = tlReviewsByManagerAndDate.get(managerKey) || [];
+      list.push(tlr);
+      tlReviewsByManagerAndDate.set(managerKey, list);
+    }
   }
 
   if (view === "date-paginated") {
@@ -140,7 +225,7 @@ export async function GET(request: Request) {
     const groupedByDate = new Map<string, DateGroupItem>();
 
     for (const report of reports) {
-      const formattedTeamName = formatDisplayName(report.teamName ?? "");
+      const formattedTeamName = resolveDisplayTeamName(report);
       const key = toDateKey(report.reportDate);
       const current = groupedByDate.get(key) ?? {
         date: key,
@@ -148,14 +233,18 @@ export async function GET(request: Request) {
         teamNames: [],
         reports: []
       };
+      const managerKey = `${String(report.employeeId)}_${key}`;
+      const teamLeadReviews = tlReviewsByManagerAndDate.get(managerKey) || [];
+
       current.reportCount += 1;
       current.reports.push({
         ...report,
         _id: (report as any).id,
         teamName: formattedTeamName,
-        employeeRole: userMap.get(String(report.employeeId))?.role ?? null
-      });
-      if (formattedTeamName && !current.teamNames.includes(formattedTeamName)) {
+        employeeRole: userMap.get(String(report.employeeId))?.role ?? null,
+        teamLeadReviews
+      } as any);
+      if (formattedTeamName && formattedTeamName !== "-" && !current.teamNames.includes(formattedTeamName)) {
         current.teamNames.push(formattedTeamName);
       }
       groupedByDate.set(key, current);
@@ -206,39 +295,53 @@ export async function GET(request: Request) {
     });
   }
 
-  const data = reports.map((report: any) => ({
-    id: String(report.id),
-    _id: String(report.id),
-    employeeId: String(report.employeeId),
-    employeeRole: userMap.get(String(report.employeeId))?.role ?? null,
-    name: report.name ?? "",
-    teamName: formatDisplayName(report.teamName ?? ""),
-    reportType: report.reportType ?? "",
-    reportDate: report.reportDate,
-    attachmentLink: report.attachmentLink ?? undefined,
-    dailyMeetingUpdate: report.dailyMeetingUpdate ?? undefined,
-    completedWork: report.completedWork ?? "",
-    pendingWork: report.pendingWork ?? "",
-    blockers: report.blockers ?? "",
-    requiredClarification: report.requiredClarification ?? "",
-    constructionWorkPlan: report.constructionWorkPlan,
-    constructionMaterialUtilization: report.constructionMaterialUtilization,
-    constructionTomorrowWorkPlan: report.constructionTomorrowWorkPlan,
-    status: report.status ?? "submitted",
-    rejectionReason: report.rejectionReason ?? undefined,
-    reviewNotes: report.reviewNotes ?? undefined,
-    reviewedByName: report.reviewedByName ?? undefined,
-    reviewedAt: report.reviewedAt ?? undefined,
-    verificationLevel: report.verificationLevel ?? undefined,
-    isLocked: Boolean(report.isLocked),
-    canEdit: canEditDailyReport(report, { role: userMap.get(String(report.employeeId))?.role ?? null }),
-    editAccessRequested: Boolean(report.editAccessRequested),
-    editAccessGranted: Boolean(report.editAccessGranted),
-    leaveStatus: leaveByEmployeeId.get(String(report.employeeId))?.status ?? null,
-    leaveType: leaveByEmployeeId.get(String(report.employeeId))?.leaveType ?? undefined,
-    leaveReason: leaveByEmployeeId.get(String(report.employeeId))?.reason ?? undefined,
-    leaveReviewedByName: leaveByEmployeeId.get(String(report.employeeId))?.reviewedByName ?? null
-  }));
+  const data = reports.map((report: any) => {
+    const key = toDateKey(report.reportDate);
+    const managerKey = `${String(report.employeeId)}_${key}`;
+    const teamLeadReviews = tlReviewsByManagerAndDate.get(managerKey) || [];
+
+    return {
+      id: String(report.id),
+      _id: String(report.id),
+      employeeId: String(report.employeeId),
+      employeeRole: userMap.get(String(report.employeeId))?.role ?? null,
+      teamLeadReviews,
+      name: report.name ?? "",
+      teamName: resolveDisplayTeamName(report),
+      reportType: report.reportType ?? "",
+      reportDate: report.reportDate,
+      createdAt: report.createdAt,
+      updatedAt: report.updatedAt,
+      submittedAt: report.submittedAt,
+      attachmentLink: report.attachmentLink ?? undefined,
+      dailyMeetingUpdate: report.dailyMeetingUpdate ?? undefined,
+      completedWork: report.completedWork ?? "",
+      pendingWork: report.pendingWork ?? "",
+      blockers: report.blockers ?? "",
+      requiredClarification: report.requiredClarification ?? "",
+      constructionWorkPlan: report.constructionWorkPlan,
+      constructionMaterialUtilization: report.constructionMaterialUtilization,
+      constructionTomorrowWorkPlan: report.constructionTomorrowWorkPlan,
+      status: report.status ?? "submitted",
+      rejectionReason: report.rejectionReason ?? undefined,
+      reviewNotes: report.reviewNotes ?? undefined,
+      reviewedByName: report.reviewedByName ?? undefined,
+      reviewedAt: report.reviewedAt ?? undefined,
+      verificationLevel: report.verificationLevel ?? undefined,
+      reportManagerStatus: report.reportManagerStatus ?? undefined,
+      reportManagerReview: report.reportManagerReview ?? undefined,
+      reportManagerReviewedByName: report.reportManagerReviewedByName ?? undefined,
+      reportManagerReviewedAt: report.reportManagerReviewedAt ?? undefined,
+      isLocked: Boolean(report.isLocked),
+      canEdit: canEditDailyReport(report, { role: userMap.get(String(report.employeeId))?.role ?? null }),
+      editAccessRequested: Boolean(report.editAccessRequested),
+      editAccessGranted: Boolean(report.editAccessGranted),
+      leaveStatus: leaveByEmployeeId.get(String(report.employeeId))?.status ?? null,
+      leaveType: leaveByEmployeeId.get(String(report.employeeId))?.leaveType ?? undefined,
+      leaveReason: leaveByEmployeeId.get(String(report.employeeId))?.reason ?? undefined,
+      leaveReviewedByName: leaveByEmployeeId.get(String(report.employeeId))?.reviewedByName ?? null
+    };
+  });
 
   return NextResponse.json({ success: true, data });
 }

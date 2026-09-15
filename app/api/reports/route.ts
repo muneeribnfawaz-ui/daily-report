@@ -94,6 +94,13 @@ export async function POST(request: Request) {
       marketingClientItems: { create: (parsed.data.marketingClientItems ?? []).map((i: any) => ({ date: i.date || (day instanceof Date ? day.toISOString().slice(0, 10) : String(day || new Date().toISOString().slice(0, 10))), executiveName: i.executiveName, clientName: i.clientName, companyName: i.companyName, clientType: i.clientType, contactPerson: i.contactPerson, mobileNo: i.mobileNo, email: i.email, projectType: i.projectType, requirementDiscussed: i.requirementDiscussed, projectStage: i.projectStage, decisionMaker: i.decisionMaker, interestLevel: i.interestLevel, nextAction: i.nextAction, followUpDate: i.followUpDate, status: i.status, remarks: i.remarks })) }
     };
 
+    if (user.role === "team_lead" && existingReport) {
+      return NextResponse.json(
+        { success: false, message: "You’ve already submitted today’s report. Please use the Edit option to make changes." },
+        { status: 409 }
+      );
+    }
+
     if (existingReport) {
       if (!canEditDailyReport(existingReport, user)) {
         return NextResponse.json(
@@ -179,7 +186,8 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-  const team = url.searchParams.get("team");
+  const team = url.searchParams.get("team") || url.searchParams.get("department") || request.headers.get("x-department");
+  const employee = url.searchParams.get("employee") || url.searchParams.get("search");
   const status = url.searchParams.get("status");
   const locked = url.searchParams.get("locked");
   const date = url.searchParams.get("date");
@@ -191,7 +199,7 @@ export async function GET(request: Request) {
   if (user.role === "team_member" || mine) {
     filter.employeeId = user.id;
   } else {
-    const visibleEmployeeIds = await getVisibleReportEmployeeIds(user);
+    const visibleEmployeeIds = await getVisibleReportEmployeeIds(user, { workspaceId: workspaceId || undefined });
     if (visibleEmployeeIds && visibleEmployeeIds.length > 0) {
       filter.employeeId = { in: visibleEmployeeIds };
     } else {
@@ -199,7 +207,37 @@ export async function GET(request: Request) {
       filter.employeeId = "non_existent_id";
     }
   }
-  if (user.role !== "admin" && !mine) {
+
+  if (user.role === "ceo" && !mine) {
+    const memberships = await db.workspaceMember.findMany({
+      where: {
+        userId: user.id,
+        status: "active",
+        isActive: true
+      },
+      include: { workspace: true }
+    });
+    const ceoWorkspaceIds = memberships.filter(m => m.workspace?.type === "ceo").map(m => m.workspaceId);
+    const directCompanyWorkspaceIds = memberships.filter(m => m.workspace?.type !== "ceo").map(m => m.workspaceId);
+
+    const ownedWorkspaces = await db.workspace.findMany({
+      where: {
+        ownerWorkspaceId: { in: ceoWorkspaceIds },
+        isDeleted: false,
+        isActive: true
+      },
+      select: { id: true }
+    });
+    const ownedWorkspaceIds = ownedWorkspaces.map(w => w.id);
+
+    const allowedWorkspaceIds = Array.from(new Set([...directCompanyWorkspaceIds, ...ownedWorkspaceIds, ...ceoWorkspaceIds]));
+
+    if (workspaceId && workspaceId !== "all") {
+      filter.workspaceId = allowedWorkspaceIds.includes(workspaceId) ? workspaceId : "non_existent_id";
+    } else {
+      filter.workspaceId = { in: allowedWorkspaceIds };
+    }
+  } else if (user.role !== "admin" && !mine) {
     const memberships = await db.workspaceMember.findMany({ where: { userId: user.id, status: "active", isActive: true }, select: { workspaceId: true } });
     const allowedWorkspaceIds = memberships.map(m => String(m.workspaceId));
 
@@ -221,7 +259,10 @@ export async function GET(request: Request) {
         OR: [
           { name: team },
           { showName: team },
-          { department: team }
+          { department: team },
+          { name: { equals: team, mode: "insensitive" } },
+          { showName: { equals: team, mode: "insensitive" } },
+          { department: { equals: team, mode: "insensitive" } }
         ]
       },
       select: { name: true, showName: true }
@@ -235,6 +276,7 @@ export async function GET(request: Request) {
 
     filter.teamName = { in: Array.from(matchedNames) };
   }
+
   if (status) filter.status = status;
   if (locked !== null && locked !== undefined && locked !== "") filter.isLocked = locked === "true";
   if (date) {
@@ -244,13 +286,35 @@ export async function GET(request: Request) {
     filter.reportDate = { gte: day, lt: nextDay };
   }
 
+  if (employee && employee.trim() !== "") {
+    const searchTrimmed = employee.trim();
+    filter.OR = [
+      { name: { contains: searchTrimmed, mode: "insensitive" } },
+      { teamName: { contains: searchTrimmed, mode: "insensitive" } }
+    ];
+  }
+
   const reports = await db.dailyReport.findMany({ 
     where: filter, 
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ reportDate: 'desc' }, { createdAt: 'desc' }],
     include: reportRelationsInclude
   });
 
-  const mappedReports = reports.map(mapReportRelations);
+  const employeeIds = Array.from(new Set(reports.map(r => String(r.employeeId)).filter(Boolean)));
+  const members = employeeIds.length ? await db.workspaceMember.findMany({
+    where: { userId: { in: employeeIds }, isActive: true },
+    select: { userId: true, role: true }
+  }) : [];
+  const userRoleMap = new Map<string, string>();
+  for (const m of members) {
+    if (m.role) userRoleMap.set(String(m.userId), m.role);
+  }
+
+  const mappedReports = reports.map((report) => ({
+    ...mapReportRelations(report),
+    _id: report.id,
+    employeeRole: userRoleMap.get(String(report.employeeId)) || "team_member"
+  }));
 
   return NextResponse.json({ success: true, data: mappedReports });
 }

@@ -137,3 +137,21 @@ input[type="number"] {
   -moz-appearance: textfield;
   appearance: textfield;
 }
+
+/* RTL Typography & Layout Enhancements */
+[dir="rtl"] {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans Arabic", "Cairo", "Tajawal", sans-serif;
+  letter-spacing: 0;
+}
+
+[dir="rtl"] .tracking-tight,
+[dir="rtl"] .tracking-wide,
+[dir="rtl"] .tracking-widest {
+  letter-spacing: normal !important;
+}
+
+/* RTL Navigation Arrow auto-flipping */
+[dir="rtl"] .rtl-flip {
+  transform: scaleX(-1);
+}
+

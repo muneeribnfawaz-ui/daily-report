@@ -12,36 +12,27 @@ export default async function MyReportsPage() {
     redirect("/login");
   }
 
-  // Non-HOD Finance users are redirected to Finance My Reports. HODs see all reports created by them across departments.
-  const isFinance = isInFinance(user) && user.role !== "hod";
-  if (isFinance) {
-    redirect("/finance/my-reports");
-  }
-
-  const isConstruction = isInConstruction(user) && user.role !== "hod";
-  if (isConstruction) {
-    redirect("/construction/my-reports");
-  }
-
-  const isMarketing = isInMarketing(user) && user.role !== "hod";
-  if (isMarketing) {
-    redirect("/marketing/my-reports");
+  // Non-HOD/Report Manager users are redirected to their department-specific My Reports if applicable.
+  // HODs, Report Managers, Admins, and CEOs manage multi-department reports and stay on /daily-report/my-reports.
+  const isExcludedRole = user.role === "hod" || user.role === "report_manager" || user.role === "admin" || user.role === "ceo";
+  if (!isExcludedRole) {
+    if (isInFinance(user)) {
+      redirect("/finance/my-reports");
+    }
+    if (isInConstruction(user)) {
+      redirect("/construction/my-reports");
+    }
+    if (isInMarketing(user)) {
+      redirect("/marketing/my-reports");
+    }
+    if (user.role === "team_member") {
+      redirect("/tm/my-reports");
+    }
   }
 
   return (
     <AppShell title="My Report" role={user.role} sidebarVariant="daily-report">
-      <div className="space-y-4">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.35em] text-muted-foreground">My Report</div>
-            <p className="mt-2 text-sm text-muted-foreground">View, edit, or delete reports created by you across all departments.</p>
-          </div>
-          <Button asChild className="w-full sm:w-auto">
-            <Link href="/daily-report/create">Create Report</Link>
-          </Button>
-        </div>
-        <MyReportList />
-      </div>
+      <MyReportList showHeader />
     </AppShell>
   );
 }

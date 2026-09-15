@@ -57,6 +57,7 @@ model Workspace {
   dailyReports   DailyReport[]
   financeReports FinanceReport[]
   companyDetails Company?
+  teamTypes      TeamType[]
 
   constructionReports ConstructionReport[]
   leaveRequests       LeaveRequest[]
@@ -73,21 +74,23 @@ model WorkspaceMember {
   user        User      @relation(fields: [userId], references: [id])
   workspaceId String
   workspace   Workspace @relation(fields: [workspaceId], references: [id])
-  empID       String    @default("")
-  role        String
-  roleTypes   String[]
-  teamNames   String[]
-  teamName    String    @default("")
-  managerName String    @default("")
-  status      String    @default("active")
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  empID           String    @default("")
+  empIDNormalized String?   @default("")
+  role            String
+  roleTypes       String[]
+  teamNames       String[]
+  teamName        String    @default("")
+  managerName     String    @default("")
+  status          String    @default("active")
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   departments WorkspaceMemberDepartment[]
 
   @@unique([userId, workspaceId])
   @@index([workspaceId, role])
+  @@index([workspaceId, empIDNormalized])
 }
 
 model WorkspaceMemberDepartment {
@@ -99,16 +102,21 @@ model WorkspaceMemberDepartment {
 }
 
 model TeamType {
-  id         String   @id @default(uuid())
-  name       String   @unique
-  showName   String
-  department String
-  subTeams   String[]
-  isActive   Boolean  @default(true)
-  isDeleted  Boolean  @default(false)
-  createdBy  String   @default("")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id          String     @id @default(uuid())
+  workspaceId String?
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id])
+  name        String
+  showName    String
+  department  String
+  subTeams    String[]
+  isActive    Boolean    @default(true)
+  isDeleted   Boolean    @default(false)
+  createdBy   String     @default("")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
 }
 
 model Company {
@@ -163,6 +171,11 @@ model DailyReport {
   isLocked                Boolean   @default(false)
   lockedAt                DateTime?
   lockedBy                String?
+  reportManagerStatus         String    @default("")
+  reportManagerReview         String    @default("")
+  reportManagerReviewedBy     String?
+  reportManagerReviewedByName String    @default("")
+  reportManagerReviewedAt     DateTime?
   consolidatedReportId    String?
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
@@ -185,6 +198,7 @@ model FinanceReport {
   submittedBy     String
   submittedByUser User      @relation("FinanceSubmittedBy", fields: [submittedBy], references: [id])
   submittedByName String
+  description     String    @default("")
   exchangeRate    Float     @default(0)
   status          String    @default("pending")
   forwardedBy     String?

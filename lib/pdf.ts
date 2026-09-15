@@ -65,7 +65,7 @@ function toText(value: unknown) {
 
 function cleanTeamName(value: TextValue) {
   const text = toText(value).trim();
-  return !text || text.toLowerCase() === "undefined" ? "MIF Tech Members" : text;
+  return !text || text.toLowerCase() === "undefined" || text === "MIF Tech Members" ? "" : text;
 }
 
 function statusLabel(value?: ReportLike["leaveStatus"]) {
@@ -210,22 +210,30 @@ function renderReportPdfContent(doc: PDFKit.PDFDocument, options: ReportPdfOptio
     for (const report of reports) {
       const cardX = PDF_PAGE_MARGIN_PT;
       const cardWidth = contentWidth;
-      const isConstruction = 
-        (report.teamName || "").toLowerCase().includes("construction") || 
-        (report.constructionWorkPlan && report.constructionWorkPlan.length > 0) ||
-        (report.constructionMaterialUtilization && report.constructionMaterialUtilization.length > 0) ||
-        (report.constructionTomorrowWorkPlan && report.constructionTomorrowWorkPlan.length > 0);
+      const hasConstructionTables = 
+        Boolean(report.constructionWorkPlan && report.constructionWorkPlan.length > 0) ||
+        Boolean(report.constructionMaterialUtilization && report.constructionMaterialUtilization.length > 0) ||
+        Boolean(report.constructionTomorrowWorkPlan && report.constructionTomorrowWorkPlan.length > 0);
 
-      const fields = (isConstruction ? [
-        ...(report.attachmentLink ? [["Attachment Link", report.attachmentLink] as [string, TextValue]] : [])
-      ] : [
-        ["Daily Meeting Update", report.dailyMeetingUpdate],
-        ["Completed Work", report.completedWork],
-        ["Pending Work", report.pendingWork],
-        ["Blockers", report.blockers],
-        ["Required Clarification", report.requiredClarification],
-        ...(report.attachmentLink ? [["Attachment Link", report.attachmentLink] as [string, TextValue]] : [])
-      ]) as Array<[string, TextValue]>;
+      const fields: Array<[string, TextValue]> = [];
+      if (report.attachmentLink) {
+        fields.push(["Attachment Link", report.attachmentLink]);
+      }
+      if (!hasConstructionTables || report.dailyMeetingUpdate) {
+        fields.push(["Daily Meeting Update", report.dailyMeetingUpdate]);
+      }
+      if (!hasConstructionTables || report.completedWork) {
+        fields.push(["Completed Work", report.completedWork]);
+      }
+      if (!hasConstructionTables || report.pendingWork) {
+        fields.push(["Pending Work", report.pendingWork]);
+      }
+      if (!hasConstructionTables || report.blockers) {
+        fields.push(["Blockers", report.blockers]);
+      }
+      if (!hasConstructionTables || report.requiredClarification) {
+        fields.push(["Required Clarification", report.requiredClarification]);
+      }
       const fieldHeights = fields.map(([, value]) => Math.max(34, textHeight(doc, toText(value).trim() || "-", cardWidth - 178, 9) + 19));
       
       let extraHeight = 0;

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { encryptDbField } from "@/lib/crypto/db-encryption";
+import { isWorkspaceAuthorizedForUser } from "@/lib/workspace-context";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -26,6 +27,11 @@ export async function POST(request: Request, { params }: RouteParams) {
     const bank = await db.bankAccount.findUnique({ where: { id } });
     if (!bank || bank.isDeleted) {
       return NextResponse.json({ success: false, status: "NOT_FOUND", message: "Bank account not found" }, { status: 404 });
+    }
+
+    const isAuthorized = await isWorkspaceAuthorizedForUser(user, bank.workspaceId);
+    if (!isAuthorized) {
+      return NextResponse.json({ success: false, status: "FORBIDDEN", message: "Forbidden: You cannot review a bank account from another company/workspace." }, { status: 403 });
     }
 
     const body = await request.json();
@@ -62,6 +68,43 @@ export async function POST(request: Request, { params }: RouteParams) {
         }
       });
 
+      // Send resolution notification to original requester
+      if (bank.editRequestedBy) {
+        try {
+          await db.notification.create({
+            data: {
+              recipientId: bank.editRequestedBy,
+              type: "bank_edit_request_approved",
+              title: "Bank Account Edit Approved",
+              message: `Your edit request for bank account "${bank.bankName}" has been approved by ${user.name}.`,
+              metadata: {
+                bankAccountId: bank.id,
+                bankName: bank.bankName,
+                action: "approve",
+                reviewedBy: user.name
+              },
+              linkUrl: `/finance/banks/${bank.id}`
+            }
+          });
+        } catch (notifErr) {
+          console.error("Failed to create approval notification for requester:", notifErr);
+        }
+      }
+
+      // Mark pending admin/CEO notifications for this bank account as read
+      try {
+        await db.notification.updateMany({
+          where: {
+            type: "bank_edit_request_pending",
+            linkUrl: `/finance/banks/${id}`,
+            isRead: false
+          },
+          data: { isRead: true }
+        });
+      } catch (err) {
+        // Ignore read update errors
+      }
+
       return NextResponse.json({
         success: true,
         status: "SUCCESS",
@@ -75,9 +118,48 @@ export async function POST(request: Request, { params }: RouteParams) {
         where: { id },
         data: {
           editStatus: "rejected",
-          pendingEdits: null as any
+          pendingEdits: null as any,
+          editReason: null,
+          editRequestedBy: null
         }
       });
+
+      // Send resolution notification to original requester
+      if (bank.editRequestedBy) {
+        try {
+          await db.notification.create({
+            data: {
+              recipientId: bank.editRequestedBy,
+              type: "bank_edit_request_rejected",
+              title: "Bank Account Edit Rejected",
+              message: `Your edit request for bank account "${bank.bankName}" was rejected by ${user.name}.`,
+              metadata: {
+                bankAccountId: bank.id,
+                bankName: bank.bankName,
+                action: "reject",
+                reviewedBy: user.name
+              },
+              linkUrl: `/finance/banks/${bank.id}`
+            }
+          });
+        } catch (notifErr) {
+          console.error("Failed to create rejection notification for requester:", notifErr);
+        }
+      }
+
+      // Mark pending admin/CEO notifications for this bank account as read
+      try {
+        await db.notification.updateMany({
+          where: {
+            type: "bank_edit_request_pending",
+            linkUrl: `/finance/banks/${id}`,
+            isRead: false
+          },
+          data: { isRead: true }
+        });
+      } catch (err) {
+        // Ignore read update errors
+      }
 
       return NextResponse.json({
         success: true,

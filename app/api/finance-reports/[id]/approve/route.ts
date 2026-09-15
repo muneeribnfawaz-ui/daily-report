@@ -5,6 +5,7 @@ import { canApproveFinanceReport } from "@/lib/permissions";
 import { logAuditEntry } from "@/lib/audit";
 import { syncReportCashToPettyCash } from "@/lib/petty-cash-sync";
 import { encryptPayload, decryptPayload } from "@/lib/crypto";
+import { isWorkspaceAuthorizedForUser } from "@/lib/workspace-context";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -42,6 +43,11 @@ export async function POST(request: Request, context: RouteContext) {
 
     if (!report) {
       return NextResponse.json({ success: false, message: "Finance report not found" }, { status: 404 });
+    }
+
+    const isAuthorized = await isWorkspaceAuthorizedForUser(user, report.workspaceId);
+    if (!isAuthorized) {
+      return NextResponse.json({ success: false, message: "Forbidden: You cannot review a finance report from another company/workspace." }, { status: 403 });
     }
 
     if (report.status !== "pending" && report.status !== "forwarded_to_ceo") {

@@ -77,7 +77,8 @@ const TEAM_LEAD_SIDEBAR_ITEMS = [
 
 const REPORT_MANAGER_SIDEBAR_ITEMS = [
   { href: "/daily-report/my-reports", label: "My Reports" },
-  { href: "/reports", label: "Reports" }
+  { href: "/reports", label: "TL Reports" },
+  { href: "/consolidated-reports", label: "Consolidated" }
 ] as const satisfies ReadonlyArray<SidebarNavItem>;
 
 const HOD_SIDEBAR_ITEMS = [

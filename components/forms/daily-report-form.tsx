@@ -15,6 +15,7 @@ import type { SessionUser } from "@/lib/types";
 import { ReportField, ReportInput, ReportSelect, ReportTextarea } from "@/components/forms/report-controls";
 import { ConstructionReportFields } from "./construction-report-fields";
 import { MarketingReportFields } from "./marketing-report-fields";
+import { useTranslation } from "@/lib/i18n";
 
 type ApprovalItem = {
   particulars: string;
@@ -67,6 +68,7 @@ type TeamMeetingUpdateItem = {
 };
 
 export function DailyReportForm() {
+  const { t, isRtl } = useTranslation();
   const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
   const [isActuallySubmitting, setIsActuallySubmitting] = useState(false);
@@ -249,7 +251,6 @@ export function DailyReportForm() {
           pendingTasks?: string[];
           blockerTasks?: string[];
           completedDraft?: string;
-          pendingDraft?: string;
           pendingDraft?: string;
           blockerDraft?: string;
           workPlanItems?: any[]; materialItems?: any[]; tomorrowWorkPlanItems?: any[]; marketingSelfItems?: any[]; marketingClientItems?: any[]; };
@@ -469,19 +470,7 @@ export function DailyReportForm() {
             });
           }
         }
-        let hasMarketingError = false;
-        const messages = parsed.error.issues.map((issue) => {
-          if (issue.path[0] === "marketingSelfItems" || issue.path[0] === "marketingClientItems") {
-            hasMarketingError = true;
-            return null;
-          }
-          return issue.message;
-        }).filter(Boolean);
-        
-        if (hasMarketingError) {
-          messages.push("Please fill all mandatory fields (*) correctly in the Marketing tables.");
-        }
-        
+        const messages = parsed.error.issues.map((issue) => issue.message).filter(Boolean);
         const uniqueMessages = Array.from(new Set(messages));
         setMessage(uniqueMessages.length ? uniqueMessages.join(" | ") : "Please fix the highlighted fields and try again.");
         return;
@@ -520,7 +509,28 @@ export function DailyReportForm() {
     }
   };
 
-  if (existingReportNeedsEditAccess && existingReport) {
+  if (existingReport && (currentUser?.role === "team_lead" || existingReportNeedsEditAccess)) {
+    if (currentUser?.role === "team_member" || currentUser?.role === "team_lead") {
+      const returnPath = currentUser?.role === "team_member" ? "/tm/my-reports" : "/daily-report/my-reports";
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border bg-card p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-foreground">Report Already Submitted</h3>
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">
+              {currentUser?.role === "team_lead"
+                ? "You’ve already submitted today’s report. To make changes, please use the Edit option."
+                : "You’ve already submitted today’s report. To make changes, please request edit access."}
+            </p>
+            <div className="mt-6 flex justify-end">
+              <Button onClick={() => router.push(returnPath)}>
+                OK
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="space-y-4">
         <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4">
@@ -548,16 +558,18 @@ export function DailyReportForm() {
 
   return (
     <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSubmit(onSubmit)}>
-      <div className="md:col-span-2 rounded-2xl border bg-background/70 p-4">
-        <div className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Submitting as</div>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Badge variant="soft">{currentUser?.name ?? "Loading user..."}</Badge>
-          <span className="text-sm text-muted-foreground">{currentUser?.email ?? ""}</span>
-          {resolvedSelectedTeam ? <Badge variant="outline">{formatDisplayName(resolvedSelectedTeam)}</Badge> : null}
-          <Badge variant="soft" className="bg-amber-100 text-amber-800 hover:bg-amber-100">Status: Draft</Badge>
+      {currentUser?.role !== "team_lead" && (
+        <div className="md:col-span-2 rounded-2xl border bg-background/70 p-4">
+          <div className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Submitting as</div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Badge variant="soft">{currentUser?.name ?? "Loading user..."}</Badge>
+            <span className="text-sm text-muted-foreground">{currentUser?.email ?? ""}</span>
+            {resolvedSelectedTeam ? <Badge variant="outline">{formatDisplayName(resolvedSelectedTeam)}</Badge> : null}
+            <Badge variant="soft" className="bg-amber-100 text-amber-800 hover:bg-amber-100">Status: Draft</Badge>
+          </div>
+          <div className="mt-3 text-xs text-muted-foreground">Only completed work is required. All other fields are optional.</div>
         </div>
-        <div className="mt-3 text-xs text-muted-foreground">Only completed work is required. All other fields are optional.</div>
-      </div>
+      )}
       {!hasTeamAssignment ? (
         <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/35 dark:text-amber-100">
           No team type is assigned to this account yet, so reports cannot be submitted. Please contact an admin or your manager.
@@ -602,56 +614,62 @@ export function DailyReportForm() {
           </div>
         </div>
       ) : null}
-      <ReportField label="Team / Department" error={errors.teamName?.message}>
-        {teamOptions.length > 1 ? (
-          <ReportSelect
-            value={resolvedSelectedTeam}
-            onChange={(e) => {
-              const val = e.target.value;
-              setSelectedTeam(val);
-              setValue("teamName", val, { shouldDirty: true, shouldValidate: true });
-            }}
-          >
-            {teamOptions.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-          </ReportSelect>
-        ) : (
-          <>
-            <ReportInput disabled value={teamOptions[0]?.label || formatDisplayName(resolvedSelectedTeam)} />
-            <input type="hidden" {...register("teamName")} value={resolvedSelectedTeam} />
-          </>
-        )}
-      </ReportField>
-      <ReportField label="Report type" error={errors.reportType?.message}>
-        <ReportSelect {...register("reportType")}>
-          {["Daily Update", "Bug Fix", "Meeting Notes", "Blocker", "Attendance", "Other"].map((type) => (
-            <option key={type} value={type}>
-              {type}
-            </option>
-          ))}
-        </ReportSelect>
-      </ReportField>
-      <ReportField className="md:col-span-2" label="Attachment link" error={errors.attachmentLink?.message}>
+      {currentUser?.role === "team_lead" ? (
+        <>
+          <input type="hidden" {...register("teamName")} value={resolvedSelectedTeam} />
+          <input type="hidden" {...register("reportType")} />
+        </>
+      ) : (
+        <>
+          <ReportField label={t("reports.teamOrDepartment")} error={errors.teamName?.message}>
+            {teamOptions.length > 1 ? (
+              <ReportSelect
+                value={resolvedSelectedTeam}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSelectedTeam(val);
+                  setValue("teamName", val, { shouldDirty: true, shouldValidate: true });
+                }}
+              >
+                {teamOptions.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </ReportSelect>
+            ) : (
+              <>
+                <ReportInput disabled value={teamOptions[0]?.label || formatDisplayName(resolvedSelectedTeam)} />
+                <input type="hidden" {...register("teamName")} value={resolvedSelectedTeam} />
+              </>
+            )}
+          </ReportField>
+          <ReportField label={t("reports.reportTypeLabel")} error={errors.reportType?.message}>
+            <ReportSelect {...register("reportType")}>
+              {["Daily Update", "Bug Fix", "Meeting Notes", "Blocker", "Attendance", "Other"].map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </ReportSelect>
+          </ReportField>
+        </>
+      )}
+      <ReportField className="md:col-span-2" label={t("reports.attachments")} error={errors.attachmentLink?.message}>
         <ReportInput
           type="url"
           inputMode="url"
-          placeholder="Attachment link (optional)"
+          placeholder={t("reports.attachmentsPlaceholder")}
           {...register("attachmentLink")}
         />
       </ReportField>
       {showDailyMeetingUpdate ? (
         <ReportField
           className="md:col-span-2"
-          label="Daily meeting update"
-          helperText={
-            "Optional. Add only points that were not already mentioned in the meeting."
-          }
+          label={t("reports.dailyMeetingUpdate")}
           error={errors.dailyMeetingUpdate?.message}
         >
-          <ReportTextarea placeholder="Add any new meeting points here" {...register("dailyMeetingUpdate")} />
+          <ReportTextarea placeholder={t("reports.dailyMeetingUpdate")} {...register("dailyMeetingUpdate")} />
         </ReportField>
       ) : null}
       {(!isConstructionTeam && !isMarketingTeam) ? (
@@ -662,13 +680,13 @@ export function DailyReportForm() {
 
       <ReportField
         className="md:col-span-2"
-        label="Completed Work"
+        label={t("reports.completedTasks")}
         required
         helperText="Required. Paste or type completed tasks (one per line)."
         error={errors.completedWork?.message}
       >
         <ReportTextarea
-          placeholder="Paste your completed work here..."
+          placeholder={t("reports.completedTasksPlaceholder")}
           value={completedDraft}
           onChange={(event) => {
             const value = event.target.value;
@@ -683,12 +701,12 @@ export function DailyReportForm() {
       </ReportField>
       <ReportField
         className="md:col-span-2"
-        label="Pending Work"
+        label={t("reports.pendingTasks")}
         helperText="Optional. Paste pending tasks, one per line."
         error={errors.pendingWork?.message}
       >
         <ReportTextarea
-          placeholder="Paste pending work here..."
+          placeholder={t("reports.pendingTasksPlaceholder")}
           value={pendingDraft}
           onChange={(event) => {
             const value = event.target.value;
@@ -703,12 +721,12 @@ export function DailyReportForm() {
       </ReportField>
       <ReportField
         className="md:col-span-2"
-        label="Blockers"
+        label={t("reports.blockers")}
         helperText="Optional. Paste blockers, one per line."
         error={errors.blockers?.message}
       >
         <ReportTextarea
-          placeholder="Paste blockers here..."
+          placeholder={t("reports.blockersPlaceholder")}
           value={blockerDraft}
           onChange={(event) => {
             const value = event.target.value;
@@ -721,9 +739,9 @@ export function DailyReportForm() {
           }}
         />
       </ReportField>
-                <ReportField className="md:col-span-2" label="Required clarification" error={errors.requiredClarification?.message}>
-            <ReportTextarea placeholder="Required Clarification" {...register("requiredClarification")} />
-          </ReportField>
+      <ReportField className="md:col-span-2" label={t("reports.clarifications")} error={errors.requiredClarification?.message}>
+        <ReportTextarea placeholder={t("reports.clarificationsPlaceholder")} {...register("requiredClarification")} />
+      </ReportField>
         </>
       ) : isConstructionTeam ? (
         <ConstructionReportFields
@@ -746,20 +764,20 @@ export function DailyReportForm() {
         <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 dark:border-amber-900/60 dark:bg-amber-950/35">
           <div className="flex items-center justify-between gap-3 mb-4">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-700 dark:text-amber-200">Next Day Approval Required</div>
+              <div className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-700 dark:text-amber-200">{t("reports.nextDayApprovals")}</div>
               <p className="mt-1 text-sm text-muted-foreground dark:text-slate-300">
                 Add items that need CEO approval for the next day. Reason, Review, and Approval will be filled by the CEO.
               </p>
             </div>
-            <Badge variant="outline">{approvalItems.length} item{approvalItems.length === 1 ? "" : "s"}</Badge>
+            <Badge variant="outline">{approvalItems.length} {t("common.details")}</Badge>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-amber-200 dark:border-amber-800">
-                  <th className="py-2 px-2 text-left text-xs font-semibold uppercase tracking-[0.15em] text-amber-800 dark:text-amber-200">Particulars</th>
-                  <th className="py-2 px-2 text-left text-xs font-semibold uppercase tracking-[0.15em] text-amber-800 dark:text-amber-200 w-28">Amount (INR)</th>
-                  <th className="py-2 px-2 text-left text-xs font-semibold uppercase tracking-[0.15em] text-amber-800 dark:text-amber-200 w-28">Amount (Riyal)</th>
+                  <th className="py-2 px-2 text-left rtl:text-right text-xs font-semibold uppercase tracking-[0.15em] text-amber-800 dark:text-amber-200">{t("reports.particulars")}</th>
+                  <th className="py-2 px-2 text-left rtl:text-right text-xs font-semibold uppercase tracking-[0.15em] text-amber-800 dark:text-amber-200 w-28">{t("reports.amountInr")}</th>
+                  <th className="py-2 px-2 text-left rtl:text-right text-xs font-semibold uppercase tracking-[0.15em] text-amber-800 dark:text-amber-200 w-28">{t("reports.amountSar")}</th>
                   <th className="py-2 px-2 w-10" />
                 </tr>
               </thead>
@@ -769,8 +787,8 @@ export function DailyReportForm() {
                     <td className="py-1.5 px-2">
                       <input
                         type="text"
-                        className="w-full rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-sm dark:border-amber-800 dark:bg-slate-900 dark:text-slate-100"
-                        placeholder="Enter particulars"
+                        className="w-full rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-sm dark:border-amber-800 dark:bg-slate-900 dark:text-slate-100 text-left rtl:text-right"
+                        placeholder={t("reports.particulars")}
                         value={item.particulars}
                         onChange={(e) => {
                           const next = [...approvalItems];
@@ -832,13 +850,13 @@ export function DailyReportForm() {
             className="mt-3 text-sm"
             onClick={() => setApprovalItems([...approvalItems, { particulars: "", amountINR: "", amountRiyal: "" }])}
           >
-            + Add Item
+            + {t("common.add")}
           </Button>
         </div>
       ) : null}
       {message ? <p className={`text-sm md:col-span-2 ${message.toLowerCase().includes("success") ? "text-success" : "text-destructive font-medium"}`}>{message}</p> : null}
       <Button className="md:col-span-2 w-fit" type="submit" disabled={isActuallySubmitting || !hasTeamAssignment}>
-        {isActuallySubmitting ? (existingReport ? "Saving..." : "Submitting...") : existingReport ? "Save Changes" : "Submit Report"}
+        {isActuallySubmitting ? (existingReport ? t("common.saving") : t("common.submitting")) : existingReport ? t("common.saveChanges") : t("reports.createReport")}
       </Button>
     </form>
   );

@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
-import { DashboardPageHeader } from "@/components/dashboard/ui";
-import { TeamTypesManager } from "@/components/admin/team-types-manager";
+import { AdminTeamTypesContent } from "@/components/admin/admin-team-types-content";
 import { getCurrentUser } from "@/lib/auth";
 
 export default async function AdminTeamTypesPage() {
@@ -12,14 +11,7 @@ export default async function AdminTeamTypesPage() {
 
   return (
     <AppShell title="Team Types" role={user.role}>
-      <div className="space-y-6">
-        <DashboardPageHeader
-          eyebrow="Directory Settings"
-          title="Team Types"
-          description="Create and manage the team types used across users and reports."
-        />
-        <TeamTypesManager />
-      </div>
+      <AdminTeamTypesContent />
     </AppShell>
   );
 }

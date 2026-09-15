@@ -5,6 +5,8 @@ import { Providers } from "@/components/providers";
 import { APP_NAME } from "@/lib/constants";
 import type { ReactNode } from "react";
 
+import { cookies } from "next/headers";
+
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
@@ -12,13 +14,17 @@ export const metadata: Metadata = {
   description: "Enterprise daily report management for team members, team leads, and admins."
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children
 }: Readonly<{
   children: ReactNode;
 }>) {
+  const cookieStore = await cookies();
+  const lang = cookieStore.get("app_language")?.value === "ar" ? "ar" : "en";
+  const dir = lang === "ar" ? "rtl" : "ltr";
+
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={lang} dir={dir} suppressHydrationWarning>
       <body className={inter.className}>
         <Providers>{children}</Providers>
       </body>

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useTranslation } from "@/lib/i18n";
 
 type ApprovalItemData = {
   particulars: string;
@@ -21,29 +22,30 @@ type CeoApprovalSectionProps = {
   onUpdate?: () => void;
 };
 
-function ApprovalBadge({ status }: { status: string }) {
+function ApprovalBadge({ status, t }: { status: string; t: any }) {
   if (status === "yes") {
     return (
       <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
-        Approved
+        {t("reports.approved")}
       </span>
     );
   }
   if (status === "no") {
     return (
       <span className="inline-flex items-center rounded-full bg-rose-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-rose-700 dark:bg-rose-900/40 dark:text-rose-300">
-        Rejected
+        {t("reports.rejected")}
       </span>
     );
   }
   return (
     <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-      Pending
+      {t("reports.pending")}
     </span>
   );
 }
 
 export function CeoApprovalSection({ reportId, items, isCeo, onUpdate }: CeoApprovalSectionProps) {
+  const { t } = useTranslation();
   const [localItems, setLocalItems] = useState<ApprovalItemData[]>(
     items.map((item) => ({ ...item }))
   );
@@ -63,10 +65,10 @@ export function CeoApprovalSection({ reportId, items, isCeo, onUpdate }: CeoAppr
         approval: item.approval
       }));
       const response = await api.patch(`/api/reports/${reportId}/ceo-approval`, { approvalItems });
-      setMessage(response.data?.message ?? "Approval decisions saved.");
+      setMessage(response.data?.message ?? t("reports.approvalDecisionsSaved"));
       onUpdate?.();
     } catch {
-      setMessage("Failed to save approval decisions. Please try again.");
+      setMessage(t("reports.failedToSaveDecisions"));
     } finally {
       setIsSaving(false);
     }
@@ -77,38 +79,40 @@ export function CeoApprovalSection({ reportId, items, isCeo, onUpdate }: CeoAppr
       <div className="flex items-center justify-between gap-3 mb-4">
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-700 dark:text-amber-200">
-            Next Day Approval Required
+            {t("reports.nextDayApprovalRequired")}
           </div>
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
             {isCeo
-              ? "Review each item and provide your Reason, Review, and Approval decision."
-              : "These items are awaiting CEO approval."}
+              ? t("reports.ceoReviewInstructions")
+              : t("reports.awaitingCeoApproval")}
           </p>
         </div>
-        <Badge variant="outline">{items.length} item{items.length === 1 ? "" : "s"}</Badge>
+        <Badge variant="outline">
+          {items.length === 1 ? t("reports.itemCount") : t("reports.itemsCount", { count: items.length })}
+        </Badge>
       </div>
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="border-b-2 border-amber-300 dark:border-amber-700">
-              <th className="py-2 px-2 text-left text-[11px] font-bold uppercase tracking-[0.15em] text-amber-800 dark:text-amber-200">
-                Particulars
+              <th className="py-2 px-2 text-left rtl:text-right text-[11px] font-bold uppercase tracking-[0.15em] text-amber-800 dark:text-amber-200">
+                {t("reports.particulars")}
               </th>
-              <th className="py-2 px-2 text-right text-[11px] font-bold uppercase tracking-[0.15em] text-amber-800 dark:text-amber-200 w-28">
-                Amount (INR)
+              <th className="py-2 px-2 text-right rtl:text-left text-[11px] font-bold uppercase tracking-[0.15em] text-amber-800 dark:text-amber-200 w-28">
+                {t("reports.amountInr")}
               </th>
-              <th className="py-2 px-2 text-right text-[11px] font-bold uppercase tracking-[0.15em] text-amber-800 dark:text-amber-200 w-28">
-                Amount (Riyal)
+              <th className="py-2 px-2 text-right rtl:text-left text-[11px] font-bold uppercase tracking-[0.15em] text-amber-800 dark:text-amber-200 w-28">
+                {t("reports.amountRiyal")}
               </th>
-              <th className="py-2 px-2 text-left text-[11px] font-bold uppercase tracking-[0.15em] text-amber-800 dark:text-amber-200">
-                Reason
+              <th className="py-2 px-2 text-left rtl:text-right text-[11px] font-bold uppercase tracking-[0.15em] text-amber-800 dark:text-amber-200">
+                {t("common.reason")}
               </th>
-              <th className="py-2 px-2 text-left text-[11px] font-bold uppercase tracking-[0.15em] text-amber-800 dark:text-amber-200">
-                Review
+              <th className="py-2 px-2 text-left rtl:text-right text-[11px] font-bold uppercase tracking-[0.15em] text-amber-800 dark:text-amber-200">
+                {t("reports.review")}
               </th>
               <th className="py-2 px-2 text-center text-[11px] font-bold uppercase tracking-[0.15em] text-amber-800 dark:text-amber-200 w-28">
-                Approval
+                {t("reports.approval")}
               </th>
             </tr>
           </thead>
@@ -121,10 +125,10 @@ export function CeoApprovalSection({ reportId, items, isCeo, onUpdate }: CeoAppr
                 <td className="py-2 px-2 text-slate-900 dark:text-slate-100 font-medium">
                   {item.particulars}
                 </td>
-                <td className="py-2 px-2 text-right text-slate-900 dark:text-slate-100 tabular-nums">
+                <td className="py-2 px-2 text-right rtl:text-left text-slate-900 dark:text-slate-100 tabular-nums">
                   {item.amountINR.toLocaleString("en-IN")}
                 </td>
-                <td className="py-2 px-2 text-right text-slate-900 dark:text-slate-100 tabular-nums">
+                <td className="py-2 px-2 text-right rtl:text-left text-slate-900 dark:text-slate-100 tabular-nums">
                   {item.amountRiyal.toLocaleString("en-SA")}
                 </td>
                 <td className="py-2 px-2">
@@ -132,7 +136,7 @@ export function CeoApprovalSection({ reportId, items, isCeo, onUpdate }: CeoAppr
                     <input
                       type="text"
                       className="w-full rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-sm dark:border-amber-800 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="Reason"
+                      placeholder={t("common.reason")}
                       value={item.reason}
                       onChange={(e) => {
                         const next = [...localItems];
@@ -149,7 +153,7 @@ export function CeoApprovalSection({ reportId, items, isCeo, onUpdate }: CeoAppr
                     <input
                       type="text"
                       className="w-full rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-sm dark:border-amber-800 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="Review"
+                      placeholder={t("reports.review")}
                       value={item.review}
                       onChange={(e) => {
                         const next = [...localItems];
@@ -164,7 +168,7 @@ export function CeoApprovalSection({ reportId, items, isCeo, onUpdate }: CeoAppr
                 <td className="py-2 px-2 text-center">
                   {isCeo ? (
                     <select
-                      className="w-full rounded-lg border border-amber-200 bg-white px-2 py-1.5 text-sm font-medium dark:border-amber-800 dark:bg-slate-900 dark:text-slate-100"
+                      className="rounded-lg border border-amber-200 bg-white px-2 py-1.5 text-sm font-medium dark:border-amber-800 dark:bg-slate-900 dark:text-slate-100"
                       value={item.approval}
                       onChange={(e) => {
                         const next = [...localItems];
@@ -175,12 +179,12 @@ export function CeoApprovalSection({ reportId, items, isCeo, onUpdate }: CeoAppr
                         setLocalItems(next);
                       }}
                     >
-                      <option value="pending">Pending</option>
-                      <option value="yes">Yes</option>
-                      <option value="no">No</option>
+                      <option value="pending">{t("reports.pending")}</option>
+                      <option value="yes">{t("reports.approved")}</option>
+                      <option value="no">{t("reports.rejected")}</option>
                     </select>
                   ) : (
-                    <ApprovalBadge status={item.approval} />
+                    <ApprovalBadge status={item.approval} t={t} />
                   )}
                 </td>
               </tr>
@@ -189,20 +193,14 @@ export function CeoApprovalSection({ reportId, items, isCeo, onUpdate }: CeoAppr
         </table>
       </div>
 
-      {isCeo ? (
-        <div className="mt-4 flex items-center gap-3">
-          <Button type="button" onClick={handleSave} disabled={isSaving}>
-            {isSaving ? "Saving..." : "Save Decisions"}
+      {isCeo && (
+        <div className="mt-4 flex items-center justify-end gap-3">
+          {message && <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{message}</span>}
+          <Button onClick={handleSave} disabled={isSaving} className="bg-primary hover:bg-primaryDark text-primary-foreground font-bold">
+            {isSaving ? t("common.saving") : t("common.save")}
           </Button>
-          {message ? (
-            <span className="text-sm text-emerald-700 dark:text-emerald-300">{message}</span>
-          ) : null}
         </div>
-      ) : null}
-
-      {!isCeo && message ? (
-        <div className="mt-3 text-sm text-slate-600 dark:text-slate-400">{message}</div>
-      ) : null}
+      )}
     </div>
   );
 }

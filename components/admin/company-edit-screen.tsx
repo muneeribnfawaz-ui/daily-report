@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useSession } from "@/hooks/use-session";
+import { useTranslation } from "@/lib/i18n";
 
 interface CompanyEditScreenProps {
   companyId: string;
@@ -46,6 +47,7 @@ export function CompanyEditScreen({
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data: sessionUser } = useSession();
+  const { t, isRtl } = useTranslation();
   const isAdmin = sessionUser?.role === "admin";
 
   const [name, setName] = useState("");
@@ -126,7 +128,7 @@ export function CompanyEditScreen({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-12 text-sm text-muted-foreground">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading company details...
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t("common.loading")}
       </div>
     );
   }
@@ -134,10 +136,10 @@ export function CompanyEditScreen({
   if (isError || !company) {
     return (
       <div className="rounded-xl border border-rose-200 bg-rose-50 p-6 text-center text-sm font-medium text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
-        Company not found or failed to load.
+        {t("companies.noCompaniesFound")}
         <div className="mt-4">
           <Button asChild variant="outline" size="sm">
-            <Link href={backHref as Route}>Back to Companies</Link>
+            <Link href={backHref as Route}>{t("companies.backToCompanies") || t("common.back")}</Link>
           </Button>
         </div>
       </div>
@@ -149,21 +151,21 @@ export function CompanyEditScreen({
       {/* Header Info Card */}
       <div className="rounded-xl border border-cardBorder bg-card p-4 sm:p-5 shadow-soft">
         <div className="flex items-center gap-3">
-          <Button asChild variant="outline" size="icon" className="shrink-0">
+          <Button asChild type="button" variant="outline" size="icon" className="h-9 w-9 rounded-xl shrink-0">
             <Link
               href={backHref as Route}
-              title="Back to companies"
-              aria-label="Back to companies"
+              title={t("companies.backToCompanies") || t("common.back")}
+              aria-label={t("companies.backToCompanies") || t("common.back")}
             >
-              <ArrowLeft className="h-4 w-4" />
+              <ArrowLeft className="h-4 w-4 rtl:rotate-180" />
             </Link>
           </Button>
           <div>
             <h2 className="text-xl font-semibold tracking-tight">
-              Edit Company: {company.name}
+              {t("companies.titleEdit")}: {company.name}
             </h2>
             <div className="mt-1 text-sm text-muted-foreground">
-              Modify details, organization code, and active status.
+              {t("companies.descEdit")}
             </div>
           </div>
         </div>
@@ -174,7 +176,7 @@ export function CompanyEditScreen({
         <div className="flex items-center gap-2 border-b pb-4 mb-5">
           <Edit2 className="h-5 w-5 text-primary" />
           <h3 className="text-lg font-semibold tracking-tight">
-            Organization Details
+            {t("companies.organizationDetails")}
           </h3>
         </div>
 
@@ -191,11 +193,11 @@ export function CompanyEditScreen({
                 htmlFor="companyName"
                 className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
               >
-                Company Name <span className="text-rose-500">*</span>
+                {t("companies.companyName")} <span className="text-rose-500">*</span>
               </label>
               <Input
                 id="companyName"
-                placeholder="e.g. MIF Technology Ltd"
+                placeholder={t("companies.companyName")}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
@@ -206,11 +208,11 @@ export function CompanyEditScreen({
                 htmlFor="companyCode"
                 className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
               >
-                Company Code (Optional)
+                {t("companies.companyCode")} ({t("common.optional")})
               </label>
               <Input
                 id="companyCode"
-                placeholder="e.g. MIFT"
+                placeholder={t("companies.companyCode")}
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
               />
@@ -220,7 +222,7 @@ export function CompanyEditScreen({
           {isAdmin && (
             <div>
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Workspace Type
+                {t("common.workspace")} Type
               </label>
               <div className="flex items-center gap-6 pt-1">
                 <label className="flex items-center gap-2 text-sm font-medium text-foreground cursor-pointer">
@@ -254,12 +256,12 @@ export function CompanyEditScreen({
               htmlFor="companyDesc"
               className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
             >
-              Description (Optional)
+              {t("companies.description")} ({t("common.optional")})
             </label>
             <Textarea
               id="companyDesc"
               rows={3}
-              placeholder="Enter details about this organization or entity..."
+              placeholder={t("companies.description")}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />
@@ -277,26 +279,26 @@ export function CompanyEditScreen({
               htmlFor="isActiveToggle"
               className="text-sm font-medium text-foreground cursor-pointer"
             >
-              Active Organization Status
+              {t("common.active")}
             </label>
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-4 border-t">
+          <div className="flex items-center justify-end rtl:justify-start gap-3 pt-4 border-t">
             <Button
               type="button"
               variant="outline"
               onClick={() => router.push(backHref as Route)}
               disabled={updateMutation.isPending}
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button type="submit" disabled={updateMutation.isPending}>
               {updateMutation.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-2 rtl:ml-2 rtl:mr-0 h-4 w-4 animate-spin" />
               ) : (
-                <Building2 className="mr-2 h-4 w-4" />
+                <Building2 className="mr-2 rtl:ml-2 rtl:mr-0 h-4 w-4" />
               )}
-              Update Company
+              {updateMutation.isPending ? t("common.saving") : t("common.saveChanges")}
             </Button>
           </div>
         </form>

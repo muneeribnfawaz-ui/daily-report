@@ -23,6 +23,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
+import { useTranslation } from "@/lib/i18n";
+
 type BankBalanceItem = {
   id: string;
   bankName: string;
@@ -86,53 +88,80 @@ function formatDateTime(value: Date | string) {
 }
 
 function PriorityBadge({ priority }: { priority?: string }) {
+  const { t } = useTranslation();
   const p = priority?.toLowerCase() || "medium";
   const variants: Record<string, { className: string; label: string }> = {
     urgent: {
       className: "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/15 dark:text-rose-300 font-bold",
-      label: "Urgent"
+      label: t("moneyRequests.priorityUrgent", "Urgent")
     },
     high: {
       className: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300 font-semibold",
-      label: "High"
+      label: t("moneyRequests.priorityHigh", "High")
     },
     medium: {
       className: "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/15 dark:text-sky-300",
-      label: "Medium"
+      label: t("moneyRequests.priorityMedium", "Medium")
     },
     low: {
       className: "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-700/60 dark:bg-slate-800/60 dark:text-slate-300",
-      label: "Low"
+      label: t("moneyRequests.priorityLow", "Low")
     }
   };
   const v = variants[p] || variants.medium;
   return (
     <Badge variant="outline" className={`rounded-full px-3 py-1 text-xs font-semibold tracking-wide ${v.className}`}>
-      {v.label} Priority
+      {v.label} {t("moneyRequests.priority", "Priority")}
     </Badge>
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, userRole }: { status: string; userRole?: string }) {
+  const { t } = useTranslation();
+  if (userRole === "ceo") {
+    if (status === "pending") {
+      return (
+        <Badge
+          variant="outline"
+          className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1 text-xs font-bold shadow-none border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/15 dark:text-sky-300"
+        >
+          <Clock className="h-3.5 w-3.5" />
+          <span>{t("moneyRequests.waitingForHod", "Waiting for HOD's Forward")}</span>
+        </Badge>
+      );
+    }
+    if (status === "forwarded_to_ceo") {
+      return (
+        <Badge
+          variant="outline"
+          className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1 text-xs font-bold shadow-none border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300"
+        >
+          <Clock className="h-3.5 w-3.5" />
+          <span>{t("moneyRequests.pending", "Pending")}</span>
+        </Badge>
+      );
+    }
+  }
+
   const variants: Record<string, { className: string; label: string; icon: any }> = {
     pending: {
       className: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300",
-      label: "Pending Review",
+      label: t("moneyRequests.pendingReview", "Pending Review"),
       icon: Clock
     },
     forwarded_to_ceo: {
       className: "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/15 dark:text-indigo-300",
-      label: "Forwarded to CEO",
+      label: t("moneyRequests.forwardedToCeo", "Forwarded to CEO"),
       icon: Clock
     },
     approved: {
       className: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300",
-      label: "Approved",
+      label: t("moneyRequests.approved", "Approved"),
       icon: CheckCircle2
     },
     rejected: {
       className: "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/15 dark:text-rose-300",
-      label: "Rejected",
+      label: t("moneyRequests.rejected", "Rejected"),
       icon: XCircle
     }
   };
@@ -154,6 +183,7 @@ export function MoneyRequestDetail({
   canApprove = false
 }: MoneyRequestDetailProps) {
   const router = useRouter();
+  const { t, isRtl } = useTranslation();
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
 
@@ -177,7 +207,7 @@ export function MoneyRequestDetail({
   const isRejected = moneyRequest.status === "rejected";
 
   const canHodAction = isHod && !isCeoOrAdmin && isPending;
-  const canCeoAction = isCeoOrAdmin && (isPending || isForwarded);
+  const canCeoAction = userRole === "ceo" ? isForwarded : userRole === "admin" ? (isPending || isForwarded) : canApprove && isForwarded;
   const canEdit = isPending && (moneyRequest.submittedBy === currentUserId || userRole === "admin" || userRole === "ceo");
 
   const hasRevision = moneyRequest.revisedAmountINR !== null && moneyRequest.revisedAmountINR !== undefined;
@@ -200,7 +230,7 @@ export function MoneyRequestDetail({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message || "Failed to perform action");
+        throw new Error(data.message || t("moneyRequests.failedProcess", "Failed to perform action"));
       }
 
       if (action === "reject") {
@@ -210,7 +240,7 @@ export function MoneyRequestDetail({
 
       router.refresh();
     } catch (err: any) {
-      setErrorMsg(err.message || "An error occurred");
+      setErrorMsg(err.message || t("common.errorOccurred", "An error occurred"));
     } finally {
       setIsSubmitting(false);
     }
@@ -219,7 +249,7 @@ export function MoneyRequestDetail({
   const handleConfirmRevise = async () => {
     const amount = Number(revisedAmountINRInput);
     if (isNaN(amount) || amount <= 0) {
-      setErrorMsg("Please enter a valid revised amount in INR.");
+      setErrorMsg(t("moneyRequests.enterValidAmount", "Please enter a valid revised amount in INR."));
       return;
     }
 
@@ -242,13 +272,13 @@ export function MoneyRequestDetail({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message || "Failed to revise and approve request");
+        throw new Error(data.message || t("moneyRequests.failedRevise", "Failed to revise and approve request"));
       }
 
       setIsReviseModalOpen(false);
       router.refresh();
     } catch (err: any) {
-      setErrorMsg(err.message || "An error occurred");
+      setErrorMsg(err.message || t("common.errorOccurred", "An error occurred"));
     } finally {
       setIsSubmitting(false);
     }
@@ -258,21 +288,17 @@ export function MoneyRequestDetail({
     <div className="space-y-6">
       {/* Top Header & Navigation */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            <Link
-              href="/finance/requests"
-              className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              <span>Money Requests</span>
+        <div className="flex items-center gap-3">
+          <Button asChild variant="outline" size="icon" className="h-9 w-9 rounded-xl shrink-0">
+            <Link href="/finance/requests" title={t("common.back", "Back")} aria-label={t("common.back", "Back")}>
+              <ArrowLeft className="h-4 w-4 rtl:rotate-180" />
             </Link>
-            <span>/</span>
-            <span>Detail View</span>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">{moneyRequest.particulars}</h1>
-            <StatusBadge status={moneyRequest.status} />
+          </Button>
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-2xl font-bold tracking-tight text-foreground">{moneyRequest.particulars}</h1>
+              <StatusBadge status={moneyRequest.status} userRole={userRole} />
+            </div>
           </div>
         </div>
 
@@ -281,8 +307,8 @@ export function MoneyRequestDetail({
           {canEdit && (
             <Button asChild variant="outline" size="sm" className="rounded-xl border-border">
               <Link href={`/finance/requests/${moneyRequest.id}/edit`}>
-                <Edit3 className="mr-1.5 h-3.5 w-3.5" />
-                Edit Request
+                <Edit3 className="mr-1.5 rtl:ml-1.5 rtl:mr-0 h-3.5 w-3.5" />
+                {t("moneyRequests.editRequest", "Edit Request")}
               </Link>
             </Button>
           )}
@@ -295,8 +321,8 @@ export function MoneyRequestDetail({
                 onClick={() => handleAction("forward")}
                 disabled={isSubmitting}
               >
-                {isSubmitting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-1.5 h-3.5 w-3.5" />}
-                Forward to CEO
+                {isSubmitting ? <Loader2 className="mr-1.5 rtl:ml-1.5 rtl:mr-0 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-1.5 rtl:ml-1.5 rtl:mr-0 h-3.5 w-3.5" />}
+                {t("moneyRequests.forwardToCeo", "Forward to CEO")}
               </Button>
               <Button
                 size="sm"
@@ -308,8 +334,8 @@ export function MoneyRequestDetail({
                 }}
                 disabled={isSubmitting}
               >
-                <XCircle className="mr-1.5 h-3.5 w-3.5" />
-                Reject
+                <XCircle className="mr-1.5 rtl:ml-1.5 rtl:mr-0 h-3.5 w-3.5" />
+                {t("moneyRequests.reject", "Reject")}
               </Button>
             </>
           )}
@@ -322,8 +348,8 @@ export function MoneyRequestDetail({
                 onClick={() => handleAction("approve")}
                 disabled={isSubmitting}
               >
-                {isSubmitting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1.5 h-3.5 w-3.5" />}
-                Approve Request
+                {isSubmitting ? <Loader2 className="mr-1.5 rtl:ml-1.5 rtl:mr-0 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1.5 rtl:ml-1.5 rtl:mr-0 h-3.5 w-3.5" />}
+                {t("moneyRequests.approveRequest", "Approve Request")}
               </Button>
               <Button
                 size="sm"
@@ -337,8 +363,8 @@ export function MoneyRequestDetail({
                 }}
                 disabled={isSubmitting}
               >
-                <Edit3 className="mr-1.5 h-3.5 w-3.5" />
-                Revise & Approve
+                <Edit3 className="mr-1.5 rtl:ml-1.5 rtl:mr-0 h-3.5 w-3.5" />
+                {t("moneyRequests.reviseApprove", "Revise & Approve")}
               </Button>
               <Button
                 size="sm"
@@ -350,8 +376,8 @@ export function MoneyRequestDetail({
                 }}
                 disabled={isSubmitting}
               >
-                <XCircle className="mr-1.5 h-3.5 w-3.5" />
-                Reject
+                <XCircle className="mr-1.5 rtl:ml-1.5 rtl:mr-0 h-3.5 w-3.5" />
+                {t("moneyRequests.reject", "Reject")}
               </Button>
             </>
           )}
@@ -366,11 +392,11 @@ export function MoneyRequestDetail({
           </div>
           <div className="space-y-1">
             <div className="font-bold text-sm">
-              Money Request Rejected {moneyRequest.reviewedByName ? `by ${moneyRequest.reviewedByName}` : ""}
-              {moneyRequest.reviewedAt ? ` on ${formatDateTime(moneyRequest.reviewedAt)}` : ""}
+              {t("moneyRequests.rejectedBy", { name: moneyRequest.reviewedByName || "" }, `Money Request Rejected ${moneyRequest.reviewedByName ? `by ${moneyRequest.reviewedByName}` : ""}`)}
+              {moneyRequest.reviewedAt ? ` ${t("common.on", "on")} ${formatDateTime(moneyRequest.reviewedAt)}` : ""}
             </div>
             <p className="text-xs text-rose-800 dark:text-rose-300 font-medium">
-              <strong className="font-semibold">Reason:</strong> "{moneyRequest.reviewComment || "No specific reason provided."}"
+              <strong className="font-semibold">{t("moneyRequests.reason", "Reason")}:</strong> "{moneyRequest.reviewComment || t("moneyRequests.noReasonProvided", "No specific reason provided.")}"
             </p>
           </div>
         </div>
@@ -383,11 +409,11 @@ export function MoneyRequestDetail({
           </div>
           <div className="space-y-1">
             <div className="font-bold text-sm">
-              Forwarded to CEO for Executive Approval
+              {t("moneyRequests.forwardedToCeoBanner", "Forwarded to CEO for Executive Approval")}
             </div>
             <p className="text-xs text-indigo-800 dark:text-indigo-300 font-medium">
-              Forwarded by <strong className="font-semibold">{moneyRequest.reviewedByName || "HOD"}</strong>
-              {moneyRequest.reviewedAt ? ` on ${formatDateTime(moneyRequest.reviewedAt)}` : ""}. Awaiting CEO review.
+              {t("moneyRequests.forwardedByBanner", { name: moneyRequest.reviewedByName || "HOD" }, `Forwarded by ${moneyRequest.reviewedByName || "HOD"}`)}
+              {moneyRequest.reviewedAt ? ` ${t("common.on", "on")} ${formatDateTime(moneyRequest.reviewedAt)}` : ""}. {t("moneyRequests.awaitingCeoReview", "Awaiting CEO review.")}
             </p>
           </div>
         </div>
@@ -400,11 +426,11 @@ export function MoneyRequestDetail({
           </div>
           <div className="space-y-1">
             <div className="font-bold text-sm">
-              Money Request Approved {moneyRequest.reviewedByName ? `by ${moneyRequest.reviewedByName}` : ""}
+              {t("moneyRequests.approvedBy", { name: moneyRequest.reviewedByName || "" }, `Money Request Approved ${moneyRequest.reviewedByName ? `by ${moneyRequest.reviewedByName}` : ""}`)}
             </div>
             <p className="text-xs text-emerald-800 dark:text-emerald-300 font-medium">
-              Approved on {moneyRequest.reviewedAt ? formatDateTime(moneyRequest.reviewedAt) : formatDate(moneyRequest.reportDate)}.
-              {hasRevision ? ` Revised reference: ${moneyRequest.revisionReference || "N/A"}` : ""}
+              {t("moneyRequests.approvedOn", "Approved on")} {moneyRequest.reviewedAt ? formatDateTime(moneyRequest.reviewedAt) : formatDate(moneyRequest.reportDate)}.
+              {hasRevision ? ` ${t("moneyRequests.revisedReference", "Revised reference")}: ${moneyRequest.revisionReference || "N/A"}` : ""}
             </p>
           </div>
         </div>
@@ -414,40 +440,40 @@ export function MoneyRequestDetail({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {/* Requested INR */}
         <div className="rounded-2xl border border-cardBorder bg-card p-5 shadow-soft dark:border-border/60">
-          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Requested Amount (INR)</span>
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("moneyRequests.requestedAmountInr", "Requested Amount (INR)")}</span>
           <div className="mt-2 text-2xl font-bold tabular-nums text-foreground">
             {formatCurrency(moneyRequest.amountINR)}
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">Specify INR value</div>
+          <div className="mt-1 text-xs text-muted-foreground">{t("moneyRequests.inrValue", "INR value")}</div>
         </div>
 
         {/* Equivalent SAR */}
         <div className="rounded-2xl border border-cardBorder bg-card p-5 shadow-soft dark:border-border/60">
-          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Amount (SAR)</span>
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("moneyRequests.amountSar", "Amount (SAR)")}</span>
           <div className="mt-2 text-2xl font-bold tabular-nums text-foreground">
             {formatSAR(moneyRequest.amountSAR)}
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">Converted SAR amount</div>
+          <div className="mt-1 text-xs text-muted-foreground">{t("moneyRequests.convertedSar", "Converted SAR amount")}</div>
         </div>
 
         {/* Approved Amount */}
         <div className="rounded-2xl border border-cardBorder bg-card p-5 shadow-soft dark:border-border/60">
-          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Approved Money</span>
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("moneyRequests.approvedMoney", "Approved Money")}</span>
           <div className="mt-2 text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
             {approvedINR !== null ? formatCurrency(approvedINR) : "—"}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
-            {hasRevision ? `Revised: ${formatSAR(approvedSAR!)}` : isApproved ? "Approved as requested" : "Pending approval"}
+            {hasRevision ? `${t("moneyRequests.revised", "Revised")}: ${formatSAR(approvedSAR!)}` : isApproved ? t("moneyRequests.approvedAsRequested", "Approved as requested") : t("moneyRequests.pendingApproval", "Pending approval")}
           </div>
         </div>
 
         {/* Priority Card */}
         <div className="rounded-2xl border border-cardBorder bg-card p-5 shadow-soft dark:border-border/60 flex flex-col justify-between">
-          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Priority Level</span>
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("moneyRequests.priorityLevel", "Priority Level")}</span>
           <div className="mt-2">
             <PriorityBadge priority={moneyRequest.priority} />
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">Submission priority</div>
+          <div className="mt-1 text-xs text-muted-foreground">{t("moneyRequests.submissionPriority", "Submission priority")}</div>
         </div>
       </div>
 
@@ -457,42 +483,42 @@ export function MoneyRequestDetail({
         <div className="space-y-6 lg:col-span-2">
           {/* Information Card */}
           <div className="rounded-2xl border border-cardBorder bg-card p-6 shadow-soft space-y-5 dark:border-border/60">
-            <h2 className="text-base font-bold text-foreground border-b border-border/60 pb-3">Request Summary & Details</h2>
+            <h2 className="text-base font-bold text-foreground border-b border-border/60 pb-3">{t("moneyRequests.summaryDetails", "Request Summary & Details")}</h2>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Particulars</label>
+                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("moneyRequests.particulars", "Particulars")}</label>
                 <div className="mt-1 text-base font-bold text-foreground">{moneyRequest.particulars}</div>
               </div>
 
               <div>
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Target Bank Account</label>
+                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("moneyRequests.targetBank", "Target Bank Account")}</label>
                 <div className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-foreground">
                   <Building2 className="h-4 w-4 text-primary" />
-                  <span>{moneyRequest.bankName || "No specific bank selected"}</span>
+                  <span>{moneyRequest.bankName || t("moneyRequests.noBankSelected", "No specific bank selected")}</span>
                 </div>
               </div>
             </div>
 
             <div>
-              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Description / Purpose</label>
+              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("moneyRequests.descriptionPurpose", "Description / Purpose")}</label>
               <div className="mt-1.5 rounded-xl bg-muted/40 dark:bg-muted/20 p-4 text-sm text-foreground whitespace-pre-wrap min-h-[90px] border border-border/40">
-                {moneyRequest.description || "No description provided."}
+                {moneyRequest.description || t("common.noDescription", "No description provided.")}
               </div>
             </div>
 
             {hasRevision && (
               <div className="rounded-xl border border-amber-300/60 bg-amber-500/10 p-4 space-y-2 dark:border-amber-500/30">
                 <div className="text-xs font-bold text-amber-700 dark:text-amber-300 uppercase tracking-wider">
-                  Revision Details
+                  {t("moneyRequests.revisionDetails", "Revision Details")}
                 </div>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 text-xs">
                   <div>
-                    <span className="text-muted-foreground">Revised Amount: </span>
+                    <span className="text-muted-foreground">{t("moneyRequests.revisedAmount", "Revised Amount")}: </span>
                     <span className="font-bold text-foreground">{formatCurrency(moneyRequest.revisedAmountINR!)} ({formatSAR(moneyRequest.revisedAmountSAR!)})</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">Revision Reference: </span>
+                    <span className="text-muted-foreground">{t("moneyRequests.revisionReference", "Revision Reference")}: </span>
                     <span className="font-semibold text-foreground">{moneyRequest.revisionReference || "N/A"}</span>
                   </div>
                 </div>
@@ -505,26 +531,26 @@ export function MoneyRequestDetail({
         <div className="space-y-6">
           {/* Metadata Card */}
           <div className="rounded-2xl border border-cardBorder bg-card p-6 shadow-soft space-y-4 dark:border-border/60">
-            <h3 className="text-sm font-bold text-foreground border-b border-border/60 pb-3">Submission Metadata</h3>
+            <h3 className="text-sm font-bold text-foreground border-b border-border/60 pb-3">{t("moneyRequests.submissionMetadata", "Submission Metadata")}</h3>
 
             <div className="space-y-3.5 text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground flex items-center gap-1.5">
-                  <User className="h-3.5 w-3.5 text-muted-foreground" /> Submitted By
+                  <User className="h-3.5 w-3.5 text-muted-foreground" /> {t("reports.submittedBy", "Submitted By")}
                 </span>
                 <span className="font-semibold text-foreground">{moneyRequest.submittedByName}</span>
               </div>
 
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground flex items-center gap-1.5">
-                  <Calendar className="h-3.5 w-3.5 text-muted-foreground" /> Report Date
+                  <Calendar className="h-3.5 w-3.5 text-muted-foreground" /> {t("reports.reportDate", "Report Date")}
                 </span>
                 <span className="font-semibold text-foreground">{formatDate(moneyRequest.reportDate)}</span>
               </div>
 
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground flex items-center gap-1.5">
-                  <Clock className="h-3.5 w-3.5 text-muted-foreground" /> Created At
+                  <Clock className="h-3.5 w-3.5 text-muted-foreground" /> {t("common.createdAt", "Created At")}
                 </span>
                 <span className="font-semibold text-foreground">{formatDateTime(moneyRequest.createdAt)}</span>
               </div>
@@ -532,13 +558,13 @@ export function MoneyRequestDetail({
               {moneyRequest.reviewedByName && (
                 <>
                   <div className="border-t border-border/50 pt-3 flex items-center justify-between">
-                    <span className="text-muted-foreground">Reviewed By</span>
+                    <span className="text-muted-foreground">{t("reports.reviewedBy", "Reviewed By")}</span>
                     <span className="font-semibold text-foreground">{moneyRequest.reviewedByName}</span>
                   </div>
 
                   {moneyRequest.reviewedAt && (
                     <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Reviewed At</span>
+                      <span className="text-muted-foreground">{t("reports.reviewedAt", "Reviewed At")}</span>
                       <span className="font-semibold text-foreground">{formatDateTime(moneyRequest.reviewedAt)}</span>
                     </div>
                   )}
@@ -559,8 +585,8 @@ export function MoneyRequestDetail({
                   <Edit3 className="h-5 w-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-foreground">Revise & Approve Money Request</h3>
-                  <p className="text-xs text-muted-foreground">Adjust the approved money amount before approval</p>
+                  <h3 className="text-base font-bold text-foreground">{t("moneyRequests.reviseApproveTitle", "Revise & Approve Money Request")}</h3>
+                  <p className="text-xs text-muted-foreground">{t("moneyRequests.reviseApproveSubtitle", "Adjust the approved money amount before approval")}</p>
                 </div>
               </div>
               <Button
@@ -581,7 +607,7 @@ export function MoneyRequestDetail({
                 <span className="text-foreground font-bold">{formatCurrency(moneyRequest.amountINR)}</span>
               </div>
               <div className="text-muted-foreground">
-                Submitted by <span className="font-medium text-foreground">{moneyRequest.submittedByName}</span>
+                {t("reports.submittedBy", "Submitted by")} <span className="font-medium text-foreground">{moneyRequest.submittedByName}</span>
               </div>
             </div>
 
@@ -589,7 +615,7 @@ export function MoneyRequestDetail({
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <label htmlFor="detail-revised-amount-input" className="block text-xs font-semibold text-foreground">
-                  Revised Amount (INR) <span className="text-amber-600 dark:text-amber-400">*</span>
+                  {t("moneyRequests.revisedAmountInr", "Revised Amount (INR)")} <span className="text-amber-600 dark:text-amber-400">*</span>
                 </label>
                 <Input
                   id="detail-revised-amount-input"
@@ -599,20 +625,20 @@ export function MoneyRequestDetail({
                     setRevisedAmountINRInput(e.target.value);
                     if (errorMsg) setErrorMsg("");
                   }}
-                  placeholder="Enter revised INR amount..."
+                  placeholder={t("moneyRequests.enterRevisedAmount", "Enter revised INR amount...")}
                   className="w-full text-xs rounded-xl bg-background border-input text-foreground"
                 />
               </div>
 
               <div className="space-y-1.5">
                 <label htmlFor="detail-revision-reference-input" className="block text-xs font-semibold text-foreground">
-                  Revision Reference / Note
+                  {t("moneyRequests.revisionReference", "Revision Reference / Note")}
                 </label>
                 <Input
                   id="detail-revision-reference-input"
                   value={revisionReferenceInput}
                   onChange={(e) => setRevisionReferenceInput(e.target.value)}
-                  placeholder="e.g. Approved with revised budget allocation"
+                  placeholder={t("moneyRequests.revisionRefPlaceholder", "e.g. Approved with revised budget allocation")}
                   className="w-full text-xs rounded-xl bg-background border-input text-foreground"
                 />
               </div>
@@ -634,7 +660,7 @@ export function MoneyRequestDetail({
                 onClick={() => setIsReviseModalOpen(false)}
                 disabled={isSubmitting}
               >
-                Cancel
+                {t("common.cancel", "Cancel")}
               </Button>
               <Button
                 type="button"
@@ -645,11 +671,11 @@ export function MoneyRequestDetail({
               >
                 {isSubmitting ? (
                   <>
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                    Saving...
+                    <Loader2 className="mr-1.5 rtl:ml-1.5 rtl:mr-0 h-3.5 w-3.5 animate-spin" />
+                    {t("common.saving", "Saving...")}
                   </>
                 ) : (
-                  "Confirm & Approve Revision"
+                  t("moneyRequests.confirmApproveRevision", "Confirm & Approve Revision")
                 )}
               </Button>
             </div>
@@ -667,8 +693,8 @@ export function MoneyRequestDetail({
                   <XCircle className="h-5 w-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-foreground">Reject Money Request</h3>
-                  <p className="text-xs text-muted-foreground">Provide a reason for rejecting this request</p>
+                  <h3 className="text-base font-bold text-foreground">{t("moneyRequests.rejectTitle", "Reject Money Request")}</h3>
+                  <p className="text-xs text-muted-foreground">{t("moneyRequests.rejectSubtitle", "Provide a reason for rejecting this request")}</p>
                 </div>
               </div>
               <Button
@@ -689,14 +715,14 @@ export function MoneyRequestDetail({
                 <span className="text-rose-600 dark:text-rose-400 font-bold">{formatCurrency(moneyRequest.amountINR)}</span>
               </div>
               <div className="text-muted-foreground">
-                Submitted by <span className="font-medium text-foreground">{moneyRequest.submittedByName}</span>
+                {t("reports.submittedBy", "Submitted by")} <span className="font-medium text-foreground">{moneyRequest.submittedByName}</span>
               </div>
             </div>
 
             {/* Rejection Reason Form */}
             <div className="space-y-2">
               <label htmlFor="detail-rejection-reason" className="block text-xs font-semibold text-foreground">
-                Reason for Rejection <span className="text-rose-600 dark:text-rose-400">*</span>
+                {t("moneyRequests.reasonForRejection", "Reason for Rejection")} <span className="text-rose-600 dark:text-rose-400">*</span>
               </label>
               <Textarea
                 id="detail-rejection-reason"
@@ -705,7 +731,7 @@ export function MoneyRequestDetail({
                   setRejectReason(e.target.value);
                   if (errorMsg) setErrorMsg("");
                 }}
-                placeholder="Enter specific reasons why this money request is being rejected..."
+                placeholder={t("moneyRequests.rejectReasonPlaceholder", "Enter specific reasons why this money request is being rejected...")}
                 rows={3}
                 className="w-full text-xs rounded-xl bg-background border-input text-foreground"
               />
@@ -726,7 +752,7 @@ export function MoneyRequestDetail({
                 onClick={() => setIsRejectModalOpen(false)}
                 disabled={isSubmitting}
               >
-                Cancel
+                {t("common.cancel", "Cancel")}
               </Button>
               <Button
                 type="button"
@@ -737,11 +763,11 @@ export function MoneyRequestDetail({
               >
                 {isSubmitting ? (
                   <>
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                    Rejecting...
+                    <Loader2 className="mr-1.5 rtl:ml-1.5 rtl:mr-0 h-3.5 w-3.5 animate-spin" />
+                    {t("moneyRequests.rejecting", "Rejecting...")}
                   </>
                 ) : (
-                  "Confirm Rejection"
+                  t("moneyRequests.confirmRejection", "Confirm Rejection")
                 )}
               </Button>
             </div>

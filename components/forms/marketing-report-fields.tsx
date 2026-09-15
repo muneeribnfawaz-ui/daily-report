@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Trash2, Plus } from "lucide-react";
+import { isValidEmail } from "@/lib/validation";
 
 type MarketingReportFieldsProps = {
   marketingSelfItems: any[];
@@ -44,7 +45,7 @@ export function MarketingReportFields({
                 <th className="py-3 px-3 text-left font-semibold text-slate-600 dark:text-slate-400 min-w-[150px]">Client Name <span className="text-red-500">*</span></th>
                 <th className="py-3 px-3 text-left font-semibold text-slate-600 dark:text-slate-400 min-w-[150px]">Company Name <span className="text-red-500">*</span></th>
                 <th className="py-3 px-3 text-left font-semibold text-slate-600 dark:text-slate-400 min-w-[120px]">Client Type <span className="text-red-500">*</span></th>
-                <th className="py-3 px-3 text-left font-semibold text-slate-600 dark:text-slate-400 min-w-[120px]">Mobile No. <span className="text-red-500">*</span></th>
+                <th className="py-3 px-3 text-left font-semibold text-slate-600 dark:text-slate-400 min-w-[140px]">Mobile No. <span className="text-red-500">*</span></th>
                 <th className="py-3 px-3 text-left font-semibold text-slate-600 dark:text-slate-400 min-w-[150px]">Location <span className="text-red-500">*</span></th>
                 <th className="py-3 px-3 text-left font-semibold text-slate-600 dark:text-slate-400 min-w-[150px]">Referred By <span className="text-red-500">*</span></th>
                 <th className="py-3 px-3 text-left font-semibold text-slate-600 dark:text-slate-400 min-w-[200px]">Discussion Summary <span className="text-red-500">*</span></th>
@@ -56,28 +57,52 @@ export function MarketingReportFields({
               </tr>
             </thead>
             <tbody>
-              {marketingSelfItems.map((item, index) => (
-                <tr key={index} className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-900/50 transition-colors">
-                  <td className="py-2 px-3 text-slate-500 font-medium">{index + 1}</td>
-                  <td className="py-2 px-1"><Input className="h-9" value={item.executiveName} onChange={(e) => { const next = [...marketingSelfItems]; next[index].executiveName = e.target.value; setMarketingSelfItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" value={item.clientName} onChange={(e) => { const next = [...marketingSelfItems]; next[index].clientName = e.target.value; setMarketingSelfItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" value={item.companyName} onChange={(e) => { const next = [...marketingSelfItems]; next[index].companyName = e.target.value; setMarketingSelfItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" value={item.clientType} onChange={(e) => { const next = [...marketingSelfItems]; next[index].clientType = e.target.value; setMarketingSelfItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" type="tel" value={item.mobileNo} onChange={(e) => { const next = [...marketingSelfItems]; next[index].mobileNo = e.target.value.replace(/[^0-9+\s\-()]/g, ""); setMarketingSelfItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" value={item.location} onChange={(e) => { const next = [...marketingSelfItems]; next[index].location = e.target.value; setMarketingSelfItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" value={item.referredBy} onChange={(e) => { const next = [...marketingSelfItems]; next[index].referredBy = e.target.value; setMarketingSelfItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" value={item.discussionSummary} onChange={(e) => { const next = [...marketingSelfItems]; next[index].discussionSummary = e.target.value; setMarketingSelfItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" value={item.interestLevel} onChange={(e) => { const next = [...marketingSelfItems]; next[index].interestLevel = e.target.value; setMarketingSelfItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" type="date" min={tomorrowStr} value={item.followUpDate} onChange={(e) => { const next = [...marketingSelfItems]; next[index].followUpDate = e.target.value; setMarketingSelfItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" value={item.status} onChange={(e) => { const next = [...marketingSelfItems]; next[index].status = e.target.value; setMarketingSelfItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" value={item.remarks} onChange={(e) => { const next = [...marketingSelfItems]; next[index].remarks = e.target.value; setMarketingSelfItems(next); }} /></td>
-                  <td className="py-2 px-2 text-center">
-                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10" onClick={() => setMarketingSelfItems(marketingSelfItems.filter((_, i) => i !== index))}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+              {marketingSelfItems.map((item, index) => {
+                const isMobileInvalid = Boolean(item.mobileNo && item.mobileNo.length > 0 && item.mobileNo.length < 10);
+                return (
+                  <tr key={index} className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-900/50 transition-colors">
+                    <td className="py-2 px-3 text-slate-500 font-medium align-top">{index + 1}</td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" value={item.executiveName} onChange={(e) => { const next = [...marketingSelfItems]; next[index].executiveName = e.target.value; setMarketingSelfItems(next); }} /></td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" value={item.clientName} onChange={(e) => { const next = [...marketingSelfItems]; next[index].clientName = e.target.value; setMarketingSelfItems(next); }} /></td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" value={item.companyName} onChange={(e) => { const next = [...marketingSelfItems]; next[index].companyName = e.target.value; setMarketingSelfItems(next); }} /></td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" value={item.clientType} onChange={(e) => { const next = [...marketingSelfItems]; next[index].clientType = e.target.value; setMarketingSelfItems(next); }} /></td>
+                    <td className="py-2 px-1 align-top">
+                      <Input
+                        className={`h-9 ${isMobileInvalid ? "border-red-500 focus-visible:ring-red-500 dark:border-red-500" : ""}`}
+                        type="tel"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        maxLength={10}
+                        placeholder="10-digit mobile"
+                        value={item.mobileNo ?? ""}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, "").slice(0, 10);
+                          const next = [...marketingSelfItems];
+                          next[index].mobileNo = val;
+                          setMarketingSelfItems(next);
+                        }}
+                      />
+                      {isMobileInvalid && (
+                        <p className="text-[11px] font-medium text-red-500 dark:text-red-400 mt-1 leading-tight">
+                          Mobile number must be exactly 10 digits.
+                        </p>
+                      )}
+                    </td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" value={item.location} onChange={(e) => { const next = [...marketingSelfItems]; next[index].location = e.target.value; setMarketingSelfItems(next); }} /></td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" value={item.referredBy} onChange={(e) => { const next = [...marketingSelfItems]; next[index].referredBy = e.target.value; setMarketingSelfItems(next); }} /></td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" value={item.discussionSummary} onChange={(e) => { const next = [...marketingSelfItems]; next[index].discussionSummary = e.target.value; setMarketingSelfItems(next); }} /></td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" value={item.interestLevel} onChange={(e) => { const next = [...marketingSelfItems]; next[index].interestLevel = e.target.value; setMarketingSelfItems(next); }} /></td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" type="date" min={tomorrowStr} value={item.followUpDate} onChange={(e) => { const next = [...marketingSelfItems]; next[index].followUpDate = e.target.value; setMarketingSelfItems(next); }} /></td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" value={item.status} onChange={(e) => { const next = [...marketingSelfItems]; next[index].status = e.target.value; setMarketingSelfItems(next); }} /></td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" value={item.remarks} onChange={(e) => { const next = [...marketingSelfItems]; next[index].remarks = e.target.value; setMarketingSelfItems(next); }} /></td>
+                    <td className="py-2 px-2 text-center align-top">
+                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10" onClick={() => setMarketingSelfItems(marketingSelfItems.filter((_, i) => i !== index))}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           <div className="mt-4 flex justify-start">
@@ -109,8 +134,8 @@ export function MarketingReportFields({
                 <th className="py-3 px-3 text-left font-semibold text-slate-600 dark:text-slate-400 min-w-[150px]">Company Name <span className="text-red-500">*</span></th>
                 <th className="py-3 px-3 text-left font-semibold text-slate-600 dark:text-slate-400 min-w-[120px]">Client Type <span className="text-red-500">*</span></th>
                 <th className="py-3 px-3 text-left font-semibold text-slate-600 dark:text-slate-400 min-w-[150px]">Contact Person <span className="text-red-500">*</span></th>
-                <th className="py-3 px-3 text-left font-semibold text-slate-600 dark:text-slate-400 min-w-[120px]">Mobile No. <span className="text-red-500">*</span></th>
-                <th className="py-3 px-3 text-left font-semibold text-slate-600 dark:text-slate-400 min-w-[150px]">Email <span className="text-red-500">*</span></th>
+                <th className="py-3 px-3 text-left font-semibold text-slate-600 dark:text-slate-400 min-w-[140px]">Mobile No. <span className="text-red-500">*</span></th>
+                <th className="py-3 px-3 text-left font-semibold text-slate-600 dark:text-slate-400 min-w-[180px]">Email <span className="text-red-500">*</span></th>
                 <th className="py-3 px-3 text-left font-semibold text-slate-600 dark:text-slate-400 min-w-[150px]">Project Type <span className="text-red-500">*</span></th>
                 <th className="py-3 px-3 text-left font-semibold text-slate-600 dark:text-slate-400 min-w-[200px]">Requirement Discussed <span className="text-red-500">*</span></th>
                 <th className="py-3 px-3 text-left font-semibold text-slate-600 dark:text-slate-400 min-w-[120px]">Project Stage <span className="text-red-500">*</span></th>
@@ -124,32 +149,74 @@ export function MarketingReportFields({
               </tr>
             </thead>
             <tbody>
-              {marketingClientItems.map((item, index) => (
-                <tr key={index} className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-900/50 transition-colors">
-                  <td className="py-2 px-3 text-slate-500 font-medium">{index + 1}</td>
-                  <td className="py-2 px-1"><Input className="h-9" value={item.executiveName} onChange={(e) => { const next = [...marketingClientItems]; next[index].executiveName = e.target.value; setMarketingClientItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" value={item.clientName} onChange={(e) => { const next = [...marketingClientItems]; next[index].clientName = e.target.value; setMarketingClientItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" value={item.companyName} onChange={(e) => { const next = [...marketingClientItems]; next[index].companyName = e.target.value; setMarketingClientItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" value={item.clientType} onChange={(e) => { const next = [...marketingClientItems]; next[index].clientType = e.target.value; setMarketingClientItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" value={item.contactPerson} onChange={(e) => { const next = [...marketingClientItems]; next[index].contactPerson = e.target.value; setMarketingClientItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" type="tel" value={item.mobileNo} onChange={(e) => { const next = [...marketingClientItems]; next[index].mobileNo = e.target.value.replace(/[^0-9+\s\-()]/g, ""); setMarketingClientItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" type="email" value={item.email} onChange={(e) => { const next = [...marketingClientItems]; next[index].email = e.target.value; setMarketingClientItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" value={item.projectType} onChange={(e) => { const next = [...marketingClientItems]; next[index].projectType = e.target.value; setMarketingClientItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" value={item.requirementDiscussed} onChange={(e) => { const next = [...marketingClientItems]; next[index].requirementDiscussed = e.target.value; setMarketingClientItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" value={item.projectStage} onChange={(e) => { const next = [...marketingClientItems]; next[index].projectStage = e.target.value; setMarketingClientItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" value={item.decisionMaker} onChange={(e) => { const next = [...marketingClientItems]; next[index].decisionMaker = e.target.value; setMarketingClientItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" value={item.interestLevel} onChange={(e) => { const next = [...marketingClientItems]; next[index].interestLevel = e.target.value; setMarketingClientItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" value={item.nextAction} onChange={(e) => { const next = [...marketingClientItems]; next[index].nextAction = e.target.value; setMarketingClientItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" type="date" min={tomorrowStr} value={item.followUpDate} onChange={(e) => { const next = [...marketingClientItems]; next[index].followUpDate = e.target.value; setMarketingClientItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" value={item.status} onChange={(e) => { const next = [...marketingClientItems]; next[index].status = e.target.value; setMarketingClientItems(next); }} /></td>
-                  <td className="py-2 px-1"><Input className="h-9" value={item.remarks} onChange={(e) => { const next = [...marketingClientItems]; next[index].remarks = e.target.value; setMarketingClientItems(next); }} /></td>
-                  <td className="py-2 px-2 text-center">
-                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10" onClick={() => setMarketingClientItems(marketingClientItems.filter((_, i) => i !== index))}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+              {marketingClientItems.map((item, index) => {
+                const isMobileInvalid = Boolean(item.mobileNo && item.mobileNo.length > 0 && item.mobileNo.length < 10);
+                const isEmailInvalid = Boolean(item.email && item.email.trim().length > 0 && !isValidEmail(item.email));
+                return (
+                  <tr key={index} className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-900/50 transition-colors">
+                    <td className="py-2 px-3 text-slate-500 font-medium align-top">{index + 1}</td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" value={item.executiveName} onChange={(e) => { const next = [...marketingClientItems]; next[index].executiveName = e.target.value; setMarketingClientItems(next); }} /></td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" value={item.clientName} onChange={(e) => { const next = [...marketingClientItems]; next[index].clientName = e.target.value; setMarketingClientItems(next); }} /></td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" value={item.companyName} onChange={(e) => { const next = [...marketingClientItems]; next[index].companyName = e.target.value; setMarketingClientItems(next); }} /></td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" value={item.clientType} onChange={(e) => { const next = [...marketingClientItems]; next[index].clientType = e.target.value; setMarketingClientItems(next); }} /></td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" value={item.contactPerson} onChange={(e) => { const next = [...marketingClientItems]; next[index].contactPerson = e.target.value; setMarketingClientItems(next); }} /></td>
+                    <td className="py-2 px-1 align-top">
+                      <Input
+                        className={`h-9 ${isMobileInvalid ? "border-red-500 focus-visible:ring-red-500 dark:border-red-500" : ""}`}
+                        type="tel"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        maxLength={10}
+                        placeholder="10-digit mobile"
+                        value={item.mobileNo ?? ""}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, "").slice(0, 10);
+                          const next = [...marketingClientItems];
+                          next[index].mobileNo = val;
+                          setMarketingClientItems(next);
+                        }}
+                      />
+                      {isMobileInvalid && (
+                        <p className="text-[11px] font-medium text-red-500 dark:text-red-400 mt-1 leading-tight">
+                          Mobile number must be exactly 10 digits.
+                        </p>
+                      )}
+                    </td>
+                    <td className="py-2 px-1 align-top">
+                      <Input
+                        className={`h-9 ${isEmailInvalid ? "border-red-500 focus-visible:ring-red-500 dark:border-red-500" : ""}`}
+                        type="email"
+                        placeholder="user@example.com"
+                        value={item.email ?? ""}
+                        onChange={(e) => {
+                          const next = [...marketingClientItems];
+                          next[index].email = e.target.value;
+                          setMarketingClientItems(next);
+                        }}
+                      />
+                      {isEmailInvalid && (
+                        <p className="text-[11px] font-medium text-red-500 dark:text-red-400 mt-1 leading-tight">
+                          Please enter a valid email address.
+                        </p>
+                      )}
+                    </td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" value={item.projectType} onChange={(e) => { const next = [...marketingClientItems]; next[index].projectType = e.target.value; setMarketingClientItems(next); }} /></td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" value={item.requirementDiscussed} onChange={(e) => { const next = [...marketingClientItems]; next[index].requirementDiscussed = e.target.value; setMarketingClientItems(next); }} /></td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" value={item.projectStage} onChange={(e) => { const next = [...marketingClientItems]; next[index].projectStage = e.target.value; setMarketingClientItems(next); }} /></td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" value={item.decisionMaker} onChange={(e) => { const next = [...marketingClientItems]; next[index].decisionMaker = e.target.value; setMarketingClientItems(next); }} /></td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" value={item.interestLevel} onChange={(e) => { const next = [...marketingClientItems]; next[index].interestLevel = e.target.value; setMarketingClientItems(next); }} /></td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" value={item.nextAction} onChange={(e) => { const next = [...marketingClientItems]; next[index].nextAction = e.target.value; setMarketingClientItems(next); }} /></td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" type="date" min={tomorrowStr} value={item.followUpDate} onChange={(e) => { const next = [...marketingClientItems]; next[index].followUpDate = e.target.value; setMarketingClientItems(next); }} /></td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" value={item.status} onChange={(e) => { const next = [...marketingClientItems]; next[index].status = e.target.value; setMarketingClientItems(next); }} /></td>
+                    <td className="py-2 px-1 align-top"><Input className="h-9" value={item.remarks} onChange={(e) => { const next = [...marketingClientItems]; next[index].remarks = e.target.value; setMarketingClientItems(next); }} /></td>
+                    <td className="py-2 px-2 text-center align-top">
+                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10" onClick={() => setMarketingClientItems(marketingClientItems.filter((_, i) => i !== index))}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           <div className="mt-4 flex justify-start">
@@ -162,3 +229,4 @@ export function MarketingReportFields({
     </div>
   );
 }
+

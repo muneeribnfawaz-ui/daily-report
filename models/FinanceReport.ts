@@ -27,6 +27,7 @@ const FinanceReportSchema = new Schema(
     reportDate: { type: Date, required: true },
     submittedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     submittedByName: { type: String, required: true },
+    description: { type: String, default: "" },
 
     bankBalances: { type: [BankBalanceSchema], default: [] },
     cashBalance: {

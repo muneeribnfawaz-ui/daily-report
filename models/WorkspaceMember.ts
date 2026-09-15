@@ -6,6 +6,7 @@ const WorkspaceMemberSchema = new Schema(
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     workspaceId: { type: Schema.Types.ObjectId, ref: "Workspace", required: true },
     empID: { type: String, default: "" },
+    empIDNormalized: { type: String, default: "" },
     role: { type: String, required: true, enum: AUTH_ROLE_OPTIONS },
     roleTypes: { type: [String], default: [] },
     teamNames: { type: [String], default: [] },
@@ -43,5 +44,6 @@ const WorkspaceMemberSchema = new Schema(
 
 WorkspaceMemberSchema.index({ userId: 1, workspaceId: 1 }, { unique: true });
 WorkspaceMemberSchema.index({ workspaceId: 1, role: 1 });
+WorkspaceMemberSchema.index({ workspaceId: 1, empIDNormalized: 1 });
 
 export default models.WorkspaceMember || model("WorkspaceMember", WorkspaceMemberSchema);

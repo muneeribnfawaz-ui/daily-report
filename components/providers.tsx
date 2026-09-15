@@ -5,6 +5,8 @@ import { ThemeProvider } from "next-themes";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
+import { LanguageProvider } from "@/lib/i18n";
+
 export function Providers({ children }: { children: ReactNode }) {
   const [client] = useState(
     () =>
@@ -22,7 +24,9 @@ export function Providers({ children }: { children: ReactNode }) {
 
   return (
     <ThemeProvider attribute="class" defaultTheme="light" forcedTheme="light" enableSystem={false} disableTransitionOnChange>
-      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      <LanguageProvider>
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      </LanguageProvider>
     </ThemeProvider>
   );
 }

@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useSelectedCompany } from "@/hooks/use-selected-company";
 import { useSession } from "@/hooks/use-session";
+import { useTranslation } from "@/lib/i18n";
 
 interface CompanyCreateScreenProps {
   backHref: string;
@@ -37,6 +38,7 @@ export function CompanyCreateScreen({
   const queryClient = useQueryClient();
   const selectedCompanyId = useSelectedCompany();
   const { data: sessionUser } = useSession();
+  const { t, isRtl } = useTranslation();
   const isAdmin = sessionUser?.role === "admin";
 
   const [name, setName] = useState("");
@@ -103,21 +105,21 @@ export function CompanyCreateScreen({
       {/* Header with Circular Back Button */}
       <div className="rounded-xl border border-cardBorder bg-card p-4 sm:p-5 shadow-soft">
         <div className="flex items-center gap-3">
-          <Button asChild variant="outline" size="icon" className="shrink-0">
+          <Button asChild type="button" variant="outline" size="icon" className="h-9 w-9 rounded-xl shrink-0">
             <Link
               href={backHref as Route}
-              title="Back to companies"
-              aria-label="Back to companies"
+              title={t("companies.backToCompanies") || t("common.back")}
+              aria-label={t("companies.backToCompanies") || t("common.back")}
             >
-              <ArrowLeft className="h-4 w-4" />
+              <ArrowLeft className="h-4 w-4 rtl:rotate-180" />
             </Link>
           </Button>
           <div>
             <h2 className="text-xl font-semibold tracking-tight">
-              Create New Company
+              {t("companies.titleCreate")}
             </h2>
             <div className="mt-1 text-sm text-muted-foreground">
-              Add a new business organization workspace to the platform.
+              {t("companies.descCreate")}
             </div>
           </div>
         </div>
@@ -128,7 +130,7 @@ export function CompanyCreateScreen({
         <div className="flex items-center gap-2 border-b pb-4 mb-5">
           <Building2 className="h-5 w-5 text-primary" />
           <h3 className="text-lg font-semibold tracking-tight">
-            Organization Details
+            {t("companies.organizationDetails")}
           </h3>
         </div>
 
@@ -145,11 +147,11 @@ export function CompanyCreateScreen({
                 htmlFor="companyName"
                 className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
               >
-                Company Name <span className="text-rose-500">*</span>
+                {t("companies.companyName")} <span className="text-rose-500">*</span>
               </label>
               <Input
                 id="companyName"
-                placeholder="e.g. MIF Technology Ltd"
+                placeholder={t("companies.companyName")}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
@@ -160,11 +162,11 @@ export function CompanyCreateScreen({
                 htmlFor="companyCode"
                 className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
               >
-                Company Code (Optional)
+                {t("companies.companyCode")} ({t("common.optional")})
               </label>
               <Input
                 id="companyCode"
-                placeholder="e.g. MIFT"
+                placeholder={t("companies.companyCode")}
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
               />
@@ -174,7 +176,7 @@ export function CompanyCreateScreen({
           {isAdmin && (
             <div>
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Workspace Type
+                {t("common.workspace")} Type
               </label>
               <div className="flex items-center gap-6 pt-1">
                 <label className="flex items-center gap-2 text-sm font-medium text-foreground cursor-pointer">
@@ -208,12 +210,12 @@ export function CompanyCreateScreen({
               htmlFor="companyDesc"
               className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
             >
-              Description (Optional)
+              {t("companies.description")} ({t("common.optional")})
             </label>
             <Textarea
               id="companyDesc"
               rows={3}
-              placeholder="Enter details about this organization or business entity..."
+              placeholder={t("companies.description")}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />
@@ -231,26 +233,26 @@ export function CompanyCreateScreen({
               htmlFor="isActiveToggle"
               className="text-sm font-medium text-foreground cursor-pointer"
             >
-              Active Organization Status
+              {t("common.active")}
             </label>
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-4 border-t">
+          <div className="flex items-center justify-end rtl:justify-start gap-3 pt-4 border-t">
             <Button
               type="button"
               variant="outline"
               onClick={() => router.push(backHref as Route)}
               disabled={createMutation.isPending}
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button type="submit" disabled={createMutation.isPending}>
               {createMutation.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-2 rtl:ml-2 rtl:mr-0 h-4 w-4 animate-spin" />
               ) : (
-                <Building2 className="mr-2 h-4 w-4" />
+                <Building2 className="mr-2 rtl:ml-2 rtl:mr-0 h-4 w-4" />
               )}
-              Create Company
+              {createMutation.isPending ? t("common.creating") : t("companies.createCompany")}
             </Button>
           </div>
         </form>

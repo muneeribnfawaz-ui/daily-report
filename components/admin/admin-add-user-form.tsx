@@ -11,17 +11,22 @@ import { adminCreateUserSchema, clientCreateUserSchema } from "@/lib/validation"
 import { Button } from "@/components/ui/button";
 import { ReportField, ReportInput, ReportMultiSelectCards, ReportSelect } from "@/components/forms/report-controls";
 import { PasswordInput } from "@/components/forms/password-input";
+import { PhoneInput } from "@/components/forms/phone-input";
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "@/hooks/use-session";
+import { useTranslation } from "@/lib/i18n";
+import { normalizeSkillKey } from "@/lib/skills-i18n";
 
 type AdminUserValues = z.infer<typeof clientCreateUserSchema>;
 
 type ManagerOption = {
   _id: string;
   name: string;
+  role?: string;
   teamName?: string | null;
   teamNames?: string[] | null;
+  departments?: Array<{ name: string; subTeams?: string[] }> | null;
 };
 
 type ManagerPools = {
@@ -95,17 +100,11 @@ export function AdminAddUserForm() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data: sessionUser } = useSession();
+  const { t, isRtl } = useTranslation();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const { data: teamTypes } = useQuery<TeamTypeOption[]>({
-    queryKey: ["team-types", "admin-create-user"],
-    queryFn: async () => {
-      const response = await api.get("/api/admin/team-types", { params: { department: "all" } });
-      return (response.data?.data ?? []) as TeamTypeOption[];
-    },
-    staleTime: 0
-  });
+  const [selectedCompanyId, setSelectedCompanyId] = useState("");
 
   const { data: companies } = useQuery<CompanyOption[]>({
     queryKey: ["header-active-companies"],
@@ -114,12 +113,6 @@ export function AdminAddUserForm() {
       return response.data?.data as CompanyOption[];
     }
   });
-  const teamOptions = useMemo(
-    () => teamTypes ?? [],
-    [teamTypes]
-  );
-
-  const [selectedCompanyId, setSelectedCompanyId] = useState("");
 
   const activeSelectedCompany = useMemo(() => {
     if (!companies || companies.length === 0) return null;
@@ -129,6 +122,26 @@ export function AdminAddUserForm() {
     }
     return companies[0];
   }, [companies, selectedCompanyId]);
+
+  const activeCompanyId = activeSelectedCompany?._id ?? sessionUser?.workspaceId ?? (selectedCompanyId !== "all" ? selectedCompanyId : "");
+
+  const { data: teamTypes } = useQuery<TeamTypeOption[]>({
+    queryKey: ["team-types", "admin-create-user", activeCompanyId],
+    queryFn: async () => {
+      const params: Record<string, string> = { department: "all" };
+      if (activeCompanyId) {
+        params.workspaceId = activeCompanyId;
+      }
+      const response = await api.get("/api/admin/team-types", { params });
+      return (response.data?.data ?? []) as TeamTypeOption[];
+    },
+    staleTime: 0
+  });
+
+  const teamOptions = useMemo(
+    () => teamTypes ?? [],
+    [teamTypes]
+  );
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -214,13 +227,6 @@ export function AdminAddUserForm() {
   const teamLeadOptions = managerPools?.teamLeads ?? [];
   const hodOptions = managerPools?.hods ?? [];
 
-  const managerSelectOptions = useMemo(() => {
-    if (selectedRole === "hod") return [{ _id: "admin", name: "Admin" }];
-    if (selectedRole === "team_lead" || selectedRole === "report_manager") return hodOptions;
-    if (selectedRole === "team_member") return teamLeadOptions;
-    return teamLeadOptions;
-  }, [hodOptions, selectedRole, teamLeadOptions]);
-
   const selectedDepartmentNames = useMemo(
     () => currentDepartments.map((d) => d.name),
     [currentDepartments]
@@ -231,18 +237,135 @@ export function AdminAddUserForm() {
     [selectedDepartmentNames]
   );
 
+  const managerSelectOptions = useMemo(() => {
+    if (selectedRole === "hod") return [{ _id: "admin", name: t("roles.admin") }];
+    if (selectedRole === "team_lead" || selectedRole === "report_manager") {
+      if (selectedDepartmentNames.length > 0) {
+        const filtered = hodOptions.filter((manager: any) => {
+          if (!manager.departments || manager.departments.length === 0) return true;
+          return manager.departments.some((d: any) =>
+            selectedDepartmentNames.some((sd) => sd.trim().toLowerCase() === d.name?.trim().toLowerCase())
+          );
+        });
+        return filtered.length > 0 ? filtered : hodOptions;
+      }
+      return hodOptions;
+    }
+    if (selectedRole === "team_member") {
+      if (selectedDepartmentNames.length > 0) {
+        const filteredTeamLeads = teamLeadOptions.filter((manager: any) => {
+          if (manager.departments && manager.departments.length > 0) {
+            const hasDept = manager.departments.some((d: any) =>
+              selectedDepartmentNames.some((sd) => sd.trim().toLowerCase() === d.name?.trim().toLowerCase())
+            );
+            if (hasDept) return true;
+          }
+          const managerTeams = normalizeTeamNames(manager.teamName ?? null, manager.teamNames ?? null);
+          if (managerTeams.length > 0) {
+            const hasMatchingTeam = managerTeams.some((tn) => {
+              const matchedType = teamOptions.find(
+                (t) => t.name.toLowerCase() === tn.toLowerCase() || (t.showName && t.showName.toLowerCase() === tn.toLowerCase())
+              );
+              return matchedType?.department && selectedDepartmentNames.some(
+                (sd) => sd.trim().toLowerCase() === matchedType.department?.trim().toLowerCase()
+              );
+            });
+            if (hasMatchingTeam) return true;
+          }
+          return false;
+        });
+
+        if (filteredTeamLeads.length > 0) {
+          return filteredTeamLeads;
+        }
+
+        const deptHods = hodOptions.filter((m: any) =>
+          m.departments?.some((d: any) =>
+            selectedDepartmentNames.some((sd) => sd.trim().toLowerCase() === d.name?.trim().toLowerCase())
+          )
+        );
+        if (deptHods.length > 0) {
+          return deptHods;
+        }
+      }
+      return teamLeadOptions;
+    }
+    return teamLeadOptions;
+  }, [hodOptions, selectedDepartmentNames, selectedRole, teamLeadOptions, teamOptions]);
+
   const availableTeamOptions = useMemo(() => {
     if (selectedRole === "ceo" || selectedRole === "hod" || selectedRole === "report_manager") return [];
+
+    if (selectedRole === "team_member") {
+      if (!currentManagerName) {
+        return [];
+      }
+      const selectedManager = managerSelectOptions.find((m) => m.name === currentManagerName);
+      const managerTeams = normalizeTeamNames(selectedManager?.teamName ?? null, selectedManager?.teamNames ?? null);
+
+      if (managerTeams.length > 0) {
+        const normalizedManagerTeams = managerTeams.map((t) => t.trim().toLowerCase());
+        const filtered = teamOptions.filter(
+          (team) =>
+            normalizedManagerTeams.includes(team.name.trim().toLowerCase()) ||
+            (team.showName && normalizedManagerTeams.includes(team.showName.trim().toLowerCase()))
+        );
+        if (filtered.length > 0) return filtered;
+        return managerTeams.map((name) => ({
+          _id: name,
+          name: name,
+          showName: name
+        }));
+      }
+
+      if (selectedManager?.role === "hod" || selectedManager?.role === "report_manager" || selectedManager?.role === "admin" || selectedManager?.role === "ceo") {
+        if (selectedDepartmentNames.length > 0) {
+          return teamOptions.filter((team) => {
+            if (!team.department) return false;
+            return selectedDepartmentNames.some(
+              (sd) => sd.trim().toLowerCase() === team.department?.trim().toLowerCase()
+            );
+          });
+        }
+        return teamOptions;
+      }
+
+      return [];
+    }
 
     if (selectedDepartmentNames.length > 0) {
       return teamOptions.filter((team) => team.department && selectedDepartmentNames.includes(team.department as any));
     }
-    return [];
-  }, [selectedRole, teamOptions, selectedDepartmentNames]);
+    return teamOptions;
+  }, [currentManagerName, managerSelectOptions, selectedDepartmentNames, selectedRole, teamOptions]);
+
+  const teamTypeEmptyMessage = useMemo(() => {
+    if (selectedRole === "team_member") {
+      if (!currentManagerName) {
+        return t("users.selectManager") || "Select a manager first to view available team types.";
+      }
+      return t("teamTypes.noTeamTypesFound") || "No team types available for the selected manager.";
+    }
+    if (selectedRole === "team_lead") {
+      return t("teamTypes.noTeamTypesFound") || "No team types available for the selected department.";
+    }
+    return t("teamTypes.noTeamTypesFound") || "No team types available.";
+  }, [selectedRole, currentManagerName, t]);
+
+  const teamTypeHelperText = useMemo(() => {
+    if (selectedRole === "team_member") {
+      return currentManagerName
+        ? t("users.selectTeamType")
+        : t("users.selectManager");
+    }
+    if (selectedRole === "team_lead") {
+      return t("users.selectTeamType");
+    }
+    return t("users.selectTeamType");
+  }, [selectedRole, currentManagerName, t]);
 
   const sessionUserRole = sessionUser?.role;
   const sessionUserName = sessionUser?.name;
-  const activeCompanyId = activeSelectedCompany?._id;
 
   useEffect(() => {
     if (activeCompanyId) {
@@ -251,11 +374,11 @@ export function AdminAddUserForm() {
   }, [activeCompanyId, setValue]);
 
   useEffect(() => {
-    if (selectedRole === "report_manager" || selectedRole === "ceo" || selectedRole === "hod") {
-      if (currentRoleTypes && currentRoleTypes.length > 0) {
+    if (selectedRole === "ceo" || selectedRole === "hod" || selectedRole === "report_manager") {
+      if (currentRoleTypes?.length) {
         setValue("roleTypes", []);
       }
-      if (currentTeamNames && currentTeamNames.length > 0) {
+      if (currentTeamNames?.length) {
         setValue("teamNames", []);
       }
       if (selectedRole === "ceo" && currentDepartments.length > 0) {
@@ -274,14 +397,8 @@ export function AdminAddUserForm() {
       setValue("roleTypes", [availableSkills[0].name as any]);
     }
 
-    if (selectedRole === "team_lead") {
-      if (currentManagerName && !hodOptions.some((manager) => manager.name === currentManagerName)) {
-        setValue("managerName", "");
-      }
-    } else if (selectedRole === "team_member") {
-      if (currentManagerName && !managerSelectOptions.some((manager) => manager.name === currentManagerName)) {
-        setValue("managerName", "");
-      }
+    if (currentManagerName && !managerSelectOptions.some((manager) => manager.name === currentManagerName)) {
+      setValue("managerName", "");
     }
   }, [
     selectedRole,
@@ -293,10 +410,28 @@ export function AdminAddUserForm() {
     currentTeamNames?.length,
     currentDepartments.length,
     currentManagerName,
-    hodOptions,
     managerSelectOptions,
     setValue
   ]);
+
+  useEffect(() => {
+    if (selectedRole === "ceo" || selectedRole === "hod" || selectedRole === "report_manager") return;
+
+    if (availableTeamOptions.length === 0) {
+      if (currentTeamNames?.length) {
+        setValue("teamNames", []);
+      }
+      return;
+    }
+
+    const validTeamNames = currentTeamNames?.filter((teamName) =>
+      availableTeamOptions.some((team) => team.name === teamName || (team.showName && team.showName === teamName))
+    ) ?? [];
+
+    if (validTeamNames.length !== currentTeamNames?.length) {
+      setValue("teamNames", validTeamNames);
+    }
+  }, [availableTeamOptions, currentTeamNames, selectedRole, setValue]);
 
   useEffect(() => {
     // Clear invalid role types when available skills change
@@ -317,35 +452,63 @@ export function AdminAddUserForm() {
     } else {
       next = [...currentDepartments, { name: deptName, subTeams: deptName === "Marketing" ? ["Physical"] : [] }];
     }
-    setValue("departments", next, { shouldValidate: true, shouldDirty: true, shouldTouch: true });
-    if (next.length > 0) {
-      clearErrors("departments");
-    }
+    setValue("departments", next, { shouldValidate: true, shouldDirty: true });
   };
 
-  const toggleMarketingSubTeam = (sub: "Physical" | "Digital") => {
+  const toggleMarketingSubTeam = (sub: string) => {
     const marketingIndex = currentDepartments.findIndex((d) => d.name === "Marketing");
     if (marketingIndex === -1) return;
-    const currentSub = currentDepartments[marketingIndex].subTeams ?? [];
-    const exists = currentSub.includes(sub);
-    const nextSub = exists ? currentSub.filter((s) => s !== sub) : [...currentSub, sub];
+
+    const currentSubTeams = currentDepartments[marketingIndex].subTeams ?? [];
+    let updatedSubTeams: string[];
+    if (currentSubTeams.includes(sub)) {
+      if (currentSubTeams.length === 1) return;
+      updatedSubTeams = currentSubTeams.filter((s) => s !== sub);
+    } else {
+      updatedSubTeams = [...currentSubTeams, sub];
+    }
+
     const nextDepartments = [...currentDepartments];
-    nextDepartments[marketingIndex] = { name: "Marketing", subTeams: nextSub };
-    setValue("departments", nextDepartments, { shouldValidate: true, shouldDirty: true, shouldTouch: true });
-    clearErrors("departments");
+    nextDepartments[marketingIndex] = {
+      ...nextDepartments[marketingIndex],
+      subTeams: updatedSubTeams
+    };
+    setValue("departments", nextDepartments, { shouldValidate: true, shouldDirty: true });
   };
 
   const onSubmit = async (values: AdminUserValues) => {
-    setError(null);
     setMessage(null);
+    setError(null);
 
-    const resolvedManagerName = values.managerName;
+    const resolvedWorkspaceId = values.role === "ceo" ? undefined : (values.workspaceId || activeCompanyId || undefined);
+    const resolvedManagerName = values.role === "ceo" ? undefined : values.managerName;
+    const resolvedTeamNames = (values.role === "ceo" || values.role === "hod" || values.role === "report_manager") ? [] : values.teamNames;
+
+    const payload = {
+      ...values,
+      workspaceId: resolvedWorkspaceId,
+      managerName: resolvedManagerName,
+      teamNames: resolvedTeamNames
+    };
+
+    const parsed = adminCreateUserSchema.safeParse(payload);
+    if (!parsed.success) {
+      clearErrors();
+      let firstErrorMsg = "";
+      parsed.error.issues.forEach((issue) => {
+        const fieldName = issue.path.join(".") as keyof AdminUserValues;
+        setFieldError(fieldName, {
+          type: "manual",
+          message: issue.message || "Invalid input"
+        });
+        if (!firstErrorMsg) firstErrorMsg = issue.message || "Validation failed";
+      });
+      setError(firstErrorMsg);
+      return;
+    }
 
     try {
-      await api.post("/api/admin/users", {
-        ...values,
-        managerName: resolvedManagerName
-      });
+      await api.post("/api/admin/users", parsed.data);
       reset({
         firstName: "",
         lastName: "",
@@ -353,7 +516,7 @@ export function AdminAddUserForm() {
         empID: "",
         role: "team_member",
         roleTypes: [],
-        workspaceId: "",
+        workspaceId: activeCompanyId || "",
         teamNames: [],
         departments: [],
         managerName: "",
@@ -361,23 +524,34 @@ export function AdminAddUserForm() {
         password: "",
         confirmPassword: ""
       });
-      setMessage("User created successfully.");
+      setMessage(t("users.userCreated"));
       await queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
-      if (values.role === "ceo") {
-        router.push("/admin/users?role=ceo");
-        return;
-      }
+      await queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      setTimeout(() => {
+        if (values.role === "ceo") {
+          router.push("/admin/users?role=ceo");
+        } else {
+          router.push("/admin/users");
+        }
+      }, 500);
     } catch (requestError) {
-      const responseMessage = axios.isAxiosError(requestError) ? requestError.response?.data?.message : null;
-      setError(responseMessage ?? "Failed to create user.");
+      const errorData = axios.isAxiosError(requestError) ? requestError.response?.data : null;
+      const responseMessage = errorData?.message ?? (axios.isAxiosError(requestError) ? requestError.message : null);
+      if (errorData?.statusCode === 2004 || responseMessage?.toLowerCase().includes("employee id")) {
+        setFieldError("empID", {
+          type: "server",
+          message: responseMessage || "Employee ID already exists. Please enter a unique Employee ID."
+        });
+      }
+      setError(responseMessage ?? t("common.somethingWentWrong"));
     }
   };
 
   return (
     <form className="grid gap-4 md:grid-cols-2" autoComplete="off" onSubmit={handleSubmit(onSubmit)}>
-      <ReportField label="First name" required error={errors.firstName?.message}>
+      <ReportField label={t("users.firstName")} required error={errors.firstName?.message}>
         <ReportInput
-          placeholder="First name"
+          placeholder={t("users.firstName")}
           autoComplete="off"
           data-lpignore="true"
           {...register("firstName")}
@@ -387,9 +561,9 @@ export function AdminAddUserForm() {
           }}
         />
       </ReportField>
-      <ReportField label="Last name" error={errors.lastName?.message}>
+      <ReportField label={t("users.lastName")} error={errors.lastName?.message}>
         <ReportInput
-          placeholder="Last name"
+          placeholder={t("users.lastName")}
           autoComplete="off"
           data-lpignore="true"
           {...register("lastName")}
@@ -399,32 +573,36 @@ export function AdminAddUserForm() {
           }}
         />
       </ReportField>
-      <ReportField label="Phone" required error={errors.phone?.message}>
-        <ReportInput
-          placeholder="Phone"
-          type="tel"
-          maxLength={10}
-          {...register("phone")}
-          onChange={(e) => {
-            const cleaned = e.target.value.replace(/[^0-9]/g, "").slice(0, 10);
-            setValue("phone", cleaned, { shouldValidate: true, shouldDirty: true });
-          }}
+      <ReportField label={t("users.phone")} required error={errors.phone?.message}>
+        <Controller
+          control={control}
+          name="phone"
+          render={({ field }) => (
+            <PhoneInput
+              id="phone"
+              placeholder={t("users.phone")}
+              value={field.value}
+              onChange={field.onChange}
+              onBlur={field.onBlur}
+              error={Boolean(errors.phone)}
+            />
+          )}
         />
       </ReportField>
-      <ReportField label="Employee ID" required error={errors.empID?.message}>
-        <ReportInput placeholder="Employee ID" {...register("empID")} />
+      <ReportField label={t("users.empId")} required error={errors.empID?.message}>
+        <ReportInput placeholder={t("users.empId")} {...register("empID")} />
       </ReportField>
-      <ReportField label="Email" required error={errors.email?.message}>
-        <ReportInput placeholder="Email" type="email" {...register("email")} />
+      <ReportField label={t("users.email")} required error={errors.email?.message}>
+        <ReportInput placeholder={t("users.email")} type="email" {...register("email")} />
       </ReportField>
-      <ReportField label="Password" required error={errors.password?.message}>
-        <PasswordInput variant="report" showRules={true} placeholder="Password" {...register("password")} />
+      <ReportField label={t("users.password")} required error={errors.password?.message}>
+        <PasswordInput variant="report" showRules={true} placeholder={t("users.password")} {...register("password")} />
       </ReportField>
-      <ReportField label="Confirm Password" required error={errors.confirmPassword?.message}>
-        <PasswordInput variant="report" placeholder="Confirm Password" {...register("confirmPassword")} />
+      <ReportField label={t("users.confirmPassword")} required error={errors.confirmPassword?.message}>
+        <PasswordInput variant="report" placeholder={t("users.confirmPassword")} {...register("confirmPassword")} />
       </ReportField>
 
-      <div className="md:col-span-2 flex justify-end">
+      <div className="md:col-span-2 flex justify-end rtl:justify-start">
         <Button
           type="button"
           variant="outline"
@@ -450,24 +628,24 @@ export function AdminAddUserForm() {
           }}
           className="text-xs h-8"
         >
-          Suggest Strong Password
+          {t("users.suggestStrongPassword", "Suggest Strong Password")}
         </Button>
       </div>
 
       {sessionUser?.role === "ceo" ? (
-        <ReportField className="md:col-span-2" label="Company">
+        <ReportField className="md:col-span-2" label={t("common.company")}>
           <input type="hidden" {...register("workspaceId")} />
           <div className="flex h-11 w-full items-center rounded-xl border border-input bg-muted/40 px-3 py-2 text-sm font-medium text-foreground">
-            {activeSelectedCompany ? activeSelectedCompany.name : "Loading company..."}
+            {activeSelectedCompany ? activeSelectedCompany.name : t("common.loading")}
           </div>
         </ReportField>
       ) : selectedRole !== "ceo" ? (
-        <ReportField className="md:col-span-2" label="Company" required error={errors.workspaceId?.message}>
+        <ReportField className="md:col-span-2" label={t("common.company")} required error={errors.workspaceId?.message}>
           <ReportSelect {...register("workspaceId")}>
-            <option value="">Select Company</option>
+            <option value="">{t("common.company")}</option>
             {companies?.map((company) => (
               <option key={company._id} value={company._id}>
-                {company.name} {company.type === "ceo" ? "(CEO Workspace)" : "(Company Workspace)"}
+                {company.name} {company.type === "ceo" ? `(${t("companies.ceoWorkspace", "CEO Workspace")})` : `(${t("common.company", "Company")})`}
               </option>
             ))}
           </ReportSelect>
@@ -478,9 +656,9 @@ export function AdminAddUserForm() {
       {selectedRole !== "ceo" ? (
         <div className="md:col-span-2 space-y-2">
           <div className="text-sm font-medium text-foreground">
-            Departments (Assigned to User) <span className="text-danger">*</span>
+            {t("users.assignedDepartments")} <span className="text-danger">*</span>
           </div>
-          <div className="text-xs text-muted-foreground mb-2">Select one or more primary departments for this user.</div>
+          <div className="text-xs text-muted-foreground mb-2">{t("users.selectDepartmentsHelp", "Select one or more primary departments for this user.")}</div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {DEPARTMENT_OPTIONS.map((deptName) => {
               const isSelected = currentDepartments.some((d) => d.name === deptName);
@@ -492,7 +670,7 @@ export function AdminAddUserForm() {
                   className="justify-start text-xs h-9"
                   onClick={() => toggleDepartment(deptName)}
                 >
-                  {deptName}
+                  {t(`departments.${deptName.toLowerCase()}`, deptName)}
                 </Button>
               );
             })}
@@ -503,7 +681,7 @@ export function AdminAddUserForm() {
 
           {currentDepartments.some((d) => d.name === "Marketing") && (
             <div className="mt-3 p-3 border rounded-lg bg-muted/20 space-y-2">
-              <div className="text-xs font-semibold text-foreground">Marketing Sub-Teams</div>
+              <div className="text-xs font-semibold text-foreground">{t("users.marketingSubTeams", "Marketing Sub-Teams")}</div>
               <div className="flex gap-2">
                 {MARKETING_SUB_TEAMS.map((sub) => {
                   const marketingDept = currentDepartments.find((d) => d.name === "Marketing");
@@ -517,7 +695,7 @@ export function AdminAddUserForm() {
                       className="text-xs h-8"
                       onClick={() => toggleMarketingSubTeam(sub)}
                     >
-                      {sub}
+                      {t(`departments.subTeams.${sub.toLowerCase()}`, sub)}
                     </Button>
                   );
                 })}
@@ -529,7 +707,7 @@ export function AdminAddUserForm() {
 
       {/* 3. Role */}
       {selectedRole !== "ceo" ? (
-        <ReportField label="Role" required error={errors.role?.message}>
+        <ReportField label={t("common.role")} required error={errors.role?.message}>
           <Controller
             control={control}
             name="role"
@@ -543,7 +721,7 @@ export function AdminAddUserForm() {
               >
                 {availableRoleOptions.map((role) => (
                   <option key={role} value={role}>
-                    {CREATE_USER_ROLE_LABELS[role]}
+                    {t(`roles.${role}`) || CREATE_USER_ROLE_LABELS[role]}
                   </option>
                 ))}
               </ReportSelect>
@@ -552,7 +730,28 @@ export function AdminAddUserForm() {
         </ReportField>
       ) : null}
 
-      {/* 4. Team Type */}
+      {/* 4. Manager */}
+      {selectedRole === "hod" ? (
+        <ReportField className="md:col-span-2" label={t("common.manager")}>
+          <input type="hidden" {...register("managerName")} />
+          <div className="flex h-11 w-full items-center rounded-xl border border-input bg-muted/40 px-3 py-2 text-sm font-medium text-foreground">
+            {sessionUser?.role === "ceo" ? sessionUser.name : t("roles.ceo", "CEO")}
+          </div>
+        </ReportField>
+      ) : selectedRole !== "ceo" && selectedRole !== "admin" ? (
+        <ReportField className="md:col-span-2" label={selectedRole === "team_member" ? `${t("roles.team_lead")} (${t("common.manager")})` : selectedRole === "report_manager" || selectedRole === "team_lead" ? `${t("roles.hod")} (${t("common.manager")})` : t("common.manager")} required error={errors.managerName?.message}>
+          <ReportSelect {...register("managerName")}>
+            <option value="">{selectedRole === "team_member" ? t("users.selectManager") : t("users.selectManager")}</option>
+            {managerSelectOptions.map((manager) => (
+              <option key={manager._id} value={manager.name}>
+                {manager.name}
+              </option>
+            ))}
+          </ReportSelect>
+        </ReportField>
+      ) : null}
+
+      {/* 5. Team Type */}
       {selectedRole !== "ceo" && selectedRole !== "hod" && selectedRole !== "report_manager" ? (
         <div className="md:col-span-2">
           <Controller
@@ -560,15 +759,10 @@ export function AdminAddUserForm() {
             name="teamNames"
             render={({ field }) => (
               <ReportMultiSelectCards
-                label="Team (Team Type)"
+                label={`${t("common.team")} (${t("common.teamType")})`}
                 required={selectedRole === "team_lead" || selectedRole === "team_member"}
-                helperText={
-                  selectedRole === "team_member"
-                    ? "Choose at least one team type managed by the selected team lead."
-                    : selectedRole === "team_lead"
-                    ? "Choose at least one team type for this team lead."
-                    : "Choose one or more team types for this user."
-                }
+                helperText={teamTypeHelperText}
+                emptyMessage={teamTypeEmptyMessage}
                 error={errors.teamNames?.message}
                 value={field.value ?? []}
                 onChange={field.onChange}
@@ -582,27 +776,6 @@ export function AdminAddUserForm() {
         </div>
       ) : null}
 
-      {/* 5. Manager */}
-      {selectedRole === "hod" ? (
-        <ReportField className="md:col-span-2" label="Manager">
-          <input type="hidden" {...register("managerName")} />
-          <div className="flex h-11 w-full items-center rounded-xl border border-input bg-muted/40 px-3 py-2 text-sm font-medium text-foreground">
-            {sessionUser?.role === "ceo" ? sessionUser.name : "CEO"}
-          </div>
-        </ReportField>
-      ) : selectedRole !== "ceo" && selectedRole !== "admin" ? (
-        <ReportField className="md:col-span-2" label={selectedRole === "team_member" ? "Team Lead" : selectedRole === "report_manager" || selectedRole === "team_lead" ? "HOD (Manager)" : "Manager"} required error={errors.managerName?.message}>
-          <ReportSelect {...register("managerName")}>
-            <option value="">{selectedRole === "team_member" ? "Select team lead" : "Select HOD"}</option>
-            {managerSelectOptions.map((manager) => (
-              <option key={manager._id} value={manager.name}>
-                {manager.name}
-              </option>
-            ))}
-          </ReportSelect>
-        </ReportField>
-      ) : null}
-
       {/* 6. Skills */}
       {selectedRole !== "report_manager" && selectedRole !== "ceo" && selectedRole !== "hod" ? (
         <div className="md:col-span-2">
@@ -611,17 +784,20 @@ export function AdminAddUserForm() {
             name="roleTypes"
             render={({ field }) => (
               <ReportMultiSelectCards
-                label="Skills / Specialties"
+                label={t("users.skills")}
                 required
-                helperText="Select one or more skills for this user (dynamically filtered based on chosen department)."
+                helperText={t("users.selectSkillsHelp", "Select one or more skills for this user (dynamically filtered based on chosen department).")}
                 error={errors.roleTypes?.message}
                 value={field.value ?? []}
                 onChange={field.onChange}
-                options={availableSkills.map((skill) => ({
-                  value: skill.name,
-                  label: skill.name,
-                  description: skill.description
-                }))}
+                options={availableSkills.map((skill) => {
+                  const skillKey = normalizeSkillKey(skill.name);
+                  return {
+                    value: skill.name,
+                    label: t(`skills.${skillKey}`, skill.name),
+                    description: t(`skills.descriptions.${skillKey}`, skill.description)
+                  };
+                })}
               />
             )}
           />
@@ -631,7 +807,7 @@ export function AdminAddUserForm() {
       {error ? <p className="text-sm text-danger md:col-span-2">{error}</p> : null}
       {message ? <p className="text-sm text-success md:col-span-2">{message}</p> : null}
       <Button className="md:col-span-2 w-fit" type="submit" disabled={isSubmitting}>
-        {isSubmitting ? "Creating..." : selectedRole === "ceo" ? "Create CEO" : "Create Employee"}
+        {isSubmitting ? t("common.creating") : selectedRole === "ceo" ? `${t("common.create")} ${t("roles.ceo", "CEO")}` : t("users.addEmployee")}
       </Button>
     </form>
   );

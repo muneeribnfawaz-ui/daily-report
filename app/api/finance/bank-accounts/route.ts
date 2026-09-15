@@ -1,27 +1,29 @@
 import { NextResponse } from "next/server";
 import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { canViewFinanceReport, canAccessBanksAndPettyCash } from "@/lib/permissions";
+import { canViewFinanceReport, canAccessBanksAndPettyCash, canCreateFinanceReport } from "@/lib/permissions";
 import { withFinanceEncryption, encryptedJsonResponse } from "@/lib/middleware/finance-encryption";
 import { encryptDbField, hashForLookup, computeRowSignature, decryptDbField } from "@/lib/crypto/db-encryption";
+import { buildWorkspaceFilter, isWorkspaceAuthorizedForUser } from "@/lib/workspace-context";
 
 export async function GET(request: Request) {
-  // Existing GET implementation (omitted for brevity, keep as is but we can decrypt if needed)
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ success: false, status: "UNAUTHORIZED", message: "Unauthorized" }, { status: 401 });
-    if (!canAccessBanksAndPettyCash(user)) return NextResponse.json({ success: false, status: "FORBIDDEN", message: "Forbidden" }, { status: 403 });
-
-    const url = new URL(request.url);
-    const workspaceId = url.searchParams.get("workspaceId") || request.headers.get("x-workspace-id") || user.workspaceId;
-    const activeWorkspaceId = workspaceId && workspaceId !== "all" ? workspaceId : user.workspaceId;
-
-    if (user.role !== "admin") {
-      const isMember = await db.workspaceMember.findFirst({ where: { userId: user.id, workspaceId: activeWorkspaceId, status: "active", isActive: true } });
-      if (!isMember) return NextResponse.json({ success: false, status: "FORBIDDEN", message: "Forbidden workspace context" }, { status: 403 });
+    if (!canAccessBanksAndPettyCash(user) && !canViewFinanceReport(user) && !canCreateFinanceReport(user)) {
+      return NextResponse.json({ success: false, status: "FORBIDDEN", message: "Forbidden" }, { status: 403 });
     }
 
-    let bankAccounts = await db.bankAccount.findMany({ where: { workspaceId: activeWorkspaceId, isActive: true, isDeleted: false } });
+    const url = new URL(request.url);
+    const workspaceId = url.searchParams.get("workspaceId") || request.headers.get("x-workspace-id");
+
+    const workspaceFilter = await buildWorkspaceFilter(user, workspaceId);
+    const filter: Record<string, any> = { isActive: true, isDeleted: false, ...workspaceFilter };
+
+    let bankAccounts = await db.bankAccount.findMany({
+      where: filter,
+      orderBy: { bankName: "asc" }
+    });
 
     // Decrypt sensitive fields before returning to client (which handles its own encryption)
     const decryptedAccounts = bankAccounts.map(account => ({
@@ -45,7 +47,9 @@ async function postHandler(body: any, request: Request) {
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ success: false, status: "UNAUTHORIZED", message: "Unauthorized" }, { status: 401 });
-    if (!canAccessBanksAndPettyCash(user)) return NextResponse.json({ success: false, status: "FORBIDDEN", message: "Forbidden" }, { status: 403 });
+    if (!canAccessBanksAndPettyCash(user) && !canCreateFinanceReport(user)) {
+      return NextResponse.json({ success: false, status: "FORBIDDEN", message: "Forbidden" }, { status: 403 });
+    }
 
     const { bankName, accountNumber, ifscCode, iban, branchName, product, currency, openingBalance, workspaceId } = body;
 
@@ -59,7 +63,23 @@ async function postHandler(body: any, request: Request) {
       return NextResponse.json({ success: false, status: "VALIDATION_ERROR", message: "Invalid IFSC code format. Must be 11 characters (4 letters, a zero, 6 alphanumeric)" }, { status: 400 });
     }
 
-    const activeWorkspaceId = workspaceId && workspaceId !== "all" ? workspaceId : user.workspaceId;
+    let activeWorkspaceId = workspaceId && workspaceId !== "all" ? workspaceId : user.workspaceId;
+    if (!activeWorkspaceId && user.role !== "admin") {
+      const firstMembership = await db.workspaceMember.findFirst({
+        where: { userId: user.id, status: "active", isActive: true },
+        select: { workspaceId: true }
+      });
+      activeWorkspaceId = firstMembership?.workspaceId;
+    }
+    if (!activeWorkspaceId) {
+      const firstCompany = await db.workspace.findFirst({ where: { type: "company", isActive: true, isDeleted: false } });
+      activeWorkspaceId = firstCompany?.id;
+    }
+
+    const isAuthorized = await isWorkspaceAuthorizedForUser(user, activeWorkspaceId);
+    if (!isAuthorized) {
+      return NextResponse.json({ success: false, status: "FORBIDDEN", message: "You do not have permission to add bank accounts to this company/workspace." }, { status: 403 });
+    }
 
     // Encrypt sensitive fields
     const encryptedAccountNumber = encryptDbField(accountNumber);

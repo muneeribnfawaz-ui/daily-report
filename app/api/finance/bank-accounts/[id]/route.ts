@@ -3,6 +3,7 @@ import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessBanksAndPettyCash } from "@/lib/permissions";
 import { encryptDbField, decryptDbField } from "@/lib/crypto/db-encryption";
+import { isWorkspaceAuthorizedForUser } from "@/lib/workspace-context";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -19,6 +20,11 @@ export async function GET(request: Request, { params }: RouteParams) {
     const { id } = await params;
     const bank = await db.bankAccount.findUnique({ where: { id } });
     if (!bank || bank.isDeleted) {
+      return NextResponse.json({ success: false, status: "NOT_FOUND", message: "Bank account not found" }, { status: 4404 });
+    }
+
+    const isAuthorized = await isWorkspaceAuthorizedForUser(user, bank.workspaceId);
+    if (!isAuthorized) {
       return NextResponse.json({ success: false, status: "NOT_FOUND", message: "Bank account not found" }, { status: 4404 });
     }
 
@@ -57,6 +63,11 @@ export async function PUT(request: Request, { params }: RouteParams) {
     const existingBank = await db.bankAccount.findUnique({ where: { id } });
     if (!existingBank || existingBank.isDeleted) {
       return NextResponse.json({ success: false, status: "NOT_FOUND", message: "Bank account not found" }, { status: 404 });
+    }
+
+    const isAuthorized = await isWorkspaceAuthorizedForUser(user, existingBank.workspaceId);
+    if (!isAuthorized) {
+      return NextResponse.json({ success: false, status: "FORBIDDEN", message: "Forbidden: You cannot modify a bank account from another company/workspace." }, { status: 403 });
     }
 
     const body = await request.json();
@@ -118,6 +129,80 @@ export async function PUT(request: Request, { params }: RouteParams) {
           editRequestedBy: user.id
         }
       });
+
+      // Notify Admin and CEO users with access to this workspace
+      try {
+        const approverIds = new Set<string>();
+
+        // 1. All active admins
+        const adminUsers = await db.user.findMany({
+          where: { role: "admin", isDeleted: false },
+          select: { id: true }
+        });
+        adminUsers.forEach((a) => approverIds.add(a.id));
+
+        // 2. CEOs with active membership in this workspace or its owner workspace
+        const companyWorkspace = await db.workspace.findUnique({
+          where: { id: existingBank.workspaceId },
+          select: { ownerWorkspaceId: true }
+        });
+        const relevantWorkspaceIds = [existingBank.workspaceId];
+        if (companyWorkspace?.ownerWorkspaceId) {
+          relevantWorkspaceIds.push(companyWorkspace.ownerWorkspaceId);
+        }
+
+        const ceoMemberships = await db.workspaceMember.findMany({
+          where: {
+            workspaceId: { in: relevantWorkspaceIds },
+            role: "ceo",
+            status: "active",
+            isActive: true,
+            user: { isDeleted: false }
+          },
+          select: { userId: true }
+        });
+        ceoMemberships.forEach((m) => approverIds.add(m.userId));
+
+        // Exclude the submitter
+        approverIds.delete(user.id);
+
+        if (approverIds.size > 0) {
+          const approverIdsList = Array.from(approverIds);
+
+          // Prevent duplicate unread pending notifications
+          const existingNotifs = await db.notification.findMany({
+            where: {
+              recipientId: { in: approverIdsList },
+              type: "bank_edit_request_pending",
+              linkUrl: `/finance/banks/${id}`,
+              isRead: false
+            },
+            select: { recipientId: true }
+          });
+          const alreadyNotifiedRecipients = new Set(existingNotifs.map((n) => n.recipientId));
+          const recipientsToNotify = approverIdsList.filter((recId) => !alreadyNotifiedRecipients.has(recId));
+
+          if (recipientsToNotify.length > 0) {
+            const notificationsToCreate = recipientsToNotify.map((recId) => ({
+              recipientId: recId,
+              type: "bank_edit_request_pending",
+              title: "Bank Account Edit Request",
+              message: `${user.name} has requested edits for bank account "${bankName.trim()}". Reason: "${editReason ? editReason.trim() : "Edit requested by finance user"}"`,
+              metadata: {
+                bankAccountId: id,
+                bankName: bankName.trim(),
+                requestedBy: user.name,
+                requestedById: user.id
+              },
+              linkUrl: `/finance/banks/${id}`
+            }));
+
+            await db.notification.createMany({ data: notificationsToCreate });
+          }
+        }
+      } catch (notifErr) {
+        console.error("Failed to create bank edit request notifications:", notifErr);
+      }
 
       return NextResponse.json({
         success: true,

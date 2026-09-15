@@ -3,10 +3,14 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EditBankModal } from "@/components/finance/edit-bank-modal";
 import { Pencil, Check, X, Loader2, Clock } from "lucide-react";
+import { useTranslation } from "@/lib/i18n";
+import { api } from "@/lib/api";
+import { useSelectedCompany } from "@/hooks/use-selected-company";
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-IN", {
@@ -32,16 +36,45 @@ type Bank = {
 };
 
 type Props = {
-  banks: Bank[];
+  banks?: Bank[];
   userRole?: string;
 };
 
-export function BankDirectoryTable({ banks, userRole }: Props) {
+export function BankDirectoryTable({ banks = [], userRole }: Props) {
   const router = useRouter();
+  const { t } = useTranslation();
+  const selectedCompanyId = useSelectedCompany();
   const [editingBank, setEditingBank] = useState<Bank | null>(null);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
   const isHigherAuthority = userRole === "admin" || userRole === "ceo";
+
+  const { data: dynamicBanks = banks, refetch } = useQuery({
+    queryKey: ["bank-accounts-table-list", selectedCompanyId],
+    queryFn: async () => {
+      const params: Record<string, string> = {};
+      if (selectedCompanyId && selectedCompanyId !== "all") {
+        params.workspaceId = selectedCompanyId;
+      }
+      const res = await api.get("/api/finance/bank-accounts", { params });
+      const payload = res.data?.data || [];
+      return payload.map((bank: any) => ({
+        id: String(bank.id || bank._id),
+        bankName: bank.bankName,
+        maskedAccountNumber: bank.accountNumber || (bank.account_last_4 ? `****${bank.account_last_4}` : "XXXX"),
+        product: bank.product,
+        branchName: bank.branchName,
+        ifscCode: bank.ifscCode,
+        currentBalance: bank.openingBalance || 0,
+        openingBalance: bank.openingBalance || 0,
+        editStatus: bank.editStatus,
+        editReason: bank.editReason,
+        pendingEdits: bank.pendingEdits
+      })) as Bank[];
+    }
+  });
+
+  const displayBanks = dynamicBanks;
 
   const handleApproveReject = async (e: React.MouseEvent, bankId: string, action: "approve" | "reject") => {
     e.stopPropagation();
@@ -56,12 +89,13 @@ export function BankDirectoryTable({ banks, userRole }: Props) {
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.message || "Failed to process edit request");
+        throw new Error(data.message || t("banks.failedProcessEdit", "Failed to process edit request"));
       }
 
+      await refetch();
       router.refresh();
     } catch (err: any) {
-      alert(err.message || "An error occurred");
+      alert(err.message || t("common.errorOccurred", "An error occurred"));
     } finally {
       setActionLoadingId(null);
     }
@@ -74,17 +108,17 @@ export function BankDirectoryTable({ banks, userRole }: Props) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/30">
-                <th className="py-3 px-4 text-left font-semibold text-muted-foreground">Bank Name</th>
-                <th className="py-3 px-4 text-left font-semibold text-muted-foreground">Account Number</th>
-                <th className="py-3 px-4 text-left font-semibold text-muted-foreground">Product</th>
-                <th className="py-3 px-4 text-left font-semibold text-muted-foreground">Branch</th>
-                <th className="py-3 px-4 text-left font-semibold text-muted-foreground">IFSC</th>
-                <th className="py-3 px-4 text-right font-semibold text-muted-foreground">Current Balance</th>
-                <th className="py-3 px-4 text-center font-semibold text-muted-foreground">Status / Actions</th>
+                <th className="py-3 px-4 text-left rtl:text-right font-semibold text-muted-foreground">{t("banks.bankName", "Bank Name")}</th>
+                <th className="py-3 px-4 text-left rtl:text-right font-semibold text-muted-foreground">{t("banks.accountNumber", "Account Number")}</th>
+                <th className="py-3 px-4 text-left rtl:text-right font-semibold text-muted-foreground">{t("banks.product", "Product")}</th>
+                <th className="py-3 px-4 text-left rtl:text-right font-semibold text-muted-foreground">{t("banks.branch", "Branch")}</th>
+                <th className="py-3 px-4 text-left rtl:text-right font-semibold text-muted-foreground">{t("banks.ifsc", "IFSC")}</th>
+                <th className="py-3 px-4 text-right rtl:text-left font-semibold text-muted-foreground">{t("banks.currentBalance", "Current Balance")}</th>
+                <th className="py-3 px-4 text-center font-semibold text-muted-foreground">{t("banks.statusActions", "Status / Actions")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {banks.map((bank) => {
+              {displayBanks.map((bank) => {
                 const isPending = bank.editStatus === "pending_approval";
 
                 return (
@@ -106,7 +140,7 @@ export function BankDirectoryTable({ banks, userRole }: Props) {
                     <td className="py-3.5 px-4 text-muted-foreground">
                       {bank.ifscCode ? bank.ifscCode : "-"}
                     </td>
-                    <td className="py-3.5 px-4 text-right font-semibold tabular-nums text-primary">
+                    <td className="py-3.5 px-4 text-right rtl:text-left font-semibold tabular-nums text-primary">
                       {formatCurrency(bank.currentBalance || 0)}
                     </td>
                     <td className="py-3.5 px-4 text-center" onClick={(e) => e.stopPropagation()}>
@@ -125,7 +159,7 @@ export function BankDirectoryTable({ banks, userRole }: Props) {
                                   <Loader2 className="h-3 w-3 animate-spin" />
                                 ) : (
                                   <>
-                                    <Check className="h-3 w-3 mr-1" /> Approve
+                                    <Check className="h-3 w-3 mr-1 rtl:ml-1 rtl:mr-0" /> {t("common.approve", "Approve")}
                                   </>
                                 )}
                               </Button>
@@ -140,14 +174,14 @@ export function BankDirectoryTable({ banks, userRole }: Props) {
                                   <Loader2 className="h-3 w-3 animate-spin" />
                                 ) : (
                                   <>
-                                    <X className="h-3 w-3 mr-1" /> Reject
+                                    <X className="h-3 w-3 mr-1 rtl:ml-1 rtl:mr-0" /> {t("common.reject", "Reject")}
                                   </>
                                 )}
                               </Button>
                             </div>
                           ) : (
                             <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30 gap-1 text-xs">
-                              <Clock className="h-3 w-3" /> Pending Approval
+                              <Clock className="h-3 w-3" /> {t("moneyRequests.pendingApproval", "Pending Approval")}
                             </Badge>
                           )
                         ) : (
@@ -160,7 +194,7 @@ export function BankDirectoryTable({ banks, userRole }: Props) {
                               setEditingBank(bank);
                             }}
                           >
-                            <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
+                            <Pencil className="h-3.5 w-3.5 mr-1 rtl:ml-1 rtl:mr-0" /> {t("common.edit", "Edit")}
                           </Button>
                         )}
                       </div>

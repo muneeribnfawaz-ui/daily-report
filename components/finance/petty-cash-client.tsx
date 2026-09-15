@@ -15,6 +15,9 @@ import {
   Loader2
 } from "lucide-react";
 
+import { useTranslation } from "@/lib/i18n";
+import { useSelectedCompany } from "@/hooks/use-selected-company";
+
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -33,11 +36,18 @@ interface PettyCashClientProps {
 }
 
 export function PettyCashClient({ userRole }: PettyCashClientProps) {
+  const { t } = useTranslation();
+  const selectedCompanyId = useSelectedCompany();
+
   // Query Petty Cash Balance & Transactions
   const { data, isLoading } = useQuery({
-    queryKey: ["petty-cash-data"],
+    queryKey: ["petty-cash-data", selectedCompanyId],
     queryFn: async () => {
-      const res = await api.get("/api/finance/petty-cash");
+      const params: Record<string, string> = {};
+      if (selectedCompanyId && selectedCompanyId !== "all") {
+        params.workspaceId = selectedCompanyId;
+      }
+      const res = await api.get("/api/finance/petty-cash", { params });
       return res.data?.data as { balance: number; transactions: any[] };
     }
   });
@@ -48,9 +58,9 @@ export function PettyCashClient({ userRole }: PettyCashClientProps) {
   return (
     <div className="space-y-6">
       <DashboardPageHeader
-        eyebrow="Finance"
-        title="Petty Cash Management"
-        description="Allocate funds, record office expenses, and track cash-in-hand transaction histories."
+        eyebrow={t("nav.finance", "Finance")}
+        title={t("pettyCash.title", "Petty Cash Management")}
+        description={t("pettyCash.description", "Allocate funds, record office expenses, and track cash-in-hand transaction histories.")}
       />
 
       {isLoading ? (
@@ -67,7 +77,7 @@ export function PettyCashClient({ userRole }: PettyCashClientProps) {
               <CardContent className="p-6 relative z-10">
                 <div className="flex items-center justify-between">
                   <div className="space-y-1">
-                    <span className="text-sm font-medium text-muted-foreground">Running Petty Cash Balance</span>
+                    <span className="text-sm font-medium text-muted-foreground">{t("pettyCash.runningBalance", "Running Petty Cash Balance")}</span>
                     <h2 className="text-4xl font-extrabold tracking-tight text-foreground tabular-nums">
                       {formatCurrency(balance)}
                     </h2>
@@ -82,12 +92,12 @@ export function PettyCashClient({ userRole }: PettyCashClientProps) {
             {/* Quick Transaction Stats Card */}
             <Card className="bg-card shadow-soft">
               <CardContent className="p-6 space-y-4">
-                <span className="text-sm font-medium text-muted-foreground block">Transaction Stats</span>
+                <span className="text-sm font-medium text-muted-foreground block">{t("pettyCash.transactionStats", "Transaction Stats")}</span>
                 <div className="space-y-3">
                   <div className="flex items-center justify-between text-sm">
                     <span className="flex items-center gap-1.5 text-muted-foreground">
                       <ArrowUpCircle className="h-4 w-4 text-emerald-500" />
-                      Total Additions
+                      {t("pettyCash.totalAdditions", "Total Additions")}
                     </span>
                     <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
                       {formatCurrency(transactions.filter(t => t.type === "add").reduce((sum, t) => sum + (t.amount || 0), 0))}
@@ -96,7 +106,7 @@ export function PettyCashClient({ userRole }: PettyCashClientProps) {
                   <div className="flex items-center justify-between text-sm">
                     <span className="flex items-center gap-1.5 text-muted-foreground">
                       <ArrowDownCircle className="h-4 w-4 text-rose-500" />
-                      Total Expenses
+                      {t("pettyCash.totalExpenses", "Total Expenses")}
                     </span>
                     <span className="font-semibold tabular-nums text-rose-600 dark:text-rose-400">
                       {formatCurrency(transactions.filter(t => t.type === "expense").reduce((sum, t) => sum + (t.amount || 0), 0))}
@@ -104,8 +114,8 @@ export function PettyCashClient({ userRole }: PettyCashClientProps) {
                   </div>
                   <div className="h-px bg-border/60" />
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Recent log transactions count</span>
-                    <span className="font-semibold">{transactions.length} items</span>
+                    <span>{t("pettyCash.recentLogCount", "Recent log transactions count")}</span>
+                    <span className="font-semibold">{t("pettyCash.itemsCount", { count: transactions.length }, `${transactions.length} items`)}</span>
                   </div>
                 </div>
               </CardContent>
@@ -116,15 +126,15 @@ export function PettyCashClient({ userRole }: PettyCashClientProps) {
           <div className="space-y-4">
             <h3 className="text-lg font-semibold tracking-tight flex items-center gap-2">
               <History className="h-4 w-4 text-indigo-500" />
-              Transaction History Log
+              {t("pettyCash.historyLog", "Transaction History Log")}
             </h3>
 
             {transactions.length === 0 ? (
               <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card/50 p-12 text-center shadow-soft">
                 <FileText className="h-12 w-12 text-muted-foreground/40" />
-                <h3 className="mt-4 text-base font-semibold">No Petty Cash Logs</h3>
+                <h3 className="mt-4 text-base font-semibold">{t("pettyCash.noLogs", "No Petty Cash Logs")}</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Petty cash additions and expenditures will appear here once recorded.
+                  {t("pettyCash.noLogsDesc", "Petty cash additions and expenditures will appear here once recorded.")}
                 </p>
               </div>
             ) : (
@@ -133,12 +143,12 @@ export function PettyCashClient({ userRole }: PettyCashClientProps) {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b bg-muted/30">
-                        <th className="py-3 px-4 text-left font-semibold text-muted-foreground w-36">Date</th>
-                        <th className="py-3 px-4 text-center font-semibold text-muted-foreground w-28">Type</th>
-                        <th className="py-3 px-4 text-left font-semibold text-muted-foreground w-44">Particulars</th>
-                        <th className="py-3 px-4 text-left font-semibold text-muted-foreground">Description</th>
-                        <th className="py-3 px-4 text-right font-semibold text-muted-foreground w-36">Amount</th>
-                        <th className="py-3 px-4 text-left font-semibold text-muted-foreground w-44">Logged By</th>
+                        <th className="py-3 px-4 text-left rtl:text-right font-semibold text-muted-foreground w-36">{t("common.date", "Date")}</th>
+                        <th className="py-3 px-4 text-center font-semibold text-muted-foreground w-28">{t("pettyCash.type", "Type")}</th>
+                        <th className="py-3 px-4 text-left rtl:text-right font-semibold text-muted-foreground w-44">{t("moneyRequests.particulars", "Particulars")}</th>
+                        <th className="py-3 px-4 text-left rtl:text-right font-semibold text-muted-foreground">{t("common.description", "Description")}</th>
+                        <th className="py-3 px-4 text-right rtl:text-left font-semibold text-muted-foreground w-36">{t("common.amount", "Amount")}</th>
+                        <th className="py-3 px-4 text-left rtl:text-right font-semibold text-muted-foreground w-44">{t("pettyCash.loggedBy", "Logged By")}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
@@ -150,11 +160,11 @@ export function PettyCashClient({ userRole }: PettyCashClientProps) {
                           <td className="py-3.5 px-4 text-center">
                             {tx.type === "add" ? (
                               <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 font-semibold px-2 rounded-md">
-                                Cash In
+                                {t("pettyCash.cashIn", "Cash In")}
                               </Badge>
                             ) : (
                               <Badge variant="outline" className="border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300 font-semibold px-2 rounded-md">
-                                Cash Out
+                                {t("pettyCash.cashOut", "Cash Out")}
                               </Badge>
                             )}
                           </td>
@@ -164,7 +174,7 @@ export function PettyCashClient({ userRole }: PettyCashClientProps) {
                           <td className="py-3.5 px-4 text-foreground max-w-xs truncate" title={tx.description}>
                             {tx.description || "—"}
                           </td>
-                          <td className={`py-3.5 px-4 text-right font-semibold tabular-nums ${tx.type === "add" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+                          <td className={`py-3.5 px-4 text-right rtl:text-left font-semibold tabular-nums ${tx.type === "add" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
                             {tx.type === "add" ? "+" : "-"}{formatCurrency(tx.amount)}
                           </td>
                           <td className="py-3.5 px-4 text-muted-foreground flex items-center gap-1.5 mt-0.5">

@@ -68,18 +68,25 @@ function getVisibleUserIds(
   return Array.from(visibleUserIds);
 }
 
-function resolveTeamName(user: {
+function resolveTeamName(memberOrUser: {
   teamName?: string | null;
   teamNames?: string[] | null;
+  departments?: Array<{ name: string; subTeams?: string[] }> | null;
 }) {
-  const candidate = [user.teamName, ...(user.teamNames ?? [])].find((value) => value?.trim() && value.trim() !== "undefined");
-  return candidate?.trim() || "MIF Tech Members";
+  const candidate = [
+    memberOrUser.teamName,
+    ...(memberOrUser.teamNames ?? []),
+    ...(memberOrUser.departments?.map((d) => d.name) ?? [])
+  ].find((value) => value?.trim() && value.trim() !== "undefined" && value.trim() !== "MIF Tech Members");
+  return candidate?.trim() || "";
 }
 
 import { formatDisplayName } from "@/lib/utils";
 
 function getTeamDisplayName(teamName: string, teamTypeShowNameMap: Record<string, string>) {
-  if (!teamName.trim() || teamName.toLowerCase() === "undefined") return "MIF Tech Members";
+  if (!teamName || !teamName.trim() || teamName.toLowerCase() === "undefined" || teamName.trim() === "MIF Tech Members") {
+    return "";
+  }
   const mapped = teamTypeShowNameMap[teamName] ?? teamName;
   return formatDisplayName(mapped);
 }
@@ -114,7 +121,19 @@ export async function getConsolidatedReportDetail(
   teamFilter?: string,
   mine?: boolean
 ) {
+  const isAllDept = !department || department.trim().toLowerCase() === "all" || department.trim().toLowerCase() === "all enrolled depts" || department.trim().toLowerCase() === "all departments";
+  const normalizedDept = isAllDept ? "All" : department.trim();
+
   const teamTypeShowNameMap = await getActiveTeamTypeShowNameMap();
+
+  const activeTeamTypes = await db.teamType.findMany({
+    where: { isActive: true, ...(workspaceId && workspaceId !== "all" ? { workspaceId } : {}) }
+  });
+  const teamTypeMap = new Map<string, any>();
+  for (const tt of activeTeamTypes) {
+    if (tt.name) teamTypeMap.set(tt.name, tt);
+    if (tt.showName) teamTypeMap.set(tt.showName, tt);
+  }
 
   // Fetch members who are in the Finance department
   const financeMembers = await db.workspaceMember.findMany({
@@ -126,14 +145,14 @@ export async function getConsolidatedReportDetail(
   let departmentFilterUserIds: Set<string> | null = null;
   let departmentTeamNamesSet: Set<string> | null = null;
 
-  if (department && department !== "All") {
-    const departmentTeamNames = await getTeamNamesByDepartment(department);
+  if (normalizedDept !== "All") {
+    const departmentTeamNames = await getTeamNamesByDepartment(normalizedDept);
     const deptMembers = await db.workspaceMember.findMany({
       where: {
         status: "active",
         isActive: true,
         OR: [
-          { departments: { some: { name: department } } },
+          { departments: { some: { name: normalizedDept } } },
           { departments: { some: { name: { in: departmentTeamNames } } } }
         ]
       },
@@ -141,10 +160,31 @@ export async function getConsolidatedReportDetail(
     });
 
     const deptUserIds = deptMembers.map((m) => m.userId);
-    const deptUserTeamNames = deptMembers.flatMap((m) => m.departments.map(d => d.name)).filter(Boolean);
 
     departmentFilterUserIds = new Set(deptUserIds);
-    departmentTeamNamesSet = new Set([department, ...departmentTeamNames, ...deptUserTeamNames]);
+    departmentTeamNamesSet = new Set([normalizedDept, ...departmentTeamNames]);
+  }
+
+  const memberQueryFilter: any = {
+    status: "active",
+    isActive: true
+  };
+  if (workspaceId && workspaceId !== "all") {
+    memberQueryFilter.workspaceId = workspaceId;
+  }
+  const allMembers = await db.workspaceMember.findMany({
+    where: memberQueryFilter,
+    include: {
+      user: true,
+      departments: true
+    }
+  });
+
+  const memberByUserId = new Map<string, any>();
+  for (const m of allMembers) {
+    if (m.userId) {
+      memberByUserId.set(String(m.userId), m);
+    }
   }
 
   const allUsers = await db.user.findMany();
@@ -155,12 +195,24 @@ export async function getConsolidatedReportDetail(
     userRoleById.set(String(user.id), user.role ?? null);
   }
 
-  const currentUserObj = (await db.user.findFirst({ where: { name: userName } })) as any;
-  const currentUserDepts = currentUserObj?.departments ?? [];
+  const currentUserObj = (await db.user.findFirst({
+    where: { name: userName },
+    include: {
+      workspaceMembers: {
+        where: { isActive: true, status: "active" },
+        include: { departments: true }
+      }
+    }
+  })) as any;
+  const currentMember =
+    currentUserObj?.workspaceMembers?.find((m: any) => !workspaceId || workspaceId === "all" || m.workspaceId === workspaceId) ||
+    currentUserObj?.workspaceMembers?.[0];
+  const currentUserDepts = currentMember?.departments?.map((d: any) => ({ name: d.name, subTeams: d.subTeams || [] })) ?? [];
   const resolvedVisibleIds = await getVisibleReportEmployeeIds({
     id: currentUserObj ? String(currentUserObj.id || currentUserObj._id) : "",
     name: userName,
     role,
+    workspaceId: workspaceId || currentMember?.workspaceId,
     teamName: teamName ?? null,
     departments: currentUserDepts
   });
@@ -169,8 +221,7 @@ export async function getConsolidatedReportDetail(
     role === "admin" ||
     role === "ceo" ||
     role === "hod" ||
-    role === "report_manager" ||
-    Boolean(department && department !== "All");
+    (role !== "report_manager" && normalizedDept !== "All");
 
   const conditions: Record<string, any>[] = [];
 
@@ -223,29 +274,29 @@ export async function getConsolidatedReportDetail(
 
     conditions.push({ OR: hodConditions });
   } else if (role === "hod") {
-    const memberFilter: Record<string, any> = {
-      role: "team_lead",
-      status: "active",
-      isActive: true
-    };
-    if (workspaceId && workspaceId !== "all") {
-      memberFilter.workspaceId = workspaceId;
-    }
-    const targetMembers = await db.workspaceMember.findMany({ where: memberFilter, select: { userId: true } });
-    const targetUserIds = targetMembers.map((m) => String(m.userId));
-    if (currentUserObj && (currentUserObj.id || currentUserObj._id)) {
-      targetUserIds.push(String(currentUserObj.id || currentUserObj._id));
-    }
-    visibleEmployeeIds = targetUserIds;
+    visibleEmployeeIds = resolvedVisibleIds || [];
     if (!visibleEmployeeIds.length) {
       return {
         date,
         reportCount: 0,
         teamCount: 0,
-        teamGroups: []
+        teamGroups: [],
+        departmentSections: []
       };
     }
-    conditions.push({ employeeId: { in: targetUserIds } });
+    conditions.push({ employeeId: { in: visibleEmployeeIds } });
+  } else if (role === "report_manager") {
+    visibleEmployeeIds = resolvedVisibleIds || [];
+    if (!visibleEmployeeIds.length) {
+      return {
+        date,
+        reportCount: 0,
+        teamCount: 0,
+        teamGroups: [],
+        departmentSections: []
+      };
+    }
+    conditions.push({ employeeId: { in: visibleEmployeeIds } });
   } else if (resolvedVisibleIds && !isManagementOrDeptView) {
     visibleEmployeeIds = resolvedVisibleIds;
     if (!visibleEmployeeIds.length) {
@@ -253,7 +304,8 @@ export async function getConsolidatedReportDetail(
         date,
         reportCount: 0,
         teamCount: 0,
-        teamGroups: []
+        teamGroups: [],
+        departmentSections: []
       };
     }
     conditions.push({ employeeId: { in: visibleEmployeeIds } });
@@ -294,18 +346,17 @@ export async function getConsolidatedReportDetail(
 
   conditions.push({ reportDate: { gte: day, lt: nextDay } });
 
-  // Finance is decoupled and explicitly excluded from standard consolidated multi-department reports UNLESS Finance is explicitly selected.
-  if (department !== "Finance" && financeUserIdSet.size > 0) {
+  // Finance is decoupled and explicitly excluded from standard consolidated multi-department reports UNLESS Finance is explicitly selected or user is in Finance.
+  const currentUserObjDepts = currentUserDepts.map((d: any) => d.name);
+  const isUserInFinance = currentUserObjDepts.includes("Finance");
+  if (normalizedDept !== "Finance" && financeUserIdSet.size > 0 && role !== "admin" && role !== "ceo" && role !== "hod" && !(role === "report_manager" && isUserInFinance)) {
     conditions.push({ employeeId: { notIn: Array.from(financeUserIdSet) } });
   }
 
   // If a department is specified, only include reports for users or teams in that department
-  if (departmentTeamNamesSet && departmentFilterUserIds) {
+  if (departmentTeamNamesSet) {
     conditions.push({
-      OR: [
-        { employeeId: { in: Array.from(departmentFilterUserIds).map(String) } },
-        { teamName: { in: Array.from(departmentTeamNamesSet) } }
-      ]
+      teamName: { in: Array.from(departmentTeamNamesSet) }
     });
   }
 
@@ -335,7 +386,7 @@ export async function getConsolidatedReportDetail(
 
   // Filter out Finance leave requests unless Finance department is explicitly requested, and any not in the selected department
   const filteredLeaveRequests = leaveRequests.filter((lr) => {
-    if (department !== "Finance" && financeUserIdSet.has(lr.employeeId)) return false;
+    if (normalizedDept !== "Finance" && financeUserIdSet.has(lr.employeeId) && role !== "admin" && role !== "ceo" && role !== "hod" && !(role === "report_manager" && isUserInFinance)) return false;
     if (
       departmentTeamNamesSet &&
       departmentFilterUserIds &&
@@ -369,7 +420,16 @@ export async function getConsolidatedReportDetail(
       leaveByEmployeeId.set(leaveRequest.employeeId, leaveRequest);
     }
 
-    const teamLeaves = leaveMembersByTeam.get(leaveRequest.teamName) ?? [];
+    let teamKey = leaveRequest.teamName;
+    if (!teamKey || !teamKey.trim() || teamKey.toLowerCase() === "undefined" || teamKey.trim() === "MIF Tech Members") {
+      const member = memberByUserId.get(leaveRequest.employeeId);
+      if (member) {
+        teamKey = resolveTeamName(member);
+      }
+    }
+    if (!teamKey) continue;
+
+    const teamLeaves = leaveMembersByTeam.get(teamKey) ?? [];
     if (
       !teamLeaves.some(
         (item) =>
@@ -387,50 +447,73 @@ export async function getConsolidatedReportDetail(
         status: leaveRequest.status,
         reviewedByName: leaveRequest.reviewedByName ?? null
       });
-      leaveMembersByTeam.set(leaveRequest.teamName, teamLeaves);
+      leaveMembersByTeam.set(teamKey, teamLeaves);
     }
   }
 
   if (shouldShowNotShared) {
     const visibleEmployeeIdSet = new Set(visibleEmployeeIds);
-    const reportEmployeeIdSet = new Set(reports.map((report: any) => String(report.employeeId)));
-    for (const user of allUsers as Array<{
-      id?: unknown;
-      _id?: unknown;
-      name?: string | null;
-      role?: string | null;
-      teamName?: string | null;
-      teamNames?: string[] | null;
-    }>) {
-      const userId = user.id || user._id;
-      if (!userId || !user.name) continue;
-      
-      if (role === "ceo") {
-        if (user.role !== "hod") continue;
-      } else {
-        if (["admin", "hod", "report_manager"].includes(user.role ?? "")) continue;
-      }
 
+    for (const member of allMembers) {
+      const userId = member.userId || member.user?.id;
+      if (!userId || !member.user?.name) continue;
+
+      const userRole = member.role || member.user?.role;
       const employeeId = String(userId);
-      if (!visibleEmployeeIdSet.has(employeeId) || reportEmployeeIdSet.has(employeeId) || leaveByEmployeeId.has(employeeId)) {
-        continue;
-      }
+      if (!visibleEmployeeIdSet.has(employeeId)) continue;
 
-      const teamKey = resolveTeamName(user);
+      if (role === "ceo") {
+        if (userRole !== "hod") continue;
 
-      // Finance is explicitly excluded from standard consolidated reports.
-      if (financeUserIdSet.has(employeeId)) continue;
+        const assignedDepts = member.departments?.map((d: any) => typeof d === "string" ? d : d.name).filter(Boolean) ?? [];
+        const deptsToCheck = assignedDepts.length > 0 ? assignedDepts : [resolveTeamName(member)].filter(Boolean);
 
-      // Exclude teams not in the selected department.
-      if (departmentTeamNamesSet && !departmentTeamNamesSet.has(teamKey)) continue;
+        for (const deptName of deptsToCheck) {
+          if (normalizedDept !== "All" && deptName.toLowerCase() !== normalizedDept.toLowerCase()) continue;
 
-      const current = notSharedMembersByTeam.get(teamKey) ?? [];
-      if (!current.some((item) => item.employeeId === employeeId)) {
-        current.push({
-          employeeId,
-          name: user.name
-        });
-        notSharedMembersByTeam.set(teamKey, current);
+          // Check if HOD submitted a report for this specific department
+          const hasDeptReport = reports.some((r: any) => {
+            if (String(r.employeeId) !== employeeId) return false;
+            const rTeam = r.teamName || resolveTeamName(memberByUserId.get(String(r.employeeId)) || {});
+            return rTeam?.toLowerCase() === deptName.toLowerCase();
+          });
+
+          if (hasDeptReport || leaveByEmployeeId.has(employeeId)) continue;
+
+          const current = notSharedMembersByTeam.get(deptName) ?? [];
+          if (!current.some((item) => item.employeeId === employeeId)) {
+            current.push({
+              employeeId,
+              name: member.user.name
+            });
+            notSharedMembersByTeam.set(deptName, current);
+          }
+        }
+      } else {
+        if (["admin", "hod", "report_manager"].includes(userRole ?? "")) continue;
+
+        const reportEmployeeIdSet = new Set(reports.map((report: any) => String(report.employeeId)));
+        if (reportEmployeeIdSet.has(employeeId) || leaveByEmployeeId.has(employeeId)) {
+          continue;
+        }
+
+        const teamKey = resolveTeamName(member);
+        if (!teamKey) continue;
+
+        // Finance is explicitly excluded from standard consolidated reports.
+        if (financeUserIdSet.has(employeeId)) continue;
+
+        // Exclude teams not in the selected department.
+        if (departmentTeamNamesSet && !departmentTeamNamesSet.has(teamKey)) continue;
+
+        const current = notSharedMembersByTeam.get(teamKey) ?? [];
+        if (!current.some((item) => item.employeeId === employeeId)) {
+          current.push({
+            employeeId,
+            name: member.user.name
+          });
+          notSharedMembersByTeam.set(teamKey, current);
+        }
       }
     }
   }
@@ -440,45 +523,56 @@ export async function getConsolidatedReportDetail(
   const sortedReports = (reports as any[])
     .slice()
     .sort((a, b) => {
-      const aRole = userMap.get(String(a.employeeId))?.role === "team_lead" ? 0 : 1;
-      const bRole = userMap.get(String(b.employeeId))?.role === "team_lead" ? 0 : 1;
-      return a.teamName.localeCompare(b.teamName) || aRole - bRole || a.name.localeCompare(b.name);
+      const aRole = (memberByUserId.get(String(a.employeeId))?.role || userMap.get(String(a.employeeId))?.role) === "team_lead" ? 0 : 1;
+      const bRole = (memberByUserId.get(String(b.employeeId))?.role || userMap.get(String(b.employeeId))?.role) === "team_lead" ? 0 : 1;
+      return (a.teamName || "").localeCompare(b.teamName || "") || aRole - bRole || a.name.localeCompare(b.name);
     })
-    .map((report) => ({
-      id: String(report.id),
-      _id: String(report.id),
-      employeeId: String(report.employeeId),
-      name: report.name,
-      sourceTeamName: report.teamName,
-      teamName: getTeamDisplayName(report.teamName, teamTypeShowNameMap),
-      reportType: report.reportType,
-      reportDate: report.reportDate,
-      attachmentLink: report.attachmentLink,
-      dailyMeetingUpdate: report.dailyMeetingUpdate,
-      completedWork: report.completedWork,
-      pendingWork: report.pendingWork,
-      blockers: report.blockers,
-      requiredClarification: report.requiredClarification,
-      employeeRole: userMap.get(String(report.employeeId))?.role ?? null,
-      status: (report as any).status ?? "submitted",
-      rejectionReason: (report as any).rejectionReason ?? undefined,
-      reviewNotes: (report as any).reviewNotes ?? undefined,
-      reviewedByName: (report as any).reviewedByName ?? undefined,
-      reviewedAt: (report as any).reviewedAt ?? undefined,
-      verificationLevel: (report as any).verificationLevel ?? undefined,
-      leaveStatus: leaveByEmployeeId.get(String(report.employeeId))?.status ?? null,
-      leaveType: leaveByEmployeeId.get(String(report.employeeId))?.leaveType ?? undefined,
-      leaveReason: leaveByEmployeeId.get(String(report.employeeId))?.reason ?? undefined,
-      leaveReviewedByName: leaveByEmployeeId.get(String(report.employeeId))?.reviewedByName ?? undefined,
-      nextDayApprovalItems: report.approvalItems ?? undefined,
-      constructionWorkPlan: report.workPlans ?? undefined,
-      constructionMaterialUtilization: report.materialUtilizations ?? undefined,
-      constructionTomorrowWorkPlan: report.tomorrowWorkPlans ?? undefined,
-      marketingSelfItems: report.marketingSelfItems ?? undefined,
-      marketingClientItems: report.marketingClientItems ?? undefined
-    }));
+    .map((report) => {
+      let rawTeamName = report.teamName;
+      if (!rawTeamName || !rawTeamName.trim() || rawTeamName.toLowerCase() === "undefined" || rawTeamName.trim() === "MIF Tech Members") {
+        const member = memberByUserId.get(String(report.employeeId));
+        if (member) {
+          rawTeamName = resolveTeamName(member);
+        }
+      }
+      return {
+        id: String(report.id),
+        _id: String(report.id),
+        employeeId: String(report.employeeId),
+        name: report.name,
+        sourceTeamName: rawTeamName || report.teamName,
+        teamName: getTeamDisplayName(rawTeamName || report.teamName, teamTypeShowNameMap),
+        reportType: report.reportType,
+        reportDate: report.reportDate,
+        attachmentLink: report.attachmentLink,
+        dailyMeetingUpdate: report.dailyMeetingUpdate,
+        completedWork: report.completedWork,
+        pendingWork: report.pendingWork,
+        blockers: report.blockers,
+        requiredClarification: report.requiredClarification,
+        employeeRole: memberByUserId.get(String(report.employeeId))?.role || userMap.get(String(report.employeeId))?.role || "team_member",
+        status: (report as any).status ?? "submitted",
+        rejectionReason: (report as any).rejectionReason ?? undefined,
+        reviewNotes: (report as any).reviewNotes ?? undefined,
+        reviewedByName: (report as any).reviewedByName ?? undefined,
+        reviewedAt: (report as any).reviewedAt ?? undefined,
+        verificationLevel: (report as any).verificationLevel ?? undefined,
+        leaveStatus: leaveByEmployeeId.get(String(report.employeeId))?.status ?? null,
+        leaveType: leaveByEmployeeId.get(String(report.employeeId))?.leaveType ?? undefined,
+        leaveReason: leaveByEmployeeId.get(String(report.employeeId))?.reason ?? undefined,
+        leaveReviewedByName: leaveByEmployeeId.get(String(report.employeeId))?.reviewedByName ?? undefined,
+        nextDayApprovalItems: report.approvalItems ?? undefined,
+        constructionWorkPlan: report.workPlans ?? undefined,
+        constructionMaterialUtilization: report.materialUtilizations ?? undefined,
+        constructionTomorrowWorkPlan: report.tomorrowWorkPlans ?? undefined,
+        marketingSelfItems: report.marketingSelfItems ?? undefined,
+        marketingClientItems: report.marketingClientItems ?? undefined
+      };
+    })
+    .filter((report) => Boolean(report.teamName));
 
   for (const report of sortedReports) {
+    if (!report.teamName) continue;
     const sourceTeamName = report.sourceTeamName;
     const current = grouped.get(report.teamName) ?? {
       teamName: report.teamName,
@@ -502,6 +596,7 @@ export async function getConsolidatedReportDetail(
 
   for (const [teamName, leaveMembers] of leaveMembersByTeam.entries()) {
     const displayTeamName = getTeamDisplayName(teamName, teamTypeShowNameMap);
+    if (!displayTeamName) continue;
     if (!grouped.has(displayTeamName)) {
       grouped.set(displayTeamName, {
         teamName: displayTeamName,
@@ -515,6 +610,7 @@ export async function getConsolidatedReportDetail(
 
   for (const [teamName, notSharedMembers] of notSharedMembersByTeam.entries()) {
     const displayTeamName = getTeamDisplayName(teamName, teamTypeShowNameMap);
+    if (!displayTeamName) continue;
     if (!grouped.has(displayTeamName)) {
       grouped.set(displayTeamName, {
         teamName: displayTeamName,
@@ -526,12 +622,105 @@ export async function getConsolidatedReportDetail(
     }
   }
 
-  const teamGroups = Array.from(grouped.values()).sort((a, b) => a.teamName.localeCompare(b.teamName));
+  // 1. Determine the allowed scope of departments
+  let scopeDepartments: string[] = [];
+  if (normalizedDept !== "All") {
+    scopeDepartments = [normalizedDept];
+  } else {
+    if (role === "hod" || role === "report_manager") {
+      scopeDepartments = currentUserDepts.map((d: any) => d.name).filter(Boolean);
+    } else if (role === "team_lead" || role === "team_member") {
+      scopeDepartments = currentUserDepts.map((d: any) => d.name).filter(Boolean);
+    } else {
+      const deptsSet = new Set<string>();
+      for (const tt of activeTeamTypes) {
+        if (tt.department) deptsSet.add(tt.department);
+      }
+      for (const r of sortedReports) {
+        const dept = teamTypeMap.get(r.sourceTeamName || r.teamName)?.department || r.sourceTeamName || r.teamName;
+        if (dept) deptsSet.add(dept);
+      }
+      scopeDepartments = Array.from(deptsSet);
+    }
+  }
+
+  // 2. Map teams to departments and construct structured department sections
+  const departmentSections = scopeDepartments.map((deptName) => {
+    // HOD reports submitted for this department
+    const hodReports = sortedReports.filter(
+      (r) =>
+        r.employeeRole === "hod" &&
+        (r.sourceTeamName?.toLowerCase() === deptName.toLowerCase() ||
+          r.teamName?.toLowerCase() === deptName.toLowerCase() ||
+          teamTypeMap.get(r.sourceTeamName)?.department?.toLowerCase() === deptName.toLowerCase())
+    );
+
+    // Report Manager reports submitted for this department (and not a specific team)
+    const reportManagerReports = sortedReports.filter(
+      (r) =>
+        r.employeeRole === "report_manager" &&
+        (r.sourceTeamName?.toLowerCase() === deptName.toLowerCase() ||
+          r.teamName?.toLowerCase() === deptName.toLowerCase() ||
+          teamTypeMap.get(r.sourceTeamName)?.department?.toLowerCase() === deptName.toLowerCase())
+    );
+
+    // Filter valid team groups belonging strictly to this department
+    const deptTeamGroups: ReportSheetTeamGroup[] = [];
+
+    for (const [teamKey, group] of grouped.entries()) {
+      const mappedDept = teamTypeMap.get(teamKey)?.department;
+      // Must legitimately belong to this department, and not be the department itself
+      if (mappedDept?.toLowerCase() === deptName.toLowerCase() && teamKey.toLowerCase() !== deptName.toLowerCase()) {
+        // Exclude HOD and RM reports from the team card so they aren't duplicated
+        const teamReports = group.reports.filter(
+          (r) => r.employeeRole !== "hod" && r.employeeRole !== "report_manager"
+        );
+
+        if (teamReports.length > 0 || (group.leaveMembers?.length ?? 0) > 0 || (group.notSharedMembers?.length ?? 0) > 0) {
+          deptTeamGroups.push({
+            ...group,
+            reports: teamReports
+          });
+        }
+      }
+    }
+
+    deptTeamGroups.sort((a, b) => a.teamName.localeCompare(b.teamName));
+
+    return {
+      department: deptName,
+      hodReports,
+      reportManagerReports,
+      teamGroups: deptTeamGroups
+    };
+  });
+
+  // For CEO, reports are grouped by department directly in grouped map (e.g. Software, Finance, Marketing, Construction)
+  if (role === "ceo") {
+    const ceoTeamGroups = Array.from(grouped.values());
+    const ceoReportCount = ceoTeamGroups.reduce((acc, g) => acc + g.reports.length, 0);
+    return {
+      date,
+      reportCount: ceoReportCount,
+      teamCount: ceoTeamGroups.length,
+      teamGroups: ceoTeamGroups,
+      departmentSections
+    };
+  }
+
+  // For HOD & other roles, calculate totals strictly from visible department sections
+  const totalReportsCount = departmentSections.reduce(
+    (acc, d) => acc + d.hodReports.length + d.reportManagerReports.length + d.teamGroups.reduce((tc, tg) => tc + tg.reports.length, 0),
+    0
+  );
+  const allDeptTeamGroups = departmentSections.flatMap((d) => d.teamGroups);
+  const totalTeamsCount = allDeptTeamGroups.length;
 
   return {
     date,
-    reportCount: reports.length,
-    teamCount: teamGroups.length,
-    teamGroups
+    reportCount: totalReportsCount,
+    teamCount: totalTeamsCount,
+    teamGroups: allDeptTeamGroups,
+    departmentSections
   };
 }

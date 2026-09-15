@@ -1,9 +1,13 @@
 import { redirect, notFound } from "next/navigation";
+import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
 import { DashboardPageHeader } from "@/components/dashboard/ui";
+import { Button } from "@/components/ui/button";
+import { ArrowLeft } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { canCreateMoneyRequest, canEditFinanceReport } from "@/lib/permissions";
 import db from "@/lib/db";
+import { isWorkspaceAuthorizedForUser } from "@/lib/workspace-context";
 import { FinanceReportForm } from "@/components/finance/finance-report-form";
 
 type PageProps = { params: Promise<{ id: string }> };
@@ -35,6 +39,9 @@ export default async function MoneyRequestEditPage({ params }: PageProps) {
   }
 
   if (!moneyRequest) notFound();
+
+  const isAuthorized = await isWorkspaceAuthorizedForUser(user, moneyRequest.workspaceId);
+  if (!isAuthorized) notFound();
 
   // Permission check
   const canEdit = canEditFinanceReport(user) || canCreateMoneyRequest(user) || String(moneyRequest.submittedBy) === user.id;
@@ -92,6 +99,13 @@ export default async function MoneyRequestEditPage({ params }: PageProps) {
           eyebrow="Finance"
           title="Edit Money Request"
           description="Modify your pending money approval request. Amounts are specified in INR with automatic SAR conversion."
+          backButton={
+            <Button asChild variant="outline" size="icon" className="h-9 w-9 rounded-xl shrink-0">
+              <Link href="/finance/requests" title="Back" aria-label="Back">
+                <ArrowLeft className="h-4 w-4" />
+              </Link>
+            </Button>
+          }
         />
         <FinanceReportForm mode="edit" formType="money-request" initialData={serializedReport} />
       </div>

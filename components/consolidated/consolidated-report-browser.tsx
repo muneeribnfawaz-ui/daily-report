@@ -12,6 +12,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { DEPARTMENT_OPTIONS } from "@/lib/constants";
+import { useTranslation } from "@/lib/i18n";
 
 type ConsolidatedReportSummaryItem = {
   date: string;
@@ -53,6 +54,7 @@ export function ConsolidatedReportBrowser({
   userRole?: string;
   mine?: boolean;
 }) {
+  const { t, isRtl } = useTranslation();
   const isUnrestrictedRole = userRole === "admin" || userRole === "ceo";
 
   const availableDepartmentOptions = useMemo(() => {
@@ -63,14 +65,11 @@ export function ConsolidatedReportBrowser({
   }, [isUnrestrictedRole, enrolledDepartments]);
 
   const initialDepartment = useMemo(() => {
-    if (userDepartment && availableDepartmentOptions.includes(userDepartment)) {
-      return userDepartment;
-    }
-    if (!isUnrestrictedRole && availableDepartmentOptions.length > 0) {
+    if (!isUnrestrictedRole && availableDepartmentOptions.length === 1) {
       return availableDepartmentOptions[0];
     }
     return "All";
-  }, [userDepartment, availableDepartmentOptions, isUnrestrictedRole]);
+  }, [availableDepartmentOptions, isUnrestrictedRole]);
 
   const [department, setDepartment] = useState<string>(initialDepartment);
   const [team, setTeam] = useState<string>("All");
@@ -100,7 +99,7 @@ export function ConsolidatedReportBrowser({
       const response = await api.get(endpoint, {
         params: {
           period,
-          ...(department !== "All" ? { department } : {}),
+          department: department || "All",
           ...(team !== "All" ? { team } : {}),
           ...(selectedCompanyId ? { workspaceId: selectedCompanyId } : {}),
           ...(mine ? { mine: "true" } : {})
@@ -118,18 +117,18 @@ export function ConsolidatedReportBrowser({
         <CardContent className="space-y-4 p-0 px-4 pb-4 dark:px-0 dark:pb-0">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-3">
-              <div className="text-sm text-muted-foreground">Consolidated reports by date</div>
-              <Badge variant="soft">{summaryReports.length} date{summaryReports.length === 1 ? "" : "s"}</Badge>
+              <div className="text-sm text-muted-foreground">{t("consolidated.desc")}</div>
+              <Badge variant="soft">{summaryReports.length} {t("common.date")}</Badge>
               {userDepartment && (
                 <Badge variant="outline" className="border-primary/30 text-primary">
-                  Enrolled Dept: {userDepartment}
+                  {userDepartment}
                 </Badge>
               )}
             </div>
             <div className="flex flex-wrap items-center gap-4 mt-2 sm:mt-0">
               <div className="flex items-center gap-2">
                 <label htmlFor="period-filter" className="text-sm text-muted-foreground whitespace-nowrap">
-                  Period:
+                  {t("consolidated.dateRange")}:
                 </label>
                 <Select
                   id="period-filter"
@@ -176,7 +175,7 @@ export function ConsolidatedReportBrowser({
 
               <div className="flex items-center gap-2">
                 <label htmlFor="department-filter" className="text-sm text-muted-foreground whitespace-nowrap">
-                  Department:
+                  {t("consolidated.filterDepartment")}:
                 </label>
                 <Select
                   id="department-filter"
@@ -187,7 +186,7 @@ export function ConsolidatedReportBrowser({
                 >
                   {(isUnrestrictedRole || availableDepartmentOptions.length > 1) && (
                     <option value="All">
-                      {isUnrestrictedRole ? "All Departments" : "All Enrolled Depts"}
+                      {isUnrestrictedRole ? t("companies.allDepartments") : t("consolidated.allDepartments")}
                     </option>
                   )}
                   {availableDepartmentOptions.map((dept) => (
@@ -201,7 +200,7 @@ export function ConsolidatedReportBrowser({
               {(!isUnrestrictedRole && enrolledTeams && enrolledTeams.length > 1) && (
                 <div className="flex items-center gap-2">
                   <label htmlFor="team-filter" className="text-sm text-muted-foreground whitespace-nowrap">
-                    Team:
+                    {t("companies.allTeams")}:
                   </label>
                   <Select
                     id="team-filter"
@@ -209,7 +208,7 @@ export function ConsolidatedReportBrowser({
                     onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTeam(e.target.value)}
                     className="w-[140px] sm:w-[200px]"
                   >
-                    <option value="All">All My Teams</option>
+                    <option value="All">{t("companies.allTeams")}</option>
                     {enrolledTeams.map((t) => (
                       <option key={t} value={t}>
                         {t}
@@ -223,17 +222,17 @@ export function ConsolidatedReportBrowser({
 
           <div className="overflow-hidden rounded-xl border border-cardBorder pb-2">
             <div className="grid grid-cols-[1fr_auto] gap-3 border-b bg-muted/40 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              <div>Date</div>
-              <div>Action</div>
+              <div>{t("common.date")}</div>
+              <div>{t("common.actions")}</div>
             </div>
 
             <div className="divide-y">
               {summaryQuery.isLoading ? (
-                <div className="px-4 py-6 text-sm text-muted-foreground">Loading consolidated report dates...</div>
+                <div className="px-4 py-6 text-sm text-muted-foreground">{t("common.loading")}</div>
               ) : summaryQuery.isError ? (
-                <div className="px-4 py-6 text-sm text-danger">Failed to load consolidated report dates.</div>
+                <div className="px-4 py-6 text-sm text-danger">{t("common.error")}</div>
               ) : summaryReports.length === 0 ? (
-                <div className="px-4 py-6 text-sm text-muted-foreground">No consolidated reports found.</div>
+                <div className="px-4 py-6 text-sm text-muted-foreground">{t("consolidated.noDataForRange")}</div>
               ) : (
                 summaryReports.map((report) => (
                   <div key={report.date} className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-4 text-sm">
@@ -243,7 +242,7 @@ export function ConsolidatedReportBrowser({
                       </div>
                     </div>
                     <Button asChild size="sm" variant="secondary">
-                      <Link href={`${detailBaseHref}/${report.date}?period=${period}${department !== "All" ? `&department=${department}` : ""}${team !== "All" ? `&team=${team}` : ""}${mine ? "&mine=true" : ""}` as Route}>View</Link>
+                      <Link href={`${detailBaseHref}/${report.date}?period=${period}&department=${encodeURIComponent(department || "All")}${team !== "All" ? `&team=${encodeURIComponent(team)}` : ""}${mine ? "&mine=true" : ""}` as Route}>{t("common.view")}</Link>
                     </Button>
                   </div>
                 ))

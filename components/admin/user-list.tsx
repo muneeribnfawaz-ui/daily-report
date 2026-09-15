@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import Link from "next/link";
 import type { Route } from "next";
@@ -11,7 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { formatDisplayName } from "@/lib/utils";
-
+import { useTranslation } from "@/lib/i18n";
 import { useSearchParams } from "next/navigation";
 import { useSelectedCompany } from "@/hooks/use-selected-company";
 
@@ -34,6 +34,7 @@ export function AdminUserList({
   viewBaseHref?: string;
   reportBaseHref?: string;
 }) {
+  const { t, isRtl } = useTranslation();
   const searchParams = useSearchParams();
   const roleParam = searchParams.get("role");
   const [search, setSearch] = useState("");
@@ -70,43 +71,43 @@ export function AdminUserList({
       <CardContent className="space-y-4 p-0 px-4 pb-4 dark:px-0 dark:pb-0">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="w-full md:max-w-sm">
-            <div className="mb-1 text-sm font-medium text-foreground">Search employees</div>
+            <div className="mb-1 text-sm font-medium text-foreground">{t("users.searchPlaceholder") || "Search employees"}</div>
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Search className={`pointer-events-none absolute top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground ${isRtl ? "right-3" : "left-3"}`} />
               <Input
-                className="pl-9"
-                placeholder="Search name or email"
+                className={isRtl ? "pr-9 pl-3 text-right" : "pl-9 pr-3"}
+                placeholder={t("users.searchPlaceholder") || "Search name or email"}
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
               />
             </div>
           </div>
-          <Badge variant="soft">{users.length} employees</Badge>
+          <Badge variant="soft">{users.length} {t("nav.employees")}</Badge>
         </div>
 
-          <div className="overflow-hidden rounded-xl border border-cardBorder">
+        <div className="overflow-hidden rounded-xl border border-cardBorder">
           {roleParam === "ceo" ? (
             <div className="hidden grid-cols-12 gap-3 border-b bg-muted/40 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground md:grid">
-              <div className="col-span-6">Name</div>
-              <div className="col-span-4">Team</div>
-              <div className="col-span-2 text-right">Edit</div>
+              <div className="col-span-6">{t("common.name")}</div>
+              <div className="col-span-4">{t("common.team")}</div>
+              <div className="col-span-2 text-right rtl:text-left">{t("common.edit")}</div>
             </div>
           ) : (
             <div className="hidden grid-cols-12 gap-3 border-b bg-muted/40 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground md:grid">
-              <div className="col-span-4">Name</div>
-              <div className="col-span-3">Team</div>
-              <div className="col-span-1">Edit</div>
-              <div className="col-span-1">View</div>
-              <div className="col-span-3">Report</div>
+              <div className="col-span-4">{t("common.name")}</div>
+              <div className="col-span-3">{t("common.team")}</div>
+              <div className="col-span-1">{t("common.edit")}</div>
+              <div className="col-span-1">{t("common.view")}</div>
+              <div className="col-span-3">{t("common.viewReport")}</div>
             </div>
           )}
           <div className="divide-y">
             {query.isLoading ? (
-              <div className="px-4 py-6 text-sm text-muted-foreground">Loading employees...</div>
+              <div className="px-4 py-6 text-sm text-muted-foreground">{t("common.loading")}</div>
             ) : query.isError ? (
-              <div className="px-4 py-6 text-sm text-danger">Failed to load employees.</div>
+              <div className="px-4 py-6 text-sm text-danger">{t("common.somethingWentWrong")}</div>
             ) : users.length === 0 ? (
-              <div className="px-4 py-6 text-sm text-muted-foreground">No employees found.</div>
+              <div className="px-4 py-6 text-sm text-muted-foreground">{t("users.noUsersFound")}</div>
             ) : (
               users.map((user, index) => {
                 const itemKey = user._id ? String(user._id) : (user.memberId ? String(user.memberId) : `user-${index}`);
@@ -120,14 +121,14 @@ export function AdminUserList({
                             <div className="mt-1 break-all text-sm text-muted-foreground">{user.email}</div>
                           </div>
                           <div className="min-w-0 break-words text-muted-foreground col-span-4">
-                            <span className="mr-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground md:hidden">Team</span>
+                            <span className="mr-2 rtl:ml-2 rtl:mr-0 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground md:hidden">{t("common.team")}</span>
                             <span>{user.displayTeamName ? formatDisplayName(user.displayTeamName) : "—"}</span>
                           </div>
                         </Link>
                       </div>
-                      <div className="col-span-2 flex justify-end">
+                      <div className="col-span-2 flex justify-end rtl:justify-start">
                         <Button asChild size="sm" variant="outline" className="h-8 w-24">
-                          <Link href={`${editBaseHref}/${user._id}/edit` as Route}>Edit</Link>
+                          <Link href={`${editBaseHref}/${user._id}/edit` as Route}>{t("common.edit")}</Link>
                         </Button>
                       </div>
                     </div>
@@ -141,18 +142,18 @@ export function AdminUserList({
                       <div className="mt-1 break-all text-sm text-muted-foreground">{user.email}</div>
                     </div>
                     <div className="min-w-0 break-words text-muted-foreground md:col-span-3">
-                      <span className="mr-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground md:hidden">Team</span>
+                      <span className="mr-2 rtl:ml-2 rtl:mr-0 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground md:hidden">{t("common.team")}</span>
                       <span>{user.displayTeamName ? formatDisplayName(user.displayTeamName) : "—"}</span>
                     </div>
                     <div className="flex flex-wrap gap-2 md:col-span-5 md:grid md:grid-cols-5">
                       <Button asChild size="sm" variant="outline" className="h-8 w-full">
-                        <Link href={`${editBaseHref}/${user._id}/edit` as Route}>Edit</Link>
+                        <Link href={`${editBaseHref}/${user._id}/edit` as Route}>{t("common.edit")}</Link>
                       </Button>
-                      <Button asChild size="sm" variant="outline" className="h-8 w-full">
-                        <Link href={`${viewBaseHref}/${user._id}` as Route}>View</Link>
+                      <Button asChild size="sm" variant="ghost" className="h-8 w-full">
+                        <Link href={`${viewBaseHref}/${user._id}` as Route}>{t("common.view")}</Link>
                       </Button>
-                      <Button asChild size="sm" className="h-8 w-full md:col-span-3">
-                        <Link href={`${reportBaseHref}?employee=${encodeURIComponent(user.name)}` as Route}>Report</Link>
+                      <Button asChild size="sm" className="h-8 md:col-span-3 w-full">
+                        <Link href={`${reportBaseHref}?employee=${user._id}` as Route}>{t("common.viewReport")}</Link>
                       </Button>
                     </div>
                   </div>

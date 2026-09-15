@@ -6,6 +6,12 @@ vi.mock("@/lib/db", () => {
     default: {
       workspaceMember: {
         findMany: vi.fn()
+      },
+      workspace: {
+        findMany: vi.fn().mockResolvedValue([])
+      },
+      teamType: {
+        findMany: vi.fn().mockResolvedValue([])
       }
     }
   };
@@ -48,6 +54,30 @@ describe("Report Visibility & Hierarchical Access Boundaries", () => {
       departments: [{ name: "Software", subTeams: ["Architecture"] }],
       role: "team_lead",
       workspaceId: "ws-123"
+    },
+    {
+      userId: { _id: "emp-106", name: "Absal Lead" },
+      managerName: "HOD Marketing",
+      departments: [{ name: "Marketing", subTeams: ["Physical"] }],
+      role: "team_lead",
+      workspaceId: "ws-123"
+    },
+    {
+      userId: { _id: "rm-1", name: "Ramesh Report Manager" },
+      managerName: "CEO",
+      departments: [
+        { name: "Software", subTeams: [] },
+        { name: "Marketing", subTeams: ["Digital", "Physical"] }
+      ],
+      role: "report_manager",
+      workspaceId: "ws-123"
+    },
+    {
+      userId: { _id: "rm-2", name: "Marketing RM" },
+      managerName: "CEO",
+      departments: [{ name: "Marketing", subTeams: [] }],
+      role: "report_manager",
+      workspaceId: "ws-123"
     }
   ];
 
@@ -65,20 +95,54 @@ describe("Report Visibility & Hierarchical Access Boundaries", () => {
     vi.restoreAllMocks();
   });
 
-  it("returns null for executive roles (admin, ceo, hod) signifying complete visibility", async () => {
-    expect(await getVisibleReportEmployeeIds({ id: "1", name: "Executive 1", role: "admin" })).toBeNull();
-    expect(await getVisibleReportEmployeeIds({ id: "2", name: "Executive 2", role: "ceo" })).toBeNull();
-    expect(await getVisibleReportEmployeeIds({ id: "3", name: "Executive 3", role: "hod" })).toBeNull();
+  it("returns visible employee IDs for executive roles (admin, ceo, hod)", async () => {
+    const adminIds = await getVisibleReportEmployeeIds({ id: "1", name: "Executive 1", role: "admin" });
+    expect(adminIds).toBeDefined();
+    expect(adminIds).toContain("emp-101");
+    expect(adminIds).toContain("emp-102");
+
+    const ceoIds = await getVisibleReportEmployeeIds({ id: "2", name: "Executive 2", role: "ceo" });
+    expect(ceoIds).toBeDefined();
+    expect(ceoIds).toContain("emp-101");
+    expect(ceoIds).toContain("emp-102");
   });
 
-  it("restricts report_manager visibility strictly to Software and Marketing (Digital) departments", async () => {
-    const ids = await getVisibleReportEmployeeIds({ id: "rm-1", name: "Report Manager", role: "report_manager" });
+  it("dynamically respects assigned departments and subTeams for report_manager role (Team Leads only)", async () => {
+    // RM assigned Software (all subteams) and Marketing (Digital, Physical)
+    const ids = await getVisibleReportEmployeeIds({
+      id: "rm-1",
+      name: "Ramesh Report Manager",
+      role: "report_manager",
+      departments: [
+        { name: "Software", subTeams: [] },
+        { name: "Marketing", subTeams: ["Digital", "Physical"] }
+      ]
+    });
     expect(ids).toBeDefined();
     if (ids) {
-      expect(ids).toContain("emp-101"); // Software
-      expect(ids).toContain("emp-102"); // Marketing Digital
-      expect(ids).toContain("emp-105"); // Software Architecture Lead
-      expect(ids).not.toContain("emp-103"); // Marketing Field (Not Digital)
+      expect(ids).toContain("rm-1"); // Self
+      expect(ids).toContain("emp-105"); // Software Architecture Lead (Team Lead)
+      expect(ids).toContain("emp-106"); // Marketing Physical Lead (Team Lead)
+      expect(ids).not.toContain("emp-101"); // Software Frontend Member (Team Member - hidden)
+      expect(ids).not.toContain("emp-102"); // Marketing Digital Member (Team Member - hidden)
+      expect(ids).not.toContain("emp-103"); // Marketing Field Member (Team Member - hidden)
+      expect(ids).not.toContain("emp-104"); // Finance (Wrong department and role)
+    }
+  });
+
+  it("allows all subTeams when report_manager has no subTeam restrictions for an assigned department (Team Leads only)", async () => {
+    const ids = await getVisibleReportEmployeeIds({
+      id: "rm-2",
+      name: "Marketing RM",
+      role: "report_manager",
+      departments: [{ name: "Marketing", subTeams: [] }]
+    });
+    expect(ids).toBeDefined();
+    if (ids) {
+      expect(ids).toContain("emp-106"); // Marketing Physical (Team Lead)
+      expect(ids).not.toContain("emp-102"); // Marketing Digital (Team Member - hidden)
+      expect(ids).not.toContain("emp-103"); // Marketing Field (Team Member - hidden)
+      expect(ids).not.toContain("emp-101"); // Software
       expect(ids).not.toContain("emp-104"); // Finance
     }
   });

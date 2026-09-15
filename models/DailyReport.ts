@@ -33,6 +33,11 @@ const DailyReportSchema = new Schema(
     isLocked: { type: Boolean, default: false },
     lockedAt: { type: Date, default: null },
     lockedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    reportManagerStatus: { type: String, default: "" },
+    reportManagerReview: { type: String, default: "" },
+    reportManagerReviewedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    reportManagerReviewedByName: { type: String, default: "" },
+    reportManagerReviewedAt: { type: Date, default: null },
     nextDayApprovalItems: {
       type: [
         {

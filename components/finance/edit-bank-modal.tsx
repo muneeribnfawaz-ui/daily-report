@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, X } from "lucide-react";
+import { useTranslation } from "@/lib/i18n";
 
 type Bank = {
   id: string;
@@ -27,6 +28,7 @@ type EditBankModalProps = {
 };
 
 export function EditBankModal({ bank, isOpen, onClose, onSuccess, userRole }: EditBankModalProps) {
+  const { t } = useTranslation();
   const [bankName, setBankName] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
   const [branchName, setBranchName] = useState("");
@@ -58,12 +60,12 @@ export function EditBankModal({ bank, isOpen, onClose, onSuccess, userRole }: Ed
     e.preventDefault();
 
     if (!bankName.trim()) {
-      setError("Bank Name is required.");
+      setError(t("banks.bankNameRequired", "Bank Name is required."));
       return;
     }
 
     if (!isHigherAuthority && !editReason.trim()) {
-      setError("Reason for Edit is required for non-admin accounts.");
+      setError(t("banks.editReasonRequired", "Reason for Edit is required for non-admin accounts."));
       return;
     }
 
@@ -88,13 +90,13 @@ export function EditBankModal({ bank, isOpen, onClose, onSuccess, userRole }: Ed
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        throw new Error(data.message || "Failed to update bank details");
+        throw new Error(data.message || t("banks.failedUpdateBank", "Failed to update bank details"));
       }
 
       onSuccess();
       onClose();
     } catch (err: any) {
-      setError(err.message || "An unexpected error occurred.");
+      setError(err.message || t("common.errorOccurred", "An unexpected error occurred."));
     } finally {
       setIsSubmitting(false);
     }
@@ -105,11 +107,11 @@ export function EditBankModal({ bank, isOpen, onClose, onSuccess, userRole }: Ed
       <div className="w-full max-w-lg rounded-2xl border border-cardBorder bg-card p-6 shadow-2xl space-y-4">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-lg font-semibold text-foreground">Edit Bank Account Details</h3>
+            <h3 className="text-lg font-semibold text-foreground">{t("banks.editBankDetails", "Edit Bank Account Details")}</h3>
             <p className="text-xs text-muted-foreground mt-1">
               {isHigherAuthority
-                ? "Modifications will take effect immediately as a higher authority."
-                : "Modifications will be submitted as an Edit Request for higher authority (Admin / CEO) approval."}
+                ? t("banks.higherAuthorityNote", "Modifications will take effect immediately as a higher authority.")
+                : t("banks.nonAdminEditNote", "Modifications will be submitted as an Edit Request for higher authority (Admin / CEO) approval.")}
             </p>
           </div>
           <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={onClose}>
@@ -125,7 +127,7 @@ export function EditBankModal({ bank, isOpen, onClose, onSuccess, userRole }: Ed
           )}
 
           <div className="grid gap-1.5">
-            <Label htmlFor="bankName" className="text-xs font-semibold">Bank Name *</Label>
+            <Label htmlFor="bankName" className="text-xs font-semibold">{t("banks.bankName", "Bank Name")} *</Label>
             <Input
               id="bankName"
               value={bankName}
@@ -137,7 +139,7 @@ export function EditBankModal({ bank, isOpen, onClose, onSuccess, userRole }: Ed
 
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label htmlFor="accountNumber" className="text-xs font-semibold">Account Number</Label>
+              <Label htmlFor="accountNumber" className="text-xs font-semibold">{t("banks.accountNumber", "Account Number")}</Label>
               <Input
                 id="accountNumber"
                 value={accountNumber}
@@ -146,7 +148,7 @@ export function EditBankModal({ bank, isOpen, onClose, onSuccess, userRole }: Ed
               />
             </div>
             <div className="grid gap-1.5">
-              <Label htmlFor="ifscCode" className="text-xs font-semibold">IFSC Code</Label>
+              <Label htmlFor="ifscCode" className="text-xs font-semibold">{t("banks.ifsc", "IFSC Code")}</Label>
               <Input
                 id="ifscCode"
                 value={ifscCode}
@@ -158,7 +160,7 @@ export function EditBankModal({ bank, isOpen, onClose, onSuccess, userRole }: Ed
 
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label htmlFor="branchName" className="text-xs font-semibold">Branch Name</Label>
+              <Label htmlFor="branchName" className="text-xs font-semibold">{t("banks.branch", "Branch Name")}</Label>
               <Input
                 id="branchName"
                 value={branchName}
@@ -167,7 +169,7 @@ export function EditBankModal({ bank, isOpen, onClose, onSuccess, userRole }: Ed
               />
             </div>
             <div className="grid gap-1.5">
-              <Label htmlFor="product" className="text-xs font-semibold">Product / Account Type</Label>
+              <Label htmlFor="product" className="text-xs font-semibold">{t("banks.product", "Product / Account Type")}</Label>
               <Input
                 id="product"
                 value={product}
@@ -178,7 +180,7 @@ export function EditBankModal({ bank, isOpen, onClose, onSuccess, userRole }: Ed
           </div>
 
           <div className="grid gap-1.5">
-            <Label htmlFor="openingBalance" className="text-xs font-semibold">Opening Balance (INR)</Label>
+            <Label htmlFor="openingBalance" className="text-xs font-semibold">{t("banks.openingBalanceInr", "Opening Balance (INR)")}</Label>
             <Input
               id="openingBalance"
               type="number"
@@ -190,12 +192,12 @@ export function EditBankModal({ bank, isOpen, onClose, onSuccess, userRole }: Ed
 
           {!isHigherAuthority && (
             <div className="grid gap-1.5">
-              <Label htmlFor="editReason" className="text-xs font-semibold">Reason for Edit *</Label>
+              <Label htmlFor="editReason" className="text-xs font-semibold">{t("banks.reasonForEdit", "Reason for Edit")} *</Label>
               <Textarea
                 id="editReason"
                 value={editReason}
                 onChange={(e) => setEditReason(e.target.value)}
-                placeholder="Please state why this bank details modification is required..."
+                placeholder={t("banks.editReasonPlaceholder", "Please state why this bank details modification is required...")}
                 rows={3}
                 required
               />
@@ -204,18 +206,18 @@ export function EditBankModal({ bank, isOpen, onClose, onSuccess, userRole }: Ed
 
           <div className="flex justify-end gap-3 pt-3">
             <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>
-              Cancel
+              {t("common.cancel", "Cancel")}
             </Button>
             <Button type="submit" disabled={isSubmitting}>
               {isSubmitting ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Saving...
+                  <Loader2 className="mr-2 rtl:ml-2 rtl:mr-0 h-4 w-4 animate-spin" />
+                  {t("common.saving", "Saving...")}
                 </>
               ) : isHigherAuthority ? (
-                "Save Changes"
+                t("common.saveChanges", "Save Changes")
               ) : (
-                "Submit for Approval"
+                t("common.submitForApproval", "Submit for Approval")
               )}
             </Button>
           </div>

@@ -7,6 +7,7 @@ import { getActiveTeamTypeNames } from "@/lib/team-types";
 import { ApiResponse } from "@/lib/api-response";
 import { authorizeApi } from "@/lib/api-auth";
 import { canUpdateEmail } from "@/lib/permissions";
+import { normalizeEmpId } from "@/lib/utils";
 
 type TargetUser = {
   managerName?: string | null;
@@ -86,7 +87,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return ApiResponse.validationError("Invalid user payload", parsed.error.format());
   }
 
-    const validTeamNames = await getActiveTeamTypeNames();
+  const targetWorkspaceId = parsed.data.workspaceId && parsed.data.workspaceId !== "all" ? parsed.data.workspaceId : undefined;
+  const validTeamNames = await getActiveTeamTypeNames(targetWorkspaceId);
   
   const targetUser = await db.user.findUnique({ where: { id: String(id) } });
   if (!targetUser) {
@@ -197,6 +199,38 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
   if (parsed.data.resetPassword) updateUserData.password = targetUser.password;
 
+  const rawEmpId = parsed.data.empID !== undefined ? parsed.data.empID.trim() : undefined;
+  const normalizedEmpId = rawEmpId !== undefined ? normalizeEmpId(rawEmpId) : undefined;
+
+  if (targetMember && rawEmpId !== undefined && normalizedEmpId) {
+    const duplicateEmpId = await (db.workspaceMember as any).findFirst({
+      where: {
+        workspaceId: targetMember.workspaceId,
+        id: { not: targetMember.id },
+        OR: [
+          { empIDNormalized: normalizedEmpId },
+          { empID: { equals: rawEmpId, mode: "insensitive" } }
+        ]
+      }
+    });
+    if (duplicateEmpId) {
+      return ApiResponse.error("Employee ID already exists. Please enter a unique Employee ID.", 2004, 409);
+    }
+  } else if (!targetMember && parsed.data.workspaceId && rawEmpId !== undefined && normalizedEmpId) {
+    const duplicateEmpId = await (db.workspaceMember as any).findFirst({
+      where: {
+        workspaceId: parsed.data.workspaceId,
+        OR: [
+          { empIDNormalized: normalizedEmpId },
+          { empID: { equals: rawEmpId, mode: "insensitive" } }
+        ]
+      }
+    });
+    if (duplicateEmpId) {
+      return ApiResponse.error("Employee ID already exists. Please enter a unique Employee ID.", 2004, 409);
+    }
+  }
+
   const updatedUser = await db.user.update({
     where: { id: targetUser.id },
     data: updateUserData
@@ -205,7 +239,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   // Update Workspace Member if it exists
   if (targetMember) {
     const updateMemberData: any = {};
-    if (parsed.data.empID !== undefined) updateMemberData.empID = parsed.data.empID;
+    if (parsed.data.empID !== undefined) {
+      updateMemberData.empID = rawEmpId;
+      updateMemberData.empIDNormalized = normalizedEmpId || null;
+    }
     if (parsed.data.role !== undefined) updateMemberData.role = parsed.data.role;
     if (parsed.data.roleTypes !== undefined) updateMemberData.roleTypes = parsed.data.roleTypes;
     if (parsed.data.teamNames !== undefined) {
@@ -216,40 +253,55 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (parsed.data.status !== undefined) updateMemberData.status = parsed.data.status;
     if (parsed.data.isActive !== undefined) updateMemberData.isActive = parsed.data.isActive;
 
-    const updatedMember = await db.workspaceMember.update({
-      where: { id: targetMember.id },
-      data: {
-        ...updateMemberData,
-        departments: parsed.data.departments ? {
-          deleteMany: {},
-          create: parsed.data.departments.map((d: any) => ({ name: d.name, subTeams: d.subTeams }))
-        } : undefined
-      },
-      include: { departments: true }
-    });
-    return ApiResponse.success({ ...updatedUser, ...updatedMember }, "User updated successfully");
+    try {
+      const updatedMember = await (db.workspaceMember as any).update({
+        where: { id: targetMember.id },
+        data: {
+          ...updateMemberData,
+          departments: parsed.data.departments ? {
+            deleteMany: {},
+            create: parsed.data.departments.map((d: any) => ({ name: d.name, subTeams: d.subTeams }))
+          } : undefined
+        },
+        include: { departments: true }
+      });
+      return ApiResponse.success({ ...updatedUser, ...updatedMember }, "User updated successfully");
+    } catch (dbError: any) {
+      if (dbError?.code === "P2002" || String(dbError?.message).includes("empID") || String(dbError?.message).includes("Unique constraint")) {
+        return ApiResponse.error("Employee ID already exists. Please enter a unique Employee ID.", 2004, 409);
+      }
+      throw dbError;
+    }
   }
 
   // Create WorkspaceMember if workspaceId is provided but not found
   if (parsed.data.workspaceId && parsed.data.workspaceId.trim() !== "") {
-    const newMember = await db.workspaceMember.create({
-      data: {
-        userId: updatedUser.id,
-        workspaceId: parsed.data.workspaceId,
-        empID: parsed.data.empID || "EMP",
-        role: parsed.data.role || updatedUser.role,
-        roleTypes: parsed.data.roleTypes ?? [],
-        teamNames: parsed.data.teamNames ?? [],
-        departments: {
-          create: parsed.data.departments?.map((d: any) => ({ name: d.name, subTeams: d.subTeams })) || []
+    try {
+      const newMember = await (db.workspaceMember as any).create({
+        data: {
+          userId: updatedUser.id,
+          workspaceId: parsed.data.workspaceId,
+          empID: rawEmpId || "EMP",
+          empIDNormalized: normalizedEmpId || "emp",
+          role: parsed.data.role || updatedUser.role,
+          roleTypes: parsed.data.roleTypes ?? [],
+          teamNames: parsed.data.teamNames ?? [],
+          departments: {
+            create: parsed.data.departments?.map((d: any) => ({ name: d.name, subTeams: d.subTeams })) || []
+          },
+          managerName: parsed.data.managerName ?? "",
+          status: "active",
+          isActive: true
         },
-        managerName: parsed.data.managerName ?? "",
-        status: "active",
-        isActive: true
-      },
-      include: { departments: true }
-    });
-    return ApiResponse.success({ ...updatedUser, ...newMember }, "User updated successfully");
+        include: { departments: true }
+      });
+      return ApiResponse.success({ ...updatedUser, ...newMember }, "User updated successfully");
+    } catch (dbError: any) {
+      if (dbError?.code === "P2002" || String(dbError?.message).includes("empID") || String(dbError?.message).includes("Unique constraint")) {
+        return ApiResponse.error("Employee ID already exists. Please enter a unique Employee ID.", 2004, 409);
+      }
+      throw dbError;
+    }
   }
 
   return ApiResponse.success(updatedUser, "User updated successfully");

@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, useMemo, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Menu } from "lucide-react";
-import { ROLE_LABELS, SIDEBAR_NAV_ITEMS_BY_ROLE, type UserRole } from "@/lib/constants";
+import { ROLE_LABELS, SIDEBAR_NAV_ITEMS_BY_ROLE, normalizeRole, type UserRole } from "@/lib/constants";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sidebar } from "@/components/layout/sidebar";
@@ -13,7 +13,10 @@ import { CompanySelector } from "@/components/layout/company-selector";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { UserProfileMenu } from "@/components/layout/user-profile-menu";
 import { useSession } from "@/hooks/use-session";
-import { canSeeFinanceTab, isInFinance, canAccessBanksAndPettyCash } from "@/lib/permissions";
+import { canSeeFinanceTab, isInFinance, isInMarketing, isInConstruction, canAccessBanksAndPettyCash } from "@/lib/permissions";
+import { LanguageSelector } from "@/components/layout/language-selector";
+import { useTranslation } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 
 function clearBrowserSessionState() {
   window.localStorage.clear();
@@ -38,10 +41,21 @@ export function AppShell({
   sidebarVariant?: "default" | "daily-report";
   children: ReactNode;
 }) {
+  const { t, isRTL } = useTranslation();
   const { data: sessionUser } = useSession();
-  const resolvedRole = sessionUser?.role ?? role ?? "team_member";
-  const displayName = sessionUser?.name?.trim() || "User";
+  const resolvedRole = normalizeRole(sessionUser?.role ?? role) ?? "team_member";
+  const rawDisplayName = sessionUser?.name?.trim() || "";
   const displayEmail = sessionUser?.email?.trim() || "";
+
+  const displayName =
+    !rawDisplayName || rawDisplayName.toLowerCase() === "user"
+      ? t(`roles.${resolvedRole}`) || ROLE_LABELS[resolvedRole]
+      : rawDisplayName.toLowerCase() === "admin"
+      ? t("roles.admin")
+      : rawDisplayName.toLowerCase() === "ceo"
+      ? t("roles.ceo")
+      : rawDisplayName;
+
   const [selectedDepartment, setSelectedDepartment] = useState<string>("all");
 
   const queryClient = useQueryClient();
@@ -73,9 +87,14 @@ export function AppShell({
   const showBanksAndPettyCash = sessionUser ? canAccessBanksAndPettyCash(sessionUser) : (role === "admin" || role === "ceo" || isFinanceTLorTM);
 
   const items = useMemo(() => {
+    if (resolvedRole === "report_manager") {
+      return [...SIDEBAR_NAV_ITEMS_BY_ROLE.report_manager];
+    }
     let rawItems: Array<{ href: string; label: string }> = [...SIDEBAR_NAV_ITEMS_BY_ROLE[resolvedRole]];
     const hasFinanceAccess = canSeeFinanceTab(sessionUser ?? null);
     const userIsInFinance = sessionUser ? isInFinance(sessionUser) : false;
+    const userIsInMarketing = sessionUser ? isInMarketing(sessionUser) : false;
+    const userIsInConstruction = sessionUser ? isInConstruction(sessionUser) : false;
 
     if (userIsInFinance && (resolvedRole === "team_lead" || resolvedRole === "team_member")) {
       const financeNav: Array<{ href: string; label: string }> = [];
@@ -99,13 +118,32 @@ export function AppShell({
       return financeNav;
     }
 
+    // Resolve accurate department My Reports link for team_lead and team_member to prevent server-side redirect flash
+    if (resolvedRole === "team_lead" || resolvedRole === "team_member") {
+      let targetMyReportsHref = resolvedRole === "team_member" ? "/tm/my-reports" : "/daily-report/my-reports";
+      if (userIsInMarketing) {
+        targetMyReportsHref = "/marketing/my-reports";
+      } else if (userIsInConstruction) {
+        targetMyReportsHref = "/construction/my-reports";
+      } else if (userIsInFinance) {
+        targetMyReportsHref = "/finance/my-reports";
+      }
+
+      rawItems = rawItems.map((item) => {
+        if (item.label === "My Reports" || item.label === "My Report" || item.href.includes("my-reports")) {
+          return { ...item, href: targetMyReportsHref };
+        }
+        return item;
+      });
+    }
+
     if (selectedDepartment === "Finance") {
-      const isHodOrStaff = resolvedRole === "hod" || resolvedRole === "report_manager" || resolvedRole === "team_lead" || resolvedRole === "team_member";
+      const isHodOrStaff = resolvedRole === "hod" || resolvedRole === "team_lead" || resolvedRole === "team_member";
       if (isHodOrStaff) {
         const baseDashboard = resolvedRole === "hod" || resolvedRole === "team_lead" ? [{ href: "/dashboard", label: "Dashboard" }] : [];
         const baseEmployees = resolvedRole === "hod" ? [{ href: "/users", label: "Employees" }] : resolvedRole === "team_lead" ? [{ href: "/users", label: "My Team" }] : [];
         const baseTeamTypes = resolvedRole === "hod" ? [{ href: "/hod/team-types", label: "Team Types" }] : [];
-        const myReports = resolvedRole !== "hod" ? [{ href: "/finance/create", label: "My Reports" }] : [];
+        const myReports = resolvedRole !== "hod" ? [{ href: "/finance/my-reports", label: "My Reports" }] : [];
 
         return [
           ...baseDashboard,
@@ -189,19 +227,21 @@ export function AppShell({
     setSidebarOpen(false);
   }, [pathname]);
 
+  const localizedRoleLabel = t(`roles.${resolvedRole}`) || ROLE_LABELS[resolvedRole];
+
   return (
     <div className="h-screen overflow-hidden bg-background text-foreground transition-colors duration-200">
       {sidebarOpen ? (
         <button
           type="button"
-          aria-label="Close navigation menu"
+          aria-label={t("nav.closeMenu")}
           className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-[2px] lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       ) : null}
       <div className="flex h-full min-h-0 flex-col gap-3 px-3 pt-0 lg:flex-row lg:items-start lg:gap-0 lg:px-0 lg:py-0">
         <Sidebar
-          roleLabel={ROLE_LABELS[resolvedRole]}
+          roleLabel={localizedRoleLabel}
           items={items}
           pathname={pathname}
           onLogout={handleLogout}
@@ -209,14 +249,19 @@ export function AppShell({
           onClose={() => setSidebarOpen(false)}
         />
 
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:ml-[300px] lg:h-full">
+        <main
+          className={cn(
+            "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:h-full",
+            isRTL ? "lg:mr-[300px] lg:ml-0" : "lg:ml-[300px]"
+          )}
+        >
           {/* Top Navbar Header Component */}
           <div className="sticky top-0 z-30 w-full border-b border-primary/20 bg-navbar px-3 pb-3 pt-2 text-sidebarText shadow-md backdrop-blur-sm sm:px-5 sm:pb-4 sm:pt-3 lg:min-h-[136px] lg:px-8 lg:pb-10 lg:pt-5">
-            <div className="flex flex-col gap-3 sm:gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 sm:gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex items-start justify-between gap-3 lg:block">
                 <div>
                   <div className="text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-primary sm:text-xs sm:tracking-[0.28em]">
-                    Workspace
+                    {t("common.workspace")}
                   </div>
                   <div className="mt-1.5 text-xl font-bold tracking-tight text-sidebarText sm:mt-2.5 sm:text-2xl">{displayName}</div>
                   {displayEmail ? (
@@ -229,7 +274,7 @@ export function AppShell({
                   size="sm"
                   className="h-10 w-10 shrink-0 rounded-full px-0 border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground lg:hidden"
                   onClick={() => setSidebarOpen(true)}
-                  aria-label="Open navigation menu"
+                  aria-label={t("nav.openMenu")}
                 >
                   <Menu className="h-4 w-4" />
                 </Button>
@@ -238,7 +283,8 @@ export function AppShell({
                 <div className="flex-1 min-w-0 sm:flex-initial">
                   <CompanySelector />
                 </div>
-                <div className="flex shrink-0 items-center gap-2 sm:gap-3 ml-auto">
+                <div className="flex shrink-0 items-center gap-2 sm:gap-3 ltr:ml-auto rtl:mr-auto">
+                  <LanguageSelector variant="header" />
                   <NotificationBell />
                   <UserProfileMenu onLogout={handleLogout} />
                 </div>
@@ -247,7 +293,7 @@ export function AppShell({
           </div>
 
           <div className="flex min-h-0 flex-1 px-3 pt-3 pb-4 lg:px-4 lg:pt-3 lg:pb-5">
-            <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-md">
+            <div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-md">
               <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 pr-4 lg:px-5 lg:py-6 lg:pr-6">
                 {children}
               </div>

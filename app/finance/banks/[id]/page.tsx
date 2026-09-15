@@ -5,6 +5,7 @@ import { DashboardPageHeader } from "@/components/dashboard/ui";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessBanksAndPettyCash } from "@/lib/permissions";
 import db from "@/lib/db";
+import { isWorkspaceAuthorizedForUser } from "@/lib/workspace-context";
 import { decryptDbField } from "@/lib/crypto/db-encryption";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,11 @@ export default async function BankStatementPage({ params }: PageProps) {
     notFound();
   }
 
+  const isAuthorized = await isWorkspaceAuthorizedForUser(user, bank.workspaceId);
+  if (!isAuthorized) {
+    notFound();
+  }
+
   // Decrypt account number
   let plainAccount = "";
   try {
@@ -56,10 +62,12 @@ export default async function BankStatementPage({ params }: PageProps) {
   }
   const len = plainAccount.length;
   let maskedAccountNumber = "";
-  if (len > 4) {
+  if (len > 4 && len <= 20) {
     maskedAccountNumber = "X".repeat(len - 4) + plainAccount.slice(-4);
   } else if (bank.account_last_4) {
     maskedAccountNumber = "XXXX" + bank.account_last_4;
+  } else if (len > 4) {
+    maskedAccountNumber = "XXXXXXXX" + plainAccount.slice(-4);
   } else {
     maskedAccountNumber = plainAccount || "XXXX";
   }
@@ -166,20 +174,18 @@ export default async function BankStatementPage({ params }: PageProps) {
   return (
     <AppShell title={`Statement — ${displayName}`} role={user.role}>
       <div className="space-y-6">
-        <div>
-          <Button asChild variant="ghost" size="sm" className="mb-3 pl-0 hover:bg-transparent text-muted-foreground hover:text-foreground">
-            <Link href="/finance/banks">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Bank Accounts
-            </Link>
-          </Button>
-          
-          <DashboardPageHeader
-            eyebrow="Finance"
-            title={`${displayName} Statement`}
-            description={`Account Statement & Transaction History for ${bank.bankName}`}
-          />
-        </div>
+        <DashboardPageHeader
+          eyebrow="Finance"
+          title={`${displayName} Statement`}
+          description={`Account Statement & Transaction History for ${bank.bankName}`}
+          backButton={
+            <Button asChild variant="outline" size="icon" className="h-9 w-9 rounded-xl shrink-0">
+              <Link href="/finance/banks" title="Back" aria-label="Back">
+                <ArrowLeft className="h-4 w-4" />
+              </Link>
+            </Button>
+          }
+        />
 
         <BankStatementActions
           bank={{
@@ -192,24 +198,32 @@ export default async function BankStatementPage({ params }: PageProps) {
         />
 
         {/* Account Meta Info Header Card */}
-        <Card className="bg-card border-cardBorder shadow-soft">
+        <Card className="bg-card border-cardBorder shadow-soft overflow-hidden">
           <CardContent className="p-6">
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-              <div>
-                <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Account Number</span>
-                <p className="mt-1 text-base font-semibold tabular-nums text-foreground">{maskedAccountNumber}</p>
+            <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="min-w-0">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold block truncate">Account Number</span>
+                <p className="mt-1 text-base font-semibold tabular-nums text-foreground truncate break-all" title={maskedAccountNumber}>
+                  {maskedAccountNumber}
+                </p>
               </div>
-              <div>
-                <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Branch Name</span>
-                <p className="mt-1 text-base font-medium text-foreground">{bank.branchName || "-"}</p>
+              <div className="min-w-0">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold block truncate">Branch Name</span>
+                <p className="mt-1 text-base font-medium text-foreground truncate break-words" title={bank.branchName || "-"}>
+                  {bank.branchName || "-"}
+                </p>
               </div>
-              <div>
-                <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">IFSC Code</span>
-                <p className="mt-1 text-base font-medium text-foreground">{bank.ifscCode || "-"}</p>
+              <div className="min-w-0">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold block truncate">IFSC Code</span>
+                <p className="mt-1 text-base font-medium text-foreground truncate uppercase" title={bank.ifscCode || "-"}>
+                  {bank.ifscCode || "-"}
+                </p>
               </div>
-              <div>
-                <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Product / Currency</span>
-                <p className="mt-1 text-base font-medium text-foreground">{bank.product ? `${bank.product} (${bank.currency})` : bank.currency}</p>
+              <div className="min-w-0">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold block truncate">Product / Currency</span>
+                <p className="mt-1 text-base font-medium text-foreground truncate" title={bank.product ? `${bank.product} (${bank.currency})` : bank.currency}>
+                  {bank.product ? `${bank.product} (${bank.currency})` : bank.currency}
+                </p>
               </div>
             </div>
           </CardContent>

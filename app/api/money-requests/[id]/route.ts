@@ -6,6 +6,7 @@ import { getINRtoSARRate } from "@/lib/currency";
 import { financeReportSchema } from "@/lib/validation";
 import { canEditFinanceReport, canCreateMoneyRequest } from "@/lib/permissions";
 import { encryptPayload, decryptPayload } from "@/lib/crypto";
+import { isWorkspaceAuthorizedForUser } from "@/lib/workspace-context";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -37,11 +38,20 @@ export async function GET(_request: Request, context: RouteContext) {
   try {
     const auth = await authorizeApi(["authenticated"]);
     if (!auth.authorized) return auth.response;
+    const user = auth.user;
 
     const { id } = await context.params;
     const moneyRequest = await findMoneyRequestByIdOrReportId(String(id));
 
     if (!moneyRequest) {
+      return NextResponse.json(
+        { success: false, status: "NOT_FOUND", statusCode: 4004, message: "Money request not found" },
+        { status: 404 }
+      );
+    }
+
+    const isAuthorized = await isWorkspaceAuthorizedForUser(user, moneyRequest.workspaceId);
+    if (!isAuthorized) {
       return NextResponse.json(
         { success: false, status: "NOT_FOUND", statusCode: 4004, message: "Money request not found" },
         { status: 404 }
@@ -79,6 +89,14 @@ export async function PUT(request: Request, context: RouteContext) {
       return NextResponse.json(
         { success: false, status: "NOT_FOUND", statusCode: 4004, message: "Money request not found" },
         { status: 404 }
+      );
+    }
+
+    const isAuthorized = await isWorkspaceAuthorizedForUser(user, existing.workspaceId);
+    if (!isAuthorized) {
+      return NextResponse.json(
+        { success: false, status: "FORBIDDEN", statusCode: 4003, message: "Forbidden: You cannot edit a money request from another company/workspace." },
+        { status: 403 }
       );
     }
 
@@ -183,6 +201,14 @@ export async function DELETE(_request: Request, context: RouteContext) {
       return NextResponse.json(
         { success: false, status: "NOT_FOUND", statusCode: 4004, message: "Money request not found" },
         { status: 404 }
+      );
+    }
+
+    const isAuthorized = await isWorkspaceAuthorizedForUser(user, existing.workspaceId);
+    if (!isAuthorized) {
+      return NextResponse.json(
+        { success: false, status: "FORBIDDEN", statusCode: 4003, message: "Forbidden: You cannot delete a money request from another company/workspace." },
+        { status: 403 }
       );
     }
 

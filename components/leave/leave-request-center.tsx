@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDisplayName } from "@/lib/utils";
 import { LeaveRejectionNoteModal } from "@/components/leave/leave-rejection-note-modal";
+import { useTranslation } from "@/lib/i18n";
 
 type LeaveRequestItem = {
   _id: string;
@@ -30,14 +31,6 @@ type LeaveRequestItem = {
   hodComment?: string;
   approvedByName?: string | null;
   approvedByRole?: string | null;
-};
-
-const statusLabel: Record<LeaveRequestItem["status"], string> = {
-  pending_tl: "Pending Review",
-  forwarded_to_hod: "With HOD",
-  approved: "Approved",
-  rejected: "Rejected",
-  cancelled: "Cancelled"
 };
 
 function statusVariant(status: LeaveRequestItem["status"]) {
@@ -61,6 +54,7 @@ function ReviewActionButtons({
   onStartReject: (id: string) => void;
   onAction: (id: string, action: "approve" | "reject" | "cancel", comment?: string) => void;
 }) {
+  const { t } = useTranslation();
   if (!currentUser) return null;
 
   const isOwner = currentUser.id === requestItem.employeeId;
@@ -78,19 +72,19 @@ function ReviewActionButtons({
       <div className="flex flex-wrap gap-2">
         {canTeamLeadReview ? (
           <>
-            <Button size="sm" onClick={() => onAction(requestItem._id, "approve")}>Approve</Button>
-            <Button size="sm" variant="outline" onClick={() => onStartReject(requestItem._id)}>Reject</Button>
+            <Button size="sm" onClick={() => onAction(requestItem._id, "approve")}>{t("common.approve", "Approve")}</Button>
+            <Button size="sm" variant="outline" onClick={() => onStartReject(requestItem._id)}>{t("common.reject", "Reject")}</Button>
           </>
         ) : canFinalize ? (
           <>
-            <Button size="sm" onClick={() => onAction(requestItem._id, "approve")}>Approve</Button>
-            <Button size="sm" variant="outline" onClick={() => onStartReject(requestItem._id)}>Reject</Button>
+            <Button size="sm" onClick={() => onAction(requestItem._id, "approve")}>{t("common.approve", "Approve")}</Button>
+            <Button size="sm" variant="outline" onClick={() => onStartReject(requestItem._id)}>{t("common.reject", "Reject")}</Button>
           </>
         ) : canReject ? (
-          <Button size="sm" variant="outline" onClick={() => onStartReject(requestItem._id)}>Reject</Button>
+          <Button size="sm" variant="outline" onClick={() => onStartReject(requestItem._id)}>{t("common.reject", "Reject")}</Button>
         ) : null}
         {canCancel ? (
-          <Button size="sm" variant="outline" onClick={() => onAction(requestItem._id, "cancel")}>Cancel</Button>
+          <Button size="sm" variant="outline" onClick={() => onAction(requestItem._id, "cancel")}>{t("common.cancel", "Cancel")}</Button>
         ) : null}
       </div>
     </div>
@@ -98,6 +92,7 @@ function ReviewActionButtons({
 }
 
 export function LeaveRequestCenter() {
+  const { t } = useTranslation();
   const [message, setMessage] = useState<string | null>(null);
   const [rejectingRequestId, setRejectingRequestId] = useState<string | null>(null);
   const [rejectionNote, setRejectionNote] = useState("");
@@ -110,6 +105,14 @@ export function LeaveRequestCenter() {
     },
     staleTime: 60_000
   });
+
+  const statusLabel: Record<LeaveRequestItem["status"], string> = {
+    pending_tl: t("leave.pendingReview", "Pending Review"),
+    forwarded_to_hod: t("leave.withHod", "With HOD"),
+    approved: t("leave.approved", "Approved"),
+    rejected: t("leave.rejected", "Rejected"),
+    cancelled: t("leave.cancelled", "Cancelled")
+  };
 
   const { data: leaveRequests, refetch } = useQuery({
     queryKey: ["leave-requests", currentUser?.role, currentUser?.teamName, page],
@@ -153,7 +156,7 @@ export function LeaveRequestCenter() {
       }
       await refetch();
     } catch {
-      setMessage("Action failed. Please try again.");
+      setMessage(t("leave.actionFailed", "Action failed. Please try again."));
     }
   };
 
@@ -168,11 +171,11 @@ export function LeaveRequestCenter() {
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <CardTitle>{showManagerActions ? "Team Leave Requests" : "My Leave Requests"}</CardTitle>
-              <p className="mt-2 text-sm text-muted-foreground">Browse submitted leave requests and review their current status.</p>
+              <CardTitle>{showManagerActions ? t("leave.teamLeaveRequests", "Team Leave Requests") : t("leave.myLeaveRequests", "My Leave Requests")}</CardTitle>
+              <p className="mt-2 text-sm text-muted-foreground">{t("leave.browseDescription", "Browse submitted leave requests and review their current status.")}</p>
             </div>
             <Button asChild className="w-full sm:w-auto">
-              <Link href="/leave-requests/create">Create Leave</Link>
+              <Link href="/leave-requests/create">{t("leave.createLeave", "Create Leave")}</Link>
             </Button>
           </div>
         </CardHeader>
@@ -180,17 +183,17 @@ export function LeaveRequestCenter() {
           <div className="flex items-center justify-between gap-3">
             <div className="text-sm text-muted-foreground">
               {showManagerActions
-                ? "Review your team’s pending requests and move them to the next approval step."
-                : "Track the current approval status of your requests."}
+                ? t("leave.managerGuide", "Review your team’s pending requests and move them to the next approval step.")
+                : t("leave.userGuide", "Track the current approval status of your requests.")}
             </div>
-            <Badge variant="soft">{leaveRequests?.totalCount ?? 0} requests</Badge>
+            <Badge variant="soft">{t("leave.requestsCount", { count: leaveRequests?.totalCount ?? 0 }, `${leaveRequests?.totalCount ?? 0} requests`)}</Badge>
           </div>
 
           <div className="space-y-3">
             {!leaveRequests ? (
-              <div className="text-sm text-muted-foreground">Loading leave requests...</div>
+              <div className="text-sm text-muted-foreground">{t("leave.loadingRequests", "Loading leave requests...")}</div>
             ) : leaveItems.length === 0 ? (
-              <div className="text-sm text-muted-foreground">No leave requests found.</div>
+              <div className="text-sm text-muted-foreground">{t("leave.noRequestsFound", "No leave requests found.")}</div>
             ) : (
               leaveItems.map((requestItem) => (
                 <div key={requestItem._id} className="rounded-xl border border-cardBorder bg-background/70 p-4">
@@ -203,13 +206,15 @@ export function LeaveRequestCenter() {
                         <Badge variant={statusVariant(requestItem.status)}>{statusLabel[requestItem.status]}</Badge>
                       </div>
                       <div className="text-sm text-muted-foreground">
-                        {requestItem.leaveType} · {LEAVE_DURATION_LABELS[requestItem.leaveDuration]}{requestItem.leaveHalf ? ` · ${LEAVE_HALF_LABELS[requestItem.leaveHalf]}` : ""} · {formatDateOnly(requestItem.fromDate)} to {formatDateOnly(requestItem.toDate)}
+                        {requestItem.leaveType} · {LEAVE_DURATION_LABELS[requestItem.leaveDuration]}{requestItem.leaveHalf ? ` · ${LEAVE_HALF_LABELS[requestItem.leaveHalf]}` : ""} · {formatDateOnly(requestItem.fromDate)} {t("common.to", "to")} {formatDateOnly(requestItem.toDate)}
                       </div>
                       <div className="text-sm text-foreground/90">{requestItem.reason}</div>
                       {requestItem.approvedByName ? (
                         <div className="text-sm text-muted-foreground">
-                          Approved by {requestItem.approvedByName}
-                          {requestItem.approvedByRole ? ` (${ROLE_LABELS[requestItem.approvedByRole as keyof typeof ROLE_LABELS] ?? requestItem.approvedByRole})` : ""}
+                          {t("leave.approvedBy", { name: requestItem.approvedByName }, `Approved by ${requestItem.approvedByName}`)}
+                          {requestItem.approvedByRole
+                            ? ` (${t(`roles.${requestItem.approvedByRole}`, ROLE_LABELS[requestItem.approvedByRole as keyof typeof ROLE_LABELS] ?? requestItem.approvedByRole)})`
+                            : ""}
                         </div>
                       ) : null}
                     </div>
@@ -224,8 +229,8 @@ export function LeaveRequestCenter() {
                   </div>
                   {(requestItem.tlComment || requestItem.hodComment) ? (
                     <div className="mt-4 grid gap-2 md:grid-cols-2">
-                      {requestItem.tlComment ? <div className="rounded-2xl border bg-muted/30 p-3 text-sm text-muted-foreground">TL note: {requestItem.tlComment}</div> : null}
-                      {requestItem.hodComment ? <div className="rounded-2xl border bg-muted/30 p-3 text-sm text-muted-foreground">HOD note: {requestItem.hodComment}</div> : null}
+                      {requestItem.tlComment ? <div className="rounded-2xl border bg-muted/30 p-3 text-sm text-muted-foreground">{t("leave.tlNote", "TL note")}: {requestItem.tlComment}</div> : null}
+                      {requestItem.hodComment ? <div className="rounded-2xl border bg-muted/30 p-3 text-sm text-muted-foreground">{t("leave.hodNote", "HOD note")}: {requestItem.hodComment}</div> : null}
                     </div>
                   ) : null}
                 </div>
@@ -235,13 +240,13 @@ export function LeaveRequestCenter() {
 
           <div className="flex items-center justify-between gap-3 pt-2">
             <Button variant="outline" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={currentPage <= 1}>
-              Previous
+              {t("pagination.previous", "Previous")}
             </Button>
             <div className="text-sm text-muted-foreground">
-              Page {currentPage || 1} of {totalPages || 1}
+              {t("pagination.pageOf", { current: currentPage || 1, total: totalPages || 1 }, `Page ${currentPage || 1} of ${totalPages || 1}`)}
             </div>
             <Button variant="outline" onClick={() => setPage((current) => current + 1)} disabled={totalPages === 0 || currentPage >= totalPages}>
-              Next
+              {t("pagination.next", "Next")}
             </Button>
           </div>
         </CardContent>

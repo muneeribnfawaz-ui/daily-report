@@ -1,6 +1,7 @@
 "use client";
 
 import axios from "axios";
+import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSelectedCompany } from "@/hooks/use-selected-company";
 import { Controller, useForm, useWatch } from "react-hook-form";
@@ -19,7 +20,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ReportField, ReportInput, ReportMultiSelectCards, ReportSelect } from "@/components/forms/report-controls";
 import { PasswordInput } from "@/components/forms/password-input";
+import { PhoneInput } from "@/components/forms/phone-input";
 import type { SessionUser } from "@/lib/types";
+import { useTranslation } from "@/lib/i18n";
+import { normalizeSkillKey } from "@/lib/skills-i18n";
 
 type CreateUserValues = z.infer<typeof clientCreateUserSchema>;
 
@@ -33,9 +37,10 @@ type TeamTypeOption = {
 type ManagerOption = {
   _id: string;
   name: string;
+  role?: string;
   teamName?: string | null;
   teamNames?: string[] | null;
-  departments?: Array<{ name: string; subTeams: string[] }> | null;
+  departments?: Array<{ name: string; subTeams?: string[] }> | null;
 };
 
 type CompanyOption = {
@@ -108,6 +113,8 @@ function managerMatchesTeams(manager: ManagerOption | undefined, teamNames: stri
 }
 
 export function ManagerAddUserForm({ currentUser: propCurrentUser }: { currentUser?: SessionUser } = {}) {
+  const { t, isRtl } = useTranslation();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -124,46 +131,6 @@ export function ManagerAddUserForm({ currentUser: propCurrentUser }: { currentUs
   });
 
   const currentUser = propCurrentUser ?? fetchedUser;
-
-  const { data: teamTypes } = useQuery<TeamTypeOption[]>({
-    queryKey: ["team-types"],
-    enabled: Boolean(currentUser),
-    queryFn: async () => {
-      const response = await api.get("/api/team-types", { params: { department: "all" } });
-      return (response.data?.data ?? []) as TeamTypeOption[];
-    },
-    staleTime: 0
-  });
-
-  const { data: teamLeadOptions = [] } = useQuery<ManagerOption[]>({
-    queryKey: ["team-leads-for-create", currentUser?.role, currentUser?.name],
-    enabled: Boolean(currentUser) && currentUser?.role !== "team_lead",
-    queryFn: async () => {
-      const response = await api.get("/api/report-manager/users", { params: { role: "team_lead" } });
-      return response.data?.data as ManagerOption[];
-    },
-    staleTime: 60_000
-  });
-
-  const { data: hodOptions = [] } = useQuery<ManagerOption[]>({
-    queryKey: ["hods-for-create", currentUser?.role],
-    enabled: Boolean(currentUser),
-    queryFn: async () => {
-      const response = await api.get("/api/admin/users", { params: { role: "hod" } });
-      return response.data?.data as ManagerOption[];
-    },
-    staleTime: 60_000
-  });
-
-  const { data: rmOptions = [] } = useQuery<ManagerOption[]>({
-    queryKey: ["rms-for-create", currentUser?.role],
-    enabled: Boolean(currentUser),
-    queryFn: async () => {
-      const response = await api.get("/api/admin/users", { params: { role: "report_manager" } });
-      return response.data?.data as ManagerOption[];
-    },
-    staleTime: 60_000
-  });
 
   const { data: companies } = useQuery<CompanyOption[]>({
     queryKey: ["header-active-companies"],
@@ -183,6 +150,67 @@ export function ManagerAddUserForm({ currentUser: propCurrentUser }: { currentUs
     }
     return companies[0];
   }, [companies, selectedCompanyId]);
+
+  const activeCompanyId = activeSelectedCompany?._id ?? currentUser?.workspaceId ?? (selectedCompanyId !== "all" ? selectedCompanyId : "");
+
+  const { data: teamTypes } = useQuery<TeamTypeOption[]>({
+    queryKey: ["team-types", activeCompanyId],
+    enabled: Boolean(currentUser),
+    queryFn: async () => {
+      const params: Record<string, string> = { department: "all" };
+      if (activeCompanyId) {
+        params.workspaceId = activeCompanyId;
+      }
+      const response = await api.get("/api/team-types", { params });
+      return (response.data?.data ?? []) as TeamTypeOption[];
+    },
+    staleTime: 0
+  });
+
+  const { data: teamLeadOptions = [] } = useQuery<ManagerOption[]>({
+    queryKey: ["team-leads-for-create", currentUser?.role, currentUser?.workspaceId, activeCompanyId],
+    enabled: Boolean(currentUser) && currentUser?.role !== "team_lead",
+    queryFn: async () => {
+      const response = await api.get("/api/admin/users", {
+        params: {
+          role: "team_lead",
+          workspaceId: activeCompanyId || currentUser?.workspaceId
+        }
+      });
+      return (response.data?.data ?? []) as ManagerOption[];
+    },
+    staleTime: 60_000
+  });
+
+  const { data: hodOptions = [] } = useQuery<ManagerOption[]>({
+    queryKey: ["hods-for-create", currentUser?.role, currentUser?.workspaceId, activeCompanyId],
+    enabled: Boolean(currentUser),
+    queryFn: async () => {
+      const response = await api.get("/api/admin/users", {
+        params: {
+          role: "hod",
+          workspaceId: activeCompanyId || currentUser?.workspaceId
+        }
+      });
+      return (response.data?.data ?? []) as ManagerOption[];
+    },
+    staleTime: 60_000
+  });
+
+  const { data: rmOptions = [] } = useQuery<ManagerOption[]>({
+    queryKey: ["rms-for-create", currentUser?.role, currentUser?.workspaceId, activeCompanyId],
+    enabled: Boolean(currentUser),
+    queryFn: async () => {
+      const response = await api.get("/api/admin/users", {
+        params: {
+          role: "report_manager",
+          workspaceId: activeCompanyId || currentUser?.workspaceId
+        }
+      });
+      return (response.data?.data ?? []) as ManagerOption[];
+    },
+    staleTime: 60_000
+  });
 
   const teamOptions = useMemo(() => teamTypes ?? [], [teamTypes]);
   const isCeo = currentUser?.role === "ceo";
@@ -234,9 +262,6 @@ export function ManagerAddUserForm({ currentUser: propCurrentUser }: { currentUs
     window.addEventListener("department-changed", handleDeptChange);
     return () => window.removeEventListener("department-changed", handleDeptChange);
   }, []);
-
-
-  const activeCompanyId = activeSelectedCompany?._id ?? currentUser?.workspaceId ?? (selectedCompanyId !== "all" ? selectedCompanyId : "");
 
   const {
     register,
@@ -318,59 +343,224 @@ export function ManagerAddUserForm({ currentUser: propCurrentUser }: { currentUs
     clearErrors("departments");
   };
 
+  const managerSelectOptions = useMemo(() => {
+    let options: ManagerOption[] = [];
+    if (isTeamLead) return [];
+
+    if (selectedRole === "hod") {
+      if (isCeo && currentUser) {
+        options = [{ _id: currentUser.id, name: currentUser.name || currentUser.email }];
+      } else {
+        options = [{ _id: "ceo", name: "CEO" }];
+      }
+    } else if (selectedRole === "report_manager") {
+      if (isHod && currentUser) {
+        options = [{ _id: currentUser.id, name: currentUser.name || currentUser.email }];
+      } else if (selectedDepartmentNames.length > 0) {
+        const filtered = hodOptions.filter((manager) => {
+          if (!manager.departments || manager.departments.length === 0) return true;
+          return manager.departments.some((d: any) =>
+            selectedDepartmentNames.some((sd) => sd.trim().toLowerCase() === d.name?.trim().toLowerCase())
+          );
+        });
+        options = filtered.length > 0 ? filtered : hodOptions;
+      } else {
+        options = hodOptions;
+      }
+    } else if (selectedRole === "team_lead") {
+      if (isHod && currentUser) {
+        options = [{ _id: currentUser.id, name: currentUser.name || currentUser.email }];
+      } else if (isReportManager && currentUser) {
+        options = [{ _id: currentUser.id, name: currentUser.name || currentUser.email }];
+      } else {
+        const deptRMs = selectedDepartmentNames.length > 0
+          ? rmOptions.filter((manager) => {
+              if (!manager.departments || manager.departments.length === 0) return true;
+              return manager.departments.some((d: any) =>
+                selectedDepartmentNames.some((sd) => sd.trim().toLowerCase() === d.name?.trim().toLowerCase())
+              );
+            })
+          : rmOptions;
+        const deptHods = selectedDepartmentNames.length > 0
+          ? hodOptions.filter((manager) => {
+              if (!manager.departments || manager.departments.length === 0) return true;
+              return manager.departments.some((d: any) =>
+                selectedDepartmentNames.some((sd) => sd.trim().toLowerCase() === d.name?.trim().toLowerCase())
+              );
+            })
+          : hodOptions;
+        options = deptRMs.length > 0 ? deptRMs : deptHods.length > 0 ? deptHods : (rmOptions.length > 0 ? rmOptions : hodOptions);
+      }
+    } else if (selectedRole === "team_member") {
+      if (selectedDepartmentNames.length > 0) {
+        const filteredTeamLeads = teamLeadOptions.filter((manager) => {
+          if (manager.departments && manager.departments.length > 0) {
+            const hasDept = manager.departments.some((d: any) =>
+              selectedDepartmentNames.some((sd) => sd.trim().toLowerCase() === d.name?.trim().toLowerCase())
+            );
+            if (hasDept) return true;
+          }
+          const managerTeams = normalizeTeamNames(manager.teamName ?? null, manager.teamNames ?? null);
+          if (managerTeams.length > 0) {
+            const hasMatchingTeam = managerTeams.some((tn) => {
+              const matchedType = teamOptions.find(
+                (t) => t.name.toLowerCase() === tn.toLowerCase() || (t.showName && t.showName.toLowerCase() === tn.toLowerCase())
+              );
+              return matchedType?.department && selectedDepartmentNames.some(
+                (sd) => sd.trim().toLowerCase() === matchedType.department?.trim().toLowerCase()
+              );
+            });
+            if (hasMatchingTeam) return true;
+          }
+          return false;
+        });
+
+        if (filteredTeamLeads.length > 0) {
+          options = filteredTeamLeads;
+        } else {
+          const deptRMs = rmOptions.filter((m) =>
+            m.departments?.some((d: any) =>
+              selectedDepartmentNames.some((sd) => sd.trim().toLowerCase() === d.name?.trim().toLowerCase())
+            )
+          );
+          const deptHods = hodOptions.filter((m) =>
+            m.departments?.some((d: any) =>
+              selectedDepartmentNames.some((sd) => sd.trim().toLowerCase() === d.name?.trim().toLowerCase())
+            )
+          );
+          if (deptRMs.length > 0 || deptHods.length > 0) {
+            options = [...deptRMs, ...deptHods];
+          } else {
+            options = teamLeadOptions;
+          }
+        }
+      } else {
+        options = teamLeadOptions;
+      }
+    } else {
+      options = teamLeadOptions;
+    }
+
+    const unique = new Map<string, ManagerOption>();
+    for (const opt of options) {
+      if (opt.name && !unique.has(opt.name)) {
+        unique.set(opt.name, opt);
+      }
+    }
+    return Array.from(unique.values());
+  }, [currentUser, hodOptions, isCeo, isTeamLead, rmOptions, selectedDepartmentNames, selectedRole, teamLeadOptions, teamOptions]);
+
   const availableTeamOptions = useMemo(() => {
-    if (selectedRole === "hod" || selectedRole === "report_manager") {
+    if (selectedRole === "hod" || selectedRole === "report_manager" || selectedRole === "ceo") {
       return [];
     }
 
-    let teams = teamOptions;
     if (isTeamLead) {
-      const allowedTeamNames = currentUser?.teamNames ?? [];
-      const allowedTeamName = currentUser?.teamName;
-      const allAllowed = [...allowedTeamNames];
-      if (allowedTeamName && !allAllowed.includes(allowedTeamName)) {
-        allAllowed.push(allowedTeamName);
-      }
-      
-      const finalAllowed = allAllowed;
-
-      if (finalAllowed.length) {
-        const normalizedAllowed = finalAllowed.map((t) => t.trim().toLowerCase());
+      if (currentUserTeamNames.length > 0) {
+        const normalizedAllowed = currentUserTeamNames.map((t) => t.trim().toLowerCase());
         const filtered = teamOptions.filter(
           (team) =>
             normalizedAllowed.includes(team.name.trim().toLowerCase()) ||
             (team.showName && normalizedAllowed.includes(team.showName.trim().toLowerCase()))
         );
-        if (filtered.length > 0) {
-          teams = filtered;
-        } else {
-          teams = finalAllowed.map((name) => ({
-            _id: name,
-            name: name,
-            showName: name
-          }));
-        }
-      } else {
-        teams = [];
+        if (filtered.length > 0) return filtered;
+        return currentUserTeamNames.map((name) => ({
+          _id: name,
+          name: name,
+          showName: name
+        }));
       }
+      return [];
+    }
+
+    if (selectedRole === "team_member") {
+      if (!currentManagerName) {
+        return [];
+      }
+      const selectedManager = managerSelectOptions.find((m) => m.name === currentManagerName);
+      const managerTeams = normalizeTeamNames(selectedManager?.teamName ?? null, selectedManager?.teamNames ?? null);
+
+      if (managerTeams.length > 0) {
+        const normalizedManagerTeams = managerTeams.map((t) => t.trim().toLowerCase());
+        const filtered = teamOptions.filter(
+          (team) =>
+            normalizedManagerTeams.includes(team.name.trim().toLowerCase()) ||
+            (team.showName && normalizedManagerTeams.includes(team.showName.trim().toLowerCase()))
+        );
+        if (filtered.length > 0) return filtered;
+        return managerTeams.map((name) => ({
+          _id: name,
+          name: name,
+          showName: name
+        }));
+      }
+
+      if (selectedManager?.role === "hod" || selectedManager?.role === "report_manager" || selectedManager?.role === "admin" || selectedManager?.role === "ceo") {
+        if (selectedDepartmentNames.length > 0) {
+          return teamOptions.filter((team) => {
+            if (!team.department) return false;
+            return selectedDepartmentNames.some(
+              (sd) => sd.trim().toLowerCase() === team.department?.trim().toLowerCase()
+            );
+          });
+        }
+        return teamOptions;
+      }
+
+      return [];
     }
 
     if (selectedDepartmentNames.length > 0) {
-      const deptTeams = teams.filter((team) => {
+      const deptTeams = teamOptions.filter((team) => {
         if (!team.department) return false;
         return selectedDepartmentNames.some(
           (sd) => sd.trim().toLowerCase() === team.department?.trim().toLowerCase()
         );
       });
-      if (deptTeams.length > 0) {
-        teams = deptTeams;
-      } else {
-        teams = [];
-      }
+      return deptTeams;
     }
-    return teams;
-  }, [currentUser?.teamName, currentUser?.teamNames, isTeamLead, selectedDepartmentNames, selectedRole, teamOptions, selectedHeaderDept]);
 
+    return teamOptions;
+  }, [
+    currentUserTeamNames,
+    isTeamLead,
+    selectedRole,
+    currentManagerName,
+    managerSelectOptions,
+    teamOptions,
+    selectedDepartmentNames
+  ]);
+
+  const teamTypeEmptyMessage = useMemo(() => {
+    if (isTeamLead) {
+      return "No team types assigned to your account.";
+    }
+    if (selectedRole === "team_member") {
+      if (!currentManagerName) {
+        return "Select a manager first to view available team types.";
+      }
+      return "No team types available for the selected manager.";
+    }
+    if (selectedRole === "team_lead") {
+      return "No team types available for the selected department.";
+    }
+    return "No team types available.";
+  }, [isTeamLead, selectedRole, currentManagerName]);
+
+  const teamTypeHelperText = useMemo(() => {
+    if (isTeamLead) {
+      return "Choose one or more team types from your assigned team list.";
+    }
+    if (selectedRole === "team_member") {
+      return currentManagerName
+        ? "Choose at least one team type managed by the selected team lead."
+        : "Select a manager above to choose from their managed team types.";
+    }
+    if (selectedRole === "team_lead") {
+      return "Choose at least one team type for this team lead.";
+    }
+    return "Choose one or more team types for this user.";
+  }, [isTeamLead, selectedRole, currentManagerName]);
 
   useEffect(() => {
     const isHeaderDeptValid = selectedHeaderDept !== "all" && DEPARTMENT_OPTIONS.includes(selectedHeaderDept as any);
@@ -393,42 +583,6 @@ export function ManagerAddUserForm({ currentUser: propCurrentUser }: { currentUs
     }
   }, [selectedHeaderDept, allowedDepartments, setValue, currentDepartments]);
 
-  const managerSelectOptions = useMemo(() => {
-    let options: ManagerOption[] = [];
-    if (isTeamLead) return [];
-
-    if (selectedRole === "hod") {
-      if (isCeo && currentUser) {
-        options = [{ _id: currentUser.id, name: currentUser.name || currentUser.email }];
-      }
-    } else if (selectedRole === "report_manager") {
-      options = hodOptions;
-    } else if (selectedRole === "team_lead") {
-      options = rmOptions.length > 0 ? rmOptions : hodOptions;
-    } else if (selectedRole === "team_member") {
-      if (selectedDepartmentNames.length > 0) {
-        const filtered = teamLeadOptions.filter((manager) => {
-          if (!manager.departments || manager.departments.length === 0) return true;
-          return manager.departments.some((d: any) => selectedDepartmentNames.includes(d.name));
-        });
-        if (filtered.length > 0) options = filtered;
-        else options = teamLeadOptions;
-      } else {
-        options = teamLeadOptions;
-      }
-    } else {
-      options = teamLeadOptions;
-    }
-
-    const unique = new Map<string, ManagerOption>();
-    for (const opt of options) {
-      if (opt.name && !unique.has(opt.name)) {
-        unique.set(opt.name, opt);
-      }
-    }
-    return Array.from(unique.values());
-  }, [currentUser, hodOptions, isCeo, isTeamLead, rmOptions, selectedDepartmentNames, selectedRole, teamLeadOptions]);
-
   useEffect(() => {
     if (!currentUser || !isTeamLead) return;
 
@@ -441,32 +595,34 @@ export function ManagerAddUserForm({ currentUser: propCurrentUser }: { currentUs
   }, [currentManagerName, currentUser, isTeamLead, selectedRole, setValue]);
 
   useEffect(() => {
-    if (isTeamLead) return;
-    if (!currentUser) return;
+    if (isTeamLead || !currentUser) return;
 
-    if (selectedRole === "team_member") {
-      if (currentManagerName && managerSelectOptions.some((manager) => manager.name === currentManagerName)) {
-        return;
-      }
-      const firstValidTeamLead = managerSelectOptions[0]?.name ?? "";
-      if (firstValidTeamLead && currentManagerName !== firstValidTeamLead) {
-        setValue("managerName", firstValidTeamLead);
-      }
-    } else if (selectedRole === "hod") {
+    if (selectedRole === "hod") {
       const ceoName = isCeo ? (currentUser.name || currentUser.email) : "CEO";
       if (currentManagerName !== ceoName) {
         setValue("managerName", ceoName);
       }
-    } else if (selectedRole === "report_manager" || selectedRole === "team_lead") {
-      if (currentManagerName && managerSelectOptions.some((manager) => manager.name === currentManagerName)) {
-        return;
-      }
-      const firstValidManager = managerSelectOptions[0]?.name ?? "";
-      if (firstValidManager && currentManagerName !== firstValidManager) {
-        setValue("managerName", firstValidManager);
-      }
+      return;
     }
-  }, [currentManagerName, currentUser, isCeo, isTeamLead, managerSelectOptions, selectedRole, setValue]);
+
+    if (isHod && (selectedRole === "team_lead" || selectedRole === "report_manager")) {
+      if (currentManagerName !== currentUser.name) {
+        setValue("managerName", currentUser.name);
+      }
+      return;
+    }
+
+    if (isReportManager && selectedRole === "team_lead") {
+      if (currentManagerName !== currentUser.name) {
+        setValue("managerName", currentUser.name);
+      }
+      return;
+    }
+
+    if (currentManagerName && !managerSelectOptions.some((manager) => manager.name === currentManagerName)) {
+      setValue("managerName", "");
+    }
+  }, [currentManagerName, currentUser, isCeo, isHod, isReportManager, isTeamLead, managerSelectOptions, selectedRole, setValue]);
 
   useEffect(() => {
     if (selectedRole === "hod" || selectedRole === "report_manager") return;
@@ -480,7 +636,7 @@ export function ManagerAddUserForm({ currentUser: propCurrentUser }: { currentUs
   }, [availableSkills, currentRoleTypes, selectedRole, setValue]);
 
   useEffect(() => {
-    if (selectedRole === "hod" || selectedRole === "report_manager") {
+    if (selectedRole === "hod" || selectedRole === "report_manager" || selectedRole === "ceo") {
       if (currentRoleTypes?.length) {
         setValue("roleTypes", []);
       }
@@ -502,12 +658,10 @@ export function ManagerAddUserForm({ currentUser: propCurrentUser }: { currentUs
     }
 
     const validTeamNames = currentTeamNames?.filter((teamName) =>
-      availableTeamOptions.some((team) => team.name === teamName)
+      availableTeamOptions.some((team) => team.name === teamName || (team.showName && team.showName === teamName))
     ) ?? [];
 
-    if (!validTeamNames.length) {
-      setValue("teamNames", [availableTeamOptions[0].name]);
-    } else if (!sameStringList(validTeamNames, currentTeamNames)) {
+    if (!sameStringList(validTeamNames, currentTeamNames)) {
       setValue("teamNames", validTeamNames);
     }
   }, [
@@ -525,21 +679,21 @@ export function ManagerAddUserForm({ currentUser: propCurrentUser }: { currentUs
     setMessage(null);
 
     const resolvedTeamNames =
-      isTeamLead
-        ? currentUserTeamNames.length
-          ? values.teamNames.filter((teamName) => currentUserTeamNames.includes(teamName))
-          : values.teamNames
-        : values.teamNames;
+      (values.role === "hod" || values.role === "report_manager")
+        ? []
+        : isTeamLead
+          ? currentUserTeamNames.length
+            ? values.teamNames.filter((teamName) => currentUserTeamNames.includes(teamName))
+            : values.teamNames
+          : values.teamNames;
 
-    const resolvedWorkspaceId =
-      values.workspaceId && values.workspaceId.trim() !== ""
-        ? values.workspaceId
-        : activeCompanyId || (currentUser as any)?.workspaceId || (currentUser as any)?.companyWorkspace || "";
+    const resolvedWorkspaceId = values.workspaceId || activeCompanyId || currentUser?.workspaceId;
+    const resolvedManagerName = isTeamLead ? currentUser?.name : (isHod && (values.role === "team_lead" || values.role === "report_manager")) ? currentUser?.name : values.managerName;
 
-    const payload: CreateUserValues = {
+    const payload = {
       ...values,
       workspaceId: resolvedWorkspaceId,
-      managerName: isTeamLead ? currentUser?.name ?? values.managerName : values.managerName,
+      managerName: resolvedManagerName,
       teamNames: resolvedTeamNames
     };
 
@@ -573,42 +727,61 @@ export function ManagerAddUserForm({ currentUser: propCurrentUser }: { currentUs
         email: "",
         password: ""
       });
-      setMessage("User created successfully.");
+      setMessage(t("users.userCreated"));
       await queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
       await queryClient.invalidateQueries({ queryKey: ["/api/report-manager/users"] });
+      const redirectPath =
+        currentUser?.role === "team_lead"
+          ? "/team-lead/users"
+          : currentUser?.role === "hod"
+            ? "/hod/users"
+            : currentUser?.role === "ceo"
+              ? "/ceo/users"
+              : currentUser?.role === "report_manager"
+                ? "/users"
+                : "/users";
+      setTimeout(() => {
+        router.push(redirectPath as any);
+      }, 500);
     } catch (requestError) {
-      const responseMessage = axios.isAxiosError(requestError) ? requestError.response?.data?.message : null;
-      setError(responseMessage ?? "Failed to create user.");
+      const errorData = axios.isAxiosError(requestError) ? requestError.response?.data : null;
+      const responseMessage = errorData?.message ?? (axios.isAxiosError(requestError) ? requestError.message : null);
+      if (errorData?.statusCode === 2004 || responseMessage?.toLowerCase().includes("employee id")) {
+        setFieldError("empID", {
+          type: "server",
+          message: responseMessage || t("users.employeeIdExists")
+        });
+      }
+      setError(responseMessage ?? t("common.somethingWentWrong"));
     }
   };
 
   if (!currentUser) {
-    return <div className="text-sm text-muted-foreground">Loading user session...</div>;
+    return <div className="text-sm text-muted-foreground">{t("common.loading")}</div>;
   }
 
   if (!isTeamLead && !isHod && !isCeo && !isReportManager) {
     return (
       <div className="rounded-2xl border bg-background/70 p-4 text-sm text-muted-foreground">
-        You do not have permission to create employees.
+        {t("common.accessDeniedMessage")}
       </div>
     );
   }
 
   return (
     <form className="grid gap-4 md:grid-cols-2" autoComplete="off" onSubmit={handleSubmit(onSubmit)}>
-
-      <ReportField className="md:col-span-2" label="Company">
+      <ReportField className="md:col-span-2" label={t("common.company")}>
         <ReportInput
           disabled
-          value={activeSelectedCompany ? activeSelectedCompany.name : "Company Workspace"}
+          value={activeSelectedCompany ? activeSelectedCompany.name : t("common.company")}
           className="font-semibold text-sky-600 dark:text-sky-400"
         />
         <input type="hidden" {...register("workspaceId")} />
       </ReportField>
 
-      <ReportField label="First name" required error={errors.firstName?.message}>
+      <ReportField label={t("users.firstName")} required error={errors.firstName?.message}>
         <ReportInput
-          placeholder="First name"
+          placeholder={t("users.firstName")}
           autoComplete="off"
           data-lpignore="true"
           {...register("firstName")}
@@ -619,9 +792,9 @@ export function ManagerAddUserForm({ currentUser: propCurrentUser }: { currentUs
         />
       </ReportField>
 
-      <ReportField label="Last name" error={errors.lastName?.message}>
+      <ReportField label={t("users.lastName")} error={errors.lastName?.message}>
         <ReportInput
-          placeholder="Last name"
+          placeholder={t("users.lastName")}
           autoComplete="off"
           data-lpignore="true"
           {...register("lastName")}
@@ -632,36 +805,40 @@ export function ManagerAddUserForm({ currentUser: propCurrentUser }: { currentUs
         />
       </ReportField>
 
-      <ReportField label="Phone" required error={errors.phone?.message}>
-        <ReportInput
-          placeholder="Phone"
-          type="tel"
-          maxLength={10}
-          {...register("phone")}
-          onChange={(e) => {
-            const cleaned = e.target.value.replace(/[^0-9]/g, "").slice(0, 10);
-            setValue("phone", cleaned, { shouldValidate: true, shouldDirty: true });
-          }}
+      <ReportField label={t("users.phone")} required error={errors.phone?.message}>
+        <Controller
+          control={control}
+          name="phone"
+          render={({ field }) => (
+            <PhoneInput
+              id="phone"
+              placeholder={t("users.phone")}
+              value={field.value}
+              onChange={field.onChange}
+              onBlur={field.onBlur}
+              error={Boolean(errors.phone)}
+            />
+          )}
         />
       </ReportField>
 
-      <ReportField label="Employee ID" required error={errors.empID?.message}>
-        <ReportInput placeholder="Employee ID" {...register("empID")} />
+      <ReportField label={t("users.empId")} required error={errors.empID?.message}>
+        <ReportInput placeholder={t("users.empId")} {...register("empID")} />
       </ReportField>
 
-      <ReportField label="Email" required error={errors.email?.message}>
-        <ReportInput placeholder="Email" type="email" {...register("email")} />
+      <ReportField label={t("users.email")} required error={errors.email?.message}>
+        <ReportInput placeholder={t("users.email")} type="email" {...register("email")} />
       </ReportField>
 
-      <ReportField label="Password" required error={errors.password?.message}>
-        <PasswordInput variant="report" showRules={true} placeholder="Password" {...register("password")} />
+      <ReportField label={t("users.password")} required error={errors.password?.message}>
+        <PasswordInput variant="report" showRules={true} placeholder={t("users.password")} {...register("password")} />
       </ReportField>
 
-      <ReportField label="Confirm Password" required error={errors.confirmPassword?.message}>
-        <PasswordInput variant="report" placeholder="Confirm Password" {...register("confirmPassword")} />
+      <ReportField label={t("users.confirmPassword")} required error={errors.confirmPassword?.message}>
+        <PasswordInput variant="report" placeholder={t("users.confirmPassword")} {...register("confirmPassword")} />
       </ReportField>
 
-      <div className="md:col-span-2 flex justify-end">
+      <div className="md:col-span-2 flex justify-end rtl:justify-start">
         <Button
           type="button"
           variant="outline"
@@ -680,27 +857,30 @@ export function ManagerAddUserForm({ currentUser: propCurrentUser }: { currentUs
             for (let i = 0; i < 8; i++) {
               pass += all[Math.floor(Math.random() * all.length)];
             }
-            setValue("password", pass, { shouldValidate: true, shouldDirty: true });
-            setValue("confirmPassword", pass, { shouldValidate: true, shouldDirty: true });
+            pass = pass.split('').sort(() => 0.5 - Math.random()).join('');
+            setValue("password", pass, { shouldValidate: true, shouldDirty: true, shouldTouch: true });
+            setValue("confirmPassword", pass, { shouldValidate: true, shouldDirty: true, shouldTouch: true });
+            clearErrors(["password", "confirmPassword"]);
           }}
+          className="text-xs h-8"
         >
-          Generate Strong Password
+          {t("users.suggestStrongPassword", "Suggest Strong Password")}
         </Button>
       </div>
 
       {/* 1. Department */}
       {selectedHeaderDept !== "all" && DEPARTMENT_OPTIONS.includes(selectedHeaderDept as any) ? (
-        <ReportField className="md:col-span-2" label="Department">
-          <ReportInput disabled value={selectedHeaderDept} className="font-semibold text-sky-600 dark:text-sky-400" />
+        <ReportField className="md:col-span-2" label={t("common.department")}>
+          <ReportInput disabled value={t(`departments.${selectedHeaderDept.toLowerCase()}`, selectedHeaderDept)} className="font-semibold text-sky-600 dark:text-sky-400" />
         </ReportField>
       ) : isTeamLead || allowedDepartments.length === 1 ? (
-        <ReportField className="md:col-span-2" label="Department">
-          <ReportInput disabled value={allowedDepartments[0] || "Software"} className="font-semibold text-sky-600 dark:text-sky-400" />
+        <ReportField className="md:col-span-2" label={t("common.department")}>
+          <ReportInput disabled value={t(`departments.${(allowedDepartments[0] || "Software").toLowerCase()}`, allowedDepartments[0] || "Software")} className="font-semibold text-sky-600 dark:text-sky-400" />
         </ReportField>
       ) : (
         <div className="md:col-span-2 space-y-2">
-          <div className="text-sm font-medium text-foreground">Departments (Assigned to User)</div>
-          <div className="text-xs text-muted-foreground mb-2">Select one or more primary departments for this user.</div>
+          <div className="text-sm font-medium text-foreground">{t("users.assignedDepartments")}</div>
+          <div className="text-xs text-muted-foreground mb-2">{t("users.selectDepartmentsHelp", "Select one or more primary departments for this user.")}</div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {allowedDepartments.map((deptName) => {
               const isSelected = currentDepartments.some((d) => d.name === deptName);
@@ -712,18 +892,18 @@ export function ManagerAddUserForm({ currentUser: propCurrentUser }: { currentUs
                   className="justify-start text-xs h-9"
                   onClick={() => toggleDepartment(deptName as any)}
                 >
-                  {deptName}
+                  {t(`departments.${deptName.toLowerCase()}`, deptName)}
                 </Button>
               );
             })}
             {allowedDepartments.length === 0 && (
-              <div className="text-sm text-muted-foreground col-span-2 sm:col-span-4">No departments available.</div>
+              <div className="text-sm text-muted-foreground col-span-2 sm:col-span-4">{t("common.noData")}</div>
             )}
           </div>
 
           {currentDepartments.some((d) => d.name === "Marketing") && (
             <div className="mt-3 p-3 border rounded-lg bg-muted/20 space-y-2">
-              <div className="text-xs font-semibold text-foreground">Marketing Sub-Teams</div>
+              <div className="text-xs font-semibold text-foreground">{t("users.marketingSubTeams", "Marketing Sub-Teams")}</div>
               <div className="flex gap-2">
                 {MARKETING_SUB_TEAMS.map((sub) => {
                   const marketingDept = currentDepartments.find((d) => d.name === "Marketing");
@@ -737,7 +917,7 @@ export function ManagerAddUserForm({ currentUser: propCurrentUser }: { currentUs
                       className="text-xs h-8"
                       onClick={() => toggleMarketingSubTeam(sub)}
                     >
-                      {sub}
+                      {t(`departments.subTeams.${sub.toLowerCase()}`, sub)}
                     </Button>
                   );
                 })}
@@ -749,81 +929,38 @@ export function ManagerAddUserForm({ currentUser: propCurrentUser }: { currentUs
 
       {/* 2. Role */}
       {!isTeamLead ? (
-        <ReportField label="Role" error={errors.role?.message}>
+        <ReportField label={t("common.role")} error={errors.role?.message}>
           <ReportSelect {...register("role")}>
             {roleOptions.map((role) => (
               <option key={role} value={role}>
-                {role === "team_member" ? "Team Member" : CREATE_USER_ROLE_LABELS[role as keyof typeof CREATE_USER_ROLE_LABELS]}
+                {t(`roles.${role}`) || CREATE_USER_ROLE_LABELS[role as keyof typeof CREATE_USER_ROLE_LABELS]}
               </option>
             ))}
           </ReportSelect>
         </ReportField>
       ) : (
         <div className="md:col-span-2 rounded-2xl border bg-background/70 px-4 py-3 text-sm text-muted-foreground">
-          Role is fixed to Team Member for team lead-created users.
+          {t("users.roleFixedTeamLead", "Role is fixed to Team Member for team lead-created users.")}
         </div>
       )}
 
-      {/* 3. Team Type */}
-      {selectedRole !== "hod" && selectedRole !== "report_manager" ? (
-        isTeamLead ? (
-          <div className="md:col-span-2">
-            <Controller
-              control={control}
-              name="teamNames"
-              render={({ field }) => (
-                <ReportMultiSelectCards
-                  label="Team (Team Type)"
-                  required
-                  helperText="Choose one or more team types from your assigned team list."
-                  error={errors.teamNames?.message}
-                  value={field.value ?? []}
-                  onChange={field.onChange}
-                  options={availableTeamOptions.map((team) => ({
-                    value: team.name,
-                    label: team.showName ?? team.name
-                  }))}
-                />
-              )}
-            />
-          </div>
-        ) : (
-          <div className="md:col-span-2">
-            <Controller
-              control={control}
-              name="teamNames"
-              render={({ field }) => (
-                <ReportMultiSelectCards
-                  label="Team (Team Type)"
-                  required={selectedRole === "team_lead" || selectedRole === "team_member"}
-                  helperText={
-                    selectedRole === "team_member"
-                      ? "Choose at least one team type managed by the selected team lead."
-                      : "Choose one or more team types for this user."
-                  }
-                  error={errors.teamNames?.message}
-                  value={field.value ?? []}
-                  onChange={field.onChange}
-                  options={availableTeamOptions.map((team) => ({
-                    value: team.name,
-                    label: team.showName ?? team.name
-                  }))}
-                />
-              )}
-            />
-          </div>
-        )
-      ) : null}
-
-      {/* 4. Manager */}
+      {/* 3. Manager */}
       {isTeamLead ? null : selectedRole === "hod" ? (
         <div className="md:col-span-2 rounded-2xl border bg-background/70 px-4 py-3 text-sm text-muted-foreground">
-          Manager is set automatically to {currentUser.name}.
+          {t("users.autoManagerCeo")}
+        </div>
+      ) : isHod && (selectedRole === "team_lead" || selectedRole === "report_manager") ? (
+        <div className="md:col-span-2 rounded-2xl border bg-background/70 px-4 py-3 text-sm text-muted-foreground">
+          {t("users.autoManagerHod", { name: currentUser.name })}
+        </div>
+      ) : isReportManager && selectedRole === "team_lead" ? (
+        <div className="md:col-span-2 rounded-2xl border bg-background/70 px-4 py-3 text-sm text-muted-foreground">
+          {t("users.autoManagerRm", { name: currentUser.name })}
         </div>
       ) : (
-        <ReportField className="md:col-span-2" label="Manager" error={errors.managerName?.message}>
+        <ReportField className="md:col-span-2" label={selectedRole === "team_member" ? `${t("roles.team_lead")} (${t("common.manager")})` : selectedRole === "team_lead" || selectedRole === "report_manager" ? `${t("roles.hod")} (${t("common.manager")})` : t("common.manager")} required error={errors.managerName?.message}>
           <ReportSelect {...register("managerName")}>
-            <option value="">Select Manager</option>
+            <option value="">{selectedRole === "team_member" ? t("users.selectManager") : selectedRole === "team_lead" || selectedRole === "report_manager" ? t("users.selectManager") : t("users.selectManager")}</option>
             {managerSelectOptions.map((manager, idx) => (
               <option key={`${manager._id}-${idx}`} value={manager.name}>
                 {manager.name}
@@ -833,6 +970,31 @@ export function ManagerAddUserForm({ currentUser: propCurrentUser }: { currentUs
         </ReportField>
       )}
 
+      {/* 4. Team Type */}
+      {selectedRole !== "hod" && selectedRole !== "report_manager" ? (
+        <div className="md:col-span-2">
+          <Controller
+            control={control}
+            name="teamNames"
+            render={({ field }) => (
+              <ReportMultiSelectCards
+                label={`${t("common.team")} (${t("common.teamType")})`}
+                required={selectedRole === "team_lead" || selectedRole === "team_member"}
+                helperText={teamTypeHelperText}
+                emptyMessage={teamTypeEmptyMessage}
+                error={errors.teamNames?.message}
+                value={field.value ?? []}
+                onChange={field.onChange}
+                options={availableTeamOptions.map((team) => ({
+                  value: team.name,
+                  label: team.showName ?? team.name
+                }))}
+              />
+            )}
+          />
+        </div>
+      ) : null}
+
       {/* 5. Skills */}
       {selectedRole !== "hod" && selectedRole !== "report_manager" ? (
         <div className="md:col-span-2">
@@ -841,16 +1003,19 @@ export function ManagerAddUserForm({ currentUser: propCurrentUser }: { currentUs
             name="roleTypes"
             render={({ field }) => (
               <ReportMultiSelectCards
-                label="Skills / Specialties"
-                helperText="Select one or more skills for this user (dynamically filtered based on chosen department)."
+                label={t("users.skills")}
+                helperText={t("users.selectSkillsHelp", "Select one or more skills for this user (dynamically filtered based on chosen department).")}
                 error={errors.roleTypes?.message}
                 value={field.value ?? []}
                 onChange={field.onChange}
-                options={availableSkills.map((skill) => ({
-                  value: skill.name,
-                  label: skill.name,
-                  description: skill.description
-                }))}
+                options={availableSkills.map((skill) => {
+                  const skillKey = normalizeSkillKey(skill.name);
+                  return {
+                    value: skill.name,
+                    label: t(`skills.${skillKey}`, skill.name),
+                    description: t(`skills.descriptions.${skillKey}`, skill.description)
+                  };
+                })}
               />
             )}
           />
@@ -860,9 +1025,11 @@ export function ManagerAddUserForm({ currentUser: propCurrentUser }: { currentUs
       {message ? <p className="text-sm text-success md:col-span-2">{message}</p> : null}
       {error ? <p className="text-sm text-danger md:col-span-2">{error}</p> : null}
 
-      <Button className="md:col-span-2 w-fit" type="submit" disabled={isSubmitting}>
-        {isSubmitting ? "Creating..." : "Create User"}
-      </Button>
+      <div className="md:col-span-2 flex justify-end">
+        <Button className="w-fit" type="submit" disabled={isSubmitting}>
+          {isSubmitting ? t("common.creating") : t("users.addEmployee")}
+        </Button>
+      </div>
     </form>
   );
 }

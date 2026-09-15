@@ -3,6 +3,7 @@ import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { canViewFinanceReport } from "@/lib/permissions";
 import { buildFinanceApprovalPdfBuffer } from "@/lib/finance-pdf";
+import { isWorkspaceAuthorizedForUser } from "@/lib/workspace-context";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -21,12 +22,17 @@ export async function GET(_request: Request, context: RouteContext) {
     }
 
     const { id } = await context.params;
-        const report = await db.financeReport.findUnique({
-          where: { id: String(id) },
-          include: { items: true, bankBalances: true }
-        }) as LeanDoc | null;
+    const report = await db.financeReport.findUnique({
+      where: { id: String(id) },
+      include: { items: true, bankBalances: true }
+    }) as LeanDoc | null;
 
     if (!report) {
+      return NextResponse.json({ success: false, message: "Finance report not found" }, { status: 404 });
+    }
+
+    const isAuthorized = await isWorkspaceAuthorizedForUser(user, report.workspaceId as string);
+    if (!isAuthorized) {
       return NextResponse.json({ success: false, message: "Finance report not found" }, { status: 404 });
     }
 

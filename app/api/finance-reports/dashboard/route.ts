@@ -3,6 +3,7 @@ import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { canViewFinanceReport } from "@/lib/permissions";
 import { encryptPayload } from "@/lib/crypto";
+import { buildWorkspaceFilter } from "@/lib/workspace-context";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type LeanDoc = Record<string, any>;
@@ -19,32 +20,9 @@ export async function GET(request: Request) {
     }
 
     const url = new URL(request.url);
-    const workspaceId = url.searchParams.get("workspaceId") || request.headers.get("x-workspace-id") || user.workspaceId;
+    const workspaceId = url.searchParams.get("workspaceId") || request.headers.get("x-workspace-id");
 
-    
-    const where: Record<string, any> = {};
-
-    if (user.role !== "admin") {
-      const memberships = await db.workspaceMember.findMany({
-        where: {
-          userId: user.id,
-          status: "active",
-          isActive: true
-        },
-        select: { workspaceId: true }
-      });
-      const allowedWorkspaceIds = memberships.map(m => String(m.workspaceId));
-
-      if (workspaceId && workspaceId !== "all") {
-        where.workspaceId = allowedWorkspaceIds.includes(workspaceId) ? workspaceId : "non_existent_id";
-      } else {
-        where.workspaceId = { in: allowedWorkspaceIds };
-      }
-    } else {
-      if (workspaceId && workspaceId !== "all") {
-        where.workspaceId = workspaceId;
-      }
-    }
+    const where: Record<string, any> = await buildWorkspaceFilter(user, workspaceId);
 
     // Today's date range
     const now = new Date();

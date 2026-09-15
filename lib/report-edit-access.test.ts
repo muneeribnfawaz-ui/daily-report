@@ -36,30 +36,37 @@ describe("Report Edit & Lock Access Rights", () => {
       expect(canEditDailyReport(todayReport, { role: "ceo" }, now)).toBe(false);
     });
 
-    it("requires explicit editAccessGranted for team_member, even if report date is today", () => {
+    it("requires explicit editAccessGranted for team_member and team_lead on today's report", () => {
       const todayReportWithoutAccess = { isLocked: false, reportDate: todayStr, editAccessGranted: false };
       const todayReportWithAccess = { isLocked: false, reportDate: todayStr, editAccessGranted: true };
 
       expect(canEditDailyReport(todayReportWithoutAccess, { role: "team_member" }, now)).toBe(false);
       expect(canEditDailyReport(todayReportWithAccess, { role: "team_member" }, now)).toBe(true);
+
+      expect(canEditDailyReport(todayReportWithoutAccess, { role: "team_lead" }, now)).toBe(false);
+      expect(canEditDailyReport(todayReportWithAccess, { role: "team_lead" }, now)).toBe(true);
     });
 
-    it("allows team_lead to edit today's report automatically without explicit override", () => {
-      const todayReport = { isLocked: false, reportDate: todayStr, editAccessGranted: false };
-      expect(canEditDailyReport(todayReport, { role: "team_lead" }, now)).toBe(true);
-    });
-
-    it("prevents team_lead from editing historical reports unless explicit editAccessGranted override is present", () => {
+    it("prevents any role from editing historical reports even if editAccessGranted was set", () => {
       const pastReportNoAccess = { isLocked: false, reportDate: yesterdayStr, editAccessGranted: false };
       const pastReportWithAccess = { isLocked: false, reportDate: yesterdayStr, editAccessGranted: true };
 
       expect(canEditDailyReport(pastReportNoAccess, { role: "team_lead" }, now)).toBe(false);
-      expect(canEditDailyReport(pastReportWithAccess, { role: "team_lead" }, now)).toBe(true);
+      expect(canEditDailyReport(pastReportWithAccess, { role: "team_lead" }, now)).toBe(false);
+      expect(canEditDailyReport(pastReportNoAccess, { role: "team_member" }, now)).toBe(false);
+      expect(canEditDailyReport(pastReportWithAccess, { role: "team_member" }, now)).toBe(false);
+      expect(canEditDailyReport(pastReportWithAccess, { role: "hod", id: "hod-1" }, now)).toBe(false);
     });
 
-    it("allows administrative roles to edit when report date is today or when override is present", () => {
+    it("allows HOD to edit own report directly on today's date", () => {
+      const todayHodReport = { isLocked: false, reportDate: todayStr, employeeId: "hod-1" };
+      expect(canEditDailyReport(todayHodReport, { role: "hod", id: "hod-1" }, now)).toBe(true);
+      expect(canEditDailyReport(todayHodReport, { role: "hod", id: "hod-2" }, now)).toBe(false);
+    });
+
+    it("allows administrative roles to edit when report date is today", () => {
       expect(canEditDailyReport({ isLocked: false, reportDate: todayStr }, { role: "admin" }, now)).toBe(true);
-      expect(canEditDailyReport({ isLocked: false, reportDate: yesterdayStr, editAccessGranted: true }, { role: "admin" }, now)).toBe(true);
+      expect(canEditDailyReport({ isLocked: false, reportDate: yesterdayStr, editAccessGranted: true }, { role: "admin" }, now)).toBe(false);
     });
   });
 });

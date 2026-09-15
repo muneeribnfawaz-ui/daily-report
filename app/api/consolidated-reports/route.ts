@@ -58,13 +58,20 @@ export async function GET(request: Request) {
 
     const userPrimaryDepartment = user.departments && user.departments.length > 0 ? user.departments[0].name : undefined;
 
-    let department = url.searchParams.get("department") ?? undefined;
-    if (!department && userPrimaryDepartment && user.role !== "admin" && user.role !== "ceo") {
-      department = userPrimaryDepartment;
-    }
+    const rawDeptParam = url.searchParams.get("department");
+    const normalizeDepartment = (val?: string | null) => {
+      if (!val) return "All";
+      const trimmed = val.trim();
+      const lower = trimmed.toLowerCase();
+      if (lower === "all" || lower === "all enrolled depts" || lower === "all departments") {
+        return "All";
+      }
+      return trimmed;
+    };
+    const department = normalizeDepartment(rawDeptParam);
 
     const isFinanceRequested = requestedGroup === "finance" || department === "Finance";
-    const isUserEnrolledInFinance = user.departments?.some((d) => d.name === "Finance");
+    const isUserEnrolledInFinance = user.departments?.some((d) => (typeof d === "string" ? d : d.name) === "Finance");
 
     if (isFinanceRequested) {
       const isAuthorizedForFinance =
@@ -77,6 +84,19 @@ export async function GET(request: Request) {
       if (!isAuthorizedForFinance) {
         return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
       }
+    }
+
+    const userDepts = user.departments?.map((d: any) => typeof d === "string" ? d : d.name) || [];
+    if (
+      user.role === "report_manager" &&
+      department !== "All" &&
+      userDepts.length > 0 &&
+      !userDepts.includes(department)
+    ) {
+      return NextResponse.json(
+        { success: false, message: "You are not authorized to access consolidated reports for this department." },
+        { status: 403 }
+      );
     }
 
     if (!date) {
@@ -110,13 +130,16 @@ export async function GET(request: Request) {
         const uniqueHodUserIds = Array.from(new Set(hodUserIds));
         conditions.push({ employeeId: { in: uniqueHodUserIds } });
       } else {
-        const visibleEmployeeIds = await getVisibleReportEmployeeIds(user);
+        const visibleEmployeeIds = await getVisibleReportEmployeeIds({
+          ...user,
+          workspaceId: workspaceId || user.workspaceId
+        });
         if (visibleEmployeeIds) {
           conditions.push({ employeeId: { in: visibleEmployeeIds } });
         }
       }
 
-      if (department && department !== "All") {
+      if (department !== "All") {
         const deptTeams = await getTeamNamesByDepartment(department);
         const deptUsers = await db.user.findMany({
           where: {
@@ -136,19 +159,11 @@ export async function GET(request: Request) {
           select: { id: true, workspaceMembers: { select: { teamName: true, teamNames: true } } }
         });
 
-        const deptUserIds = deptUsers.map((u) => u.id);
-        const deptUserTeamNames = deptUsers.flatMap((u) => u.workspaceMembers.flatMap((m) => [m.teamName, ...m.teamNames])).filter(Boolean) as string[];
-
-        const matchedTeamNames = Array.from(new Set([department, ...deptTeams, ...deptUserTeamNames]));
-
-        const deptConditions: Record<string, any>[] = [{ teamName: { in: matchedTeamNames } }];
-        if (deptUserIds.length > 0) {
-          deptConditions.push({ employeeId: { in: deptUserIds } });
-        }
-
-        conditions.push({ OR: deptConditions });
+        const matchedTeamNames = Array.from(new Set([department, ...deptTeams]));
+        conditions.push({ teamName: { in: matchedTeamNames } });
       } else {
-        if (user.role !== "ceo" && user.role !== "hod" && user.role !== "admin") {
+        const isUserInFinance = userDepts.includes("Finance");
+        if (user.role !== "ceo" && user.role !== "hod" && user.role !== "admin" && (!isUserInFinance || user.role !== "report_manager")) {
           const financeMembers = await db.workspaceMember.findMany({
             where: { departments: { some: { name: "Finance" } }, isActive: true, status: "active" },
             select: { userId: true }

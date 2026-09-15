@@ -2,17 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ReportField, ReportInput } from "@/components/forms/report-controls";
 import { PasswordInput } from "@/components/forms/password-input";
+import { PhoneInput } from "@/components/forms/phone-input";
 import { ProfileActionButton } from "@/components/profile/profile-action-button";
 import { toDateInputValue } from "@/lib/date-utils";
 import { ROLE_LABELS, normalizeRole } from "@/lib/constants";
 
-import { tenDigitPhoneSchema } from "@/lib/validation";
+import { internationalPhoneSchema } from "@/lib/validation";
 
 const nameUpdateSchema = z.object({
   firstName: z.string().min(2, "First name is required"),
@@ -32,7 +33,7 @@ const nameUpdateSchema = z.object({
     if (typeof value !== "string") return value;
     const trimmed = value.trim();
     return trimmed === "" ? undefined : trimmed;
-  }, tenDigitPhoneSchema.optional())
+  }, internationalPhoneSchema.optional())
 });
 
 const passwordUpdateSchema = z.object({
@@ -134,8 +135,11 @@ function activeStatusLabel(value?: boolean | null) {
   return value ? "Active" : "Inactive";
 }
 
+import { useTranslation } from "@/lib/i18n";
+
 export function ProfileUpdateForm({ profile }: { profile: ProfileData }) {
   const router = useRouter();
+  const { t } = useTranslation();
   const [activeProfile, setActiveProfile] = useState<ProfileData>(profile);
   const [nameMessage, setNameMessage] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
@@ -165,6 +169,7 @@ export function ProfileUpdateForm({ profile }: { profile: ProfileData }) {
 
   const {
     register: registerName,
+    control: nameControl,
     handleSubmit: handleNameSubmit,
     reset: resetName,
     setValue: setNameValue,
@@ -217,7 +222,7 @@ export function ProfileUpdateForm({ profile }: { profile: ProfileData }) {
 
     const responsePayload = await response.json();
     if (!response.ok || !responsePayload?.success) {
-      throw new Error(responsePayload?.message ?? "Failed to update profile.");
+      throw new Error(responsePayload?.message ?? t("profile.failedUpdate", "Failed to update profile."));
     }
 
     return responsePayload;
@@ -229,7 +234,7 @@ export function ProfileUpdateForm({ profile }: { profile: ProfileData }) {
     clearNameErrors();
 
     if (!isNameDirty) {
-      setNameError("Make a change before saving.");
+      setNameError(t("profile.makeChangeBeforeSaving", "Make a change before saving."));
       return;
     }
 
@@ -262,7 +267,7 @@ export function ProfileUpdateForm({ profile }: { profile: ProfileData }) {
         secondaryPhone: parsed.data.secondaryPhone
       });
 
-      setNameMessage("Profile updated successfully.");
+      setNameMessage(t("profile.updatedSuccessfully", "Profile updated successfully."));
       setActiveProfile((current) => ({
         ...current,
         firstName: payload.data?.firstName ?? current.firstName,
@@ -280,7 +285,7 @@ export function ProfileUpdateForm({ profile }: { profile: ProfileData }) {
       });
       router.refresh();
     } catch (requestError) {
-      setNameError(requestError instanceof Error ? requestError.message : "Failed to update profile.");
+      setNameError(requestError instanceof Error ? requestError.message : t("profile.failedUpdate", "Failed to update profile."));
     } finally {
       setIsNameSubmitting(false);
     }
@@ -318,17 +323,18 @@ export function ProfileUpdateForm({ profile }: { profile: ProfileData }) {
         confirmPassword: parsed.data.confirmPassword
       });
 
-      setPasswordMessage("Password updated successfully.");
+      setPasswordMessage(t("profile.passwordUpdatedSuccessfully", "Password updated successfully."));
       resetPassword(passwordInitialValues);
       router.refresh();
     } catch (requestError) {
-      setPasswordError(requestError instanceof Error ? requestError.message : "Failed to update password.");
+      setPasswordError(requestError instanceof Error ? requestError.message : t("profile.failedUpdatePassword", "Failed to update password."));
     } finally {
       setIsPasswordSubmitting(false);
     }
   };
 
-  const roleLabel = ROLE_LABELS[normalizeRole(profile.role) ?? "team_member"];
+  const roleKey = normalizeRole(profile.role) ?? "team_member";
+  const roleLabel = t(`roles.${roleKey}`, ROLE_LABELS[roleKey] ?? roleKey);
 
   const deptSet = new Set<string>();
   if (activeProfile.departments?.length) {
@@ -352,60 +358,60 @@ export function ProfileUpdateForm({ profile }: { profile: ProfileData }) {
   const allTeamNamesStr = Array.from(rawTeamNames).map((t) => humanizeLabel(t)).join(" · ");
   const teamLabel = allTeamNamesStr || humanizeLabel(activeProfile.teamName);
   const managerLabel = humanizeLabel(activeProfile.managerName ?? null);
-  const statusLabel = activeStatusLabel(activeProfile.isActive);
+  const statusLabel = activeProfile.isActive ? t("common.active", "Active") : t("common.inactive", "Inactive");
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 sm:px-6 lg:px-8">
       <div className="flex flex-col gap-2 border-b border-border pb-4">
-        <div className="text-xs font-semibold uppercase tracking-[0.28em] text-textSecondary">Workspace</div>
-        <h1 className="text-xl font-semibold tracking-tight text-textPrimary sm:text-2xl">Profile</h1>
+        <div className="text-xs font-semibold uppercase tracking-[0.28em] text-textSecondary">{t("profile.workspace", "Workspace")}</div>
+        <h1 className="text-xl font-semibold tracking-tight text-textPrimary sm:text-2xl">{t("profile.title", "Profile")}</h1>
         <p className="max-w-2xl text-sm text-textSecondary">
-          View your account details on the left and manage the editable fields on the right.
+          {t("profile.description", "View your account details on the left and manage the editable fields on the right.")}
         </p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
         <Card className="min-w-0 overflow-hidden shadow-soft">
           <CardHeader className="border-b border-border bg-card px-4 py-5 sm:px-6">
-            <CardTitle className="text-lg text-textPrimary sm:text-xl">Official details</CardTitle>
+            <CardTitle className="text-lg text-textPrimary sm:text-xl">{t("profile.officialDetails", "Official details")}</CardTitle>
           </CardHeader>
           <div className="border-t border-border px-4 py-5 sm:px-6">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-              <ReportField label="Email">
+              <ReportField label={t("users.email", "Email")}>
                 <ReportInput className={readOnlyInputClassName} disabled value={renderValue(activeProfile.email)} />
               </ReportField>
-              <ReportField label="EmpID">
+              <ReportField label={t("users.empId", "EmpID")}>
                 <ReportInput className={readOnlyInputClassName} disabled value={renderValue(activeProfile.empID)} />
               </ReportField>
-              <ReportField label="Department">
+              <ReportField label={t("users.department", "Department")}>
                 <ReportInput className={readOnlyInputClassName} disabled value={departmentLabel} />
               </ReportField>
-              <ReportField label="Teams">
+              <ReportField label={t("users.teamType", "Teams")}>
                 <ReportInput className={readOnlyInputClassName} disabled value={teamLabel} />
               </ReportField>
-              <ReportField label="Manager">
+              <ReportField label={t("users.manager", "Manager")}>
                 <ReportInput className={readOnlyInputClassName} disabled value={managerLabel} />
               </ReportField>
-              <ReportField label="Status">
+              <ReportField label={t("common.status", "Status")}>
                 <ReportInput className={readOnlyInputClassName} disabled value={statusLabel} />
               </ReportField>
-              <ReportField label="Joining date">
+              <ReportField label={t("profile.joiningDate", "Joining date")}>
                 <ReportInput className={readOnlyInputClassName} disabled value={renderDate(activeProfile.createdAt)} />
               </ReportField>
-              <ReportField label="Date of birth">
+              <ReportField label={t("profile.dateOfBirth", "Date of birth")}>
                 <ReportInput className={readOnlyInputClassName} disabled value={renderDate(activeProfile.dateOfBirth)} />
               </ReportField>
-              <ReportField label="Leaved on">
+              <ReportField label={t("profile.leavedOn", "Leaved on")}>
                 <ReportInput
                   className={readOnlyInputClassName}
                   disabled
-                  value={renderLeftAt(activeProfile.leftAt)}
+                  value={activeProfile.leftAt ? renderDate(activeProfile.leftAt) : t("profile.currentlyWorkingHere", "Currently working here")}
                 />
               </ReportField>
-              <ReportField label="Role">
+              <ReportField label={t("users.role", "Role")}>
                 <ReportInput className={readOnlyInputClassName} disabled value={roleLabel} />
               </ReportField>
-              <ReportField label="Phone">
+              <ReportField label={t("users.phone", "Phone")}>
                 <ReportInput className={readOnlyInputClassName} disabled value={renderValue(activeProfile.phone)} />
               </ReportField>
             </div>
@@ -417,16 +423,16 @@ export function ProfileUpdateForm({ profile }: { profile: ProfileData }) {
             <CardHeader className="border-b border-border bg-card px-4 py-5 sm:px-6">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                 <div>
-                  <CardTitle className="text-lg text-textPrimary sm:text-xl">Personal details</CardTitle>
+                  <CardTitle className="text-lg text-textPrimary sm:text-xl">{t("profile.personalDetails", "Personal details")}</CardTitle>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="px-4 pt-5 sm:px-6 sm:pt-6">
               <form className="space-y-4" autoComplete="off" onSubmit={handleNameSubmit(onNameSubmit)}>
-                <ReportField label="First name" required error={nameErrors.firstName?.message}>
+                <ReportField label={t("profile.firstName", "First name")} required error={nameErrors.firstName?.message}>
                   <ReportInput
                     className={editableInputClassName}
-                    placeholder="First name"
+                    placeholder={t("profile.firstName", "First name")}
                     autoComplete="off"
                     data-lpignore="true"
                     {...registerName("firstName")}
@@ -436,10 +442,10 @@ export function ProfileUpdateForm({ profile }: { profile: ProfileData }) {
                     }}
                   />
                 </ReportField>
-                <ReportField label="Last name" error={nameErrors.lastName?.message}>
+                <ReportField label={t("profile.lastName", "Last name")} error={nameErrors.lastName?.message}>
                   <ReportInput
                     className={editableInputClassName}
-                    placeholder="Last name"
+                    placeholder={t("profile.lastName", "Last name")}
                     autoComplete="off"
                     data-lpignore="true"
                     {...registerName("lastName")}
@@ -449,28 +455,31 @@ export function ProfileUpdateForm({ profile }: { profile: ProfileData }) {
                     }}
                   />
                 </ReportField>
-                <ReportField label="Date of birth" error={nameErrors.dateOfBirth?.message}>
+                <ReportField label={t("profile.dateOfBirth", "Date of birth")} error={nameErrors.dateOfBirth?.message}>
                   <ReportInput className={editableInputClassName} type="date" {...registerName("dateOfBirth")} />
                 </ReportField>
-                <ReportField label="Alternate mobile number" error={nameErrors.secondaryPhone?.message}>
-                  <ReportInput
-                    className={editableInputClassName}
-                    placeholder="optional"
-                    type="tel"
-                    maxLength={10}
-                    {...registerName("secondaryPhone")}
-                    onChange={(e) => {
-                      const cleaned = e.target.value.replace(/[^0-9]/g, "").slice(0, 10);
-                      setNameValue("secondaryPhone", cleaned, { shouldValidate: true, shouldDirty: true });
-                    }}
+                <ReportField label={t("profile.alternateMobile", "Alternate mobile number")} error={nameErrors.secondaryPhone?.message}>
+                  <Controller
+                    control={nameControl}
+                    name="secondaryPhone"
+                    render={({ field }) => (
+                      <PhoneInput
+                        id="secondaryPhone"
+                        placeholder={t("common.optional", "optional")}
+                        value={field.value}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        error={Boolean(nameErrors.secondaryPhone)}
+                      />
+                    )}
                   />
                 </ReportField>
 
                 {nameError ? <p className="text-sm text-danger">{nameError}</p> : null}
                 {nameMessage ? <p className="text-sm text-success">{nameMessage}</p> : null}
 
-                <ProfileActionButton type="submit" className="w-full sm:w-auto" isLoading={isNameSubmitting} loadingText="Saving...">
-                  Save change
+                <ProfileActionButton type="submit" className="w-full sm:w-auto" isLoading={isNameSubmitting} loadingText={t("common.saving", "Saving...")}>
+                  {t("profile.saveChanges", "Save change")}
                 </ProfileActionButton>
               </form>
             </CardContent>
@@ -480,41 +489,41 @@ export function ProfileUpdateForm({ profile }: { profile: ProfileData }) {
             <CardHeader className="border-b border-border bg-card px-4 py-5 sm:px-6">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                 <div>
-                  <CardTitle className="text-lg text-textPrimary sm:text-xl">Reset password</CardTitle>
-                  <p className="text-sm text-textSecondary">Enter your current password, then set a new one.</p>
+                  <CardTitle className="text-lg text-textPrimary sm:text-xl">{t("profile.resetPassword", "Reset password")}</CardTitle>
+                  <p className="text-sm text-textSecondary">{t("profile.resetPasswordDesc", "Enter your current password, then set a new one.")}</p>
                 </div>
                 <Badge variant="outline" className="self-start rounded-full border-border bg-muted text-textSecondary">
-                  secure update
+                  {t("profile.secureUpdate", "secure update")}
                 </Badge>
               </div>
             </CardHeader>
             <CardContent className="px-4 pt-5 sm:px-6 sm:pt-6">
               <form className="space-y-4" onSubmit={handlePasswordSubmit(onPasswordSubmit)}>
-                <ReportField label="Current password" error={passwordErrors.oldPassword?.message}>
+                <ReportField label={t("profile.currentPassword", "Current password")} error={passwordErrors.oldPassword?.message}>
                   <PasswordInput
                     variant="report"
                     className={editableInputClassName}
-                    placeholder="Enter current password"
+                    placeholder={t("profile.enterCurrentPassword", "Enter current password")}
                     autoComplete="current-password"
                     {...registerPassword("oldPassword")}
                   />
                 </ReportField>
                 <div className="grid gap-4 md:grid-cols-2">
-                  <ReportField label="New password" error={passwordErrors.newPassword?.message}>
+                  <ReportField label={t("profile.newPassword", "New password")} error={passwordErrors.newPassword?.message}>
                     <PasswordInput
                       variant="report"
                       showRules={true}
                       className={editableInputClassName}
-                      placeholder="New password"
+                      placeholder={t("profile.newPassword", "New password")}
                       autoComplete="new-password"
                       {...registerPassword("newPassword")}
                     />
                   </ReportField>
-                  <ReportField label="Confirm new password" error={passwordErrors.confirmPassword?.message}>
+                  <ReportField label={t("profile.confirmNewPassword", "Confirm new password")} error={passwordErrors.confirmPassword?.message}>
                     <PasswordInput
                       variant="report"
                       className={editableInputClassName}
-                      placeholder="Confirm new password"
+                      placeholder={t("profile.confirmNewPassword", "Confirm new password")}
                       autoComplete="new-password"
                       {...registerPassword("confirmPassword")}
                     />
@@ -524,8 +533,8 @@ export function ProfileUpdateForm({ profile }: { profile: ProfileData }) {
                 {passwordError ? <p className="text-sm text-danger">{passwordError}</p> : null}
                 {passwordMessage ? <p className="text-sm text-success">{passwordMessage}</p> : null}
 
-                <ProfileActionButton type="submit" className="w-full sm:w-auto" isLoading={isPasswordSubmitting} loadingText="Saving...">
-                  Change password
+                <ProfileActionButton type="submit" className="w-full sm:w-auto" isLoading={isPasswordSubmitting} loadingText={t("common.saving", "Saving...")}>
+                  {t("profile.changePassword", "Change password")}
                 </ProfileActionButton>
               </form>
             </CardContent>

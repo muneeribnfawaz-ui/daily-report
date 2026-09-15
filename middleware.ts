@@ -57,8 +57,17 @@ export async function middleware(request: NextRequest) {
   }
 
   if (role === "team_member" && pathname.startsWith("/daily-report")) {
-    const nextPath = pathname.replace("/daily-report", "/tm/daily-report");
-    return withNoStoreHeaders(NextResponse.redirect(new URL(nextPath, request.url)));
+    let nextPath = "/tm/daily-report";
+    if (pathname === "/daily-report/my-reports" || pathname.startsWith("/daily-report/my-reports/")) {
+      nextPath = "/tm/my-reports";
+    } else if (pathname === "/daily-report/create" || pathname === "/daily-report") {
+      nextPath = "/tm/daily-report";
+    } else {
+      nextPath = pathname.replace(/^\/daily-report/, "/tm/daily-report");
+    }
+    const redirectUrl = new URL(nextPath, request.url);
+    redirectUrl.search = request.nextUrl.search;
+    return withNoStoreHeaders(NextResponse.redirect(redirectUrl));
   }
 
   if ((pathname.startsWith("/report-manager") || pathname.startsWith("/reports") || pathname.startsWith("/users")) && role === "team_member") {

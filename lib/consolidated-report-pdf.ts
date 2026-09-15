@@ -1,10 +1,11 @@
-import type { ReportSheetTeamGroup } from "@/components/reports/report-sheet-preview";
+import type { ReportSheetTeamGroup, DepartmentSection, ReportSheetEntry } from "@/components/reports/report-sheet-preview";
 
 export type ConsolidatedReportPdfData = {
   date: string;
   reportCount: number;
   teamCount: number;
   teamGroups: ReportSheetTeamGroup[];
+  departmentSections?: DepartmentSection[];
   title: string;
   generatedBy: string;
   companyName?: string;
@@ -43,271 +44,348 @@ function taskCell(value?: string | null) {
   return `<ul class="task-list">${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>`;
 }
 
+function renderRoleBadge(role?: string | null) {
+  if (!role) return "";
+  const normalized = role.toLowerCase();
+  let label = "Team Member";
+  let cls = "role-member";
+  if (normalized === "team_lead") {
+    label = "Team Lead";
+    cls = "role-lead";
+  } else if (normalized === "hod") {
+    label = "Head of Department";
+    cls = "role-hod";
+  } else if (normalized === "report_manager") {
+    label = "Report Manager";
+    cls = "role-rm";
+  } else if (normalized === "ceo") {
+    label = "CEO";
+    cls = "role-ceo";
+  } else if (normalized === "admin") {
+    label = "Admin";
+    cls = "role-admin";
+  }
+  return `<span class="role-badge ${cls}">${escapeHtml(label)}</span>`;
+}
+
+function renderReportCard(report: ReportSheetEntry) {
+  const isLead = report.employeeRole === "team_lead";
+  const leaveLabel = report.leaveStatus === "approved" ? "On Leave" : "Leave Requested";
+  return `
+    <article class="report-card ${isLead ? "report-lead" : ""}">
+      <div class="report-head ${isLead ? "report-head-lead" : ""}">
+        <div class="report-name-row">
+          <div class="report-name">${escapeHtml(report.name)}</div>
+          ${renderRoleBadge(report.employeeRole)}
+          ${report.leaveStatus ? `<span class="leave-badge ${report.leaveStatus === "approved" ? "leave-approved" : "leave-requested"}">${escapeHtml(leaveLabel)}${report.leaveType ? ` · ${escapeHtml(report.leaveType)}` : ""}${report.leaveReviewedByName ? ` · Approved by ${escapeHtml(report.leaveReviewedByName)}` : ""}</span>` : ""}
+        </div>
+        <div class="report-meta">
+          <span>${escapeHtml(formatDisplayDate(report.reportDate))}</span>
+          <span>${escapeHtml(report.reportType)}</span>
+        </div>
+      </div>
+      <div class="report-body">
+        ${report.attachmentLink?.trim() ? `
+          <div class="field-row">
+            <div class="field-label">Attachment Link</div>
+            <div class="field-value">
+              <a href="${escapeHtml(report.attachmentLink)}">${escapeHtml(report.attachmentLink)}</a>
+            </div>
+          </div>
+        ` : ""}
+        <div class="field-row">
+          <div class="field-label">Completed Work</div>
+          <div class="field-value">${taskCell(report.completedWork)}</div>
+        </div>
+        <div class="field-row">
+          <div class="field-label">Pending Work</div>
+          <div class="field-value">${taskCell(report.pendingWork)}</div>
+        </div>
+        <div class="field-row">
+          <div class="field-label">Blockers</div>
+          <div class="field-value">${taskCell(report.blockers)}</div>
+        </div>
+        <div class="field-row">
+          <div class="field-label">Required Clarification</div>
+          <div class="field-value">${taskCell(report.requiredClarification)}</div>
+        </div>
+        ${report.leaveStatus ? `
+          <div class="field-row">
+            <div class="field-label">Leave Status</div>
+            <div class="field-value">
+              ${escapeHtml(leaveLabel)}${report.leaveType ? ` · ${escapeHtml(report.leaveType)}` : ""}
+              ${report.leaveReviewedByName ? `<div class="leave-reason">Approved by ${escapeHtml(report.leaveReviewedByName)}</div>` : ""}
+              ${report.leaveReason ? `<div class="leave-reason">${escapeHtml(report.leaveReason)}</div>` : ""}
+            </div>
+          </div>
+        ` : ""}
+        ${report.reviewedByName || report.reviewNotes || report.status ? `
+          <div class="field-row" style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 6px 10px;">
+            <div class="field-label" style="color: #334155; font-weight: bold;">Verification & Review</div>
+            <div class="field-value">
+              ${report.status ? `<span style="font-weight: bold; text-transform: uppercase;">${escapeHtml(report.status)}</span>` : ""}
+              ${report.verificationLevel ? ` <span style="font-size: 10px; color: #475569;">(${escapeHtml(report.verificationLevel.toUpperCase())} Verified)</span>` : ""}
+              ${report.reviewedByName ? `<div style="font-size: 11px; margin-top: 2px;"><strong>Reviewed by:</strong> ${escapeHtml(report.reviewedByName)}</div>` : ""}
+              ${report.reviewNotes || report.rejectionReason ? `<div style="font-size: 11px; font-style: italic; color: #334155; margin-top: 2px;">"${escapeHtml(report.reviewNotes || report.rejectionReason || "")}"</div>` : ""}
+            </div>
+          </div>
+        ` : ""}
+      </div>
+      ${(() => {
+        const items = (report as unknown as { constructionWorkPlan?: Array<{ activity: string; location: string; unit: string; plannedQuantity: string; executedQuantity: string; completionPercentage: string; remarks: string }> }).constructionWorkPlan;
+        if (!items?.length) return "";
+        return `
+          <div class="approval-section">
+            <div class="approval-title" style="color: #1E3A5F">Construction Work Plan</div>
+            <table class="approval-table">
+              <thead>
+                <tr>
+                  <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Activity</th>
+                  <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Location</th>
+                  <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Unit</th>
+                  <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Plan Qty</th>
+                  <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Exec Qty</th>
+                  <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Done %</th>
+                  <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Remarks</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${items.map((item) => `
+                  <tr>
+                    <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.activity)}</td>
+                    <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.location)}</td>
+                    <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.unit)}</td>
+                    <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.plannedQuantity)}</td>
+                    <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.executedQuantity)}</td>
+                    <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.completionPercentage)}</td>
+                    <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.remarks)}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        `;
+      })()}
+      ${(() => {
+        const items = (report as unknown as { constructionMaterialUtilization?: Array<{ material: string; unit: string; openingStock: string; received: string; closingStock: string }> }).constructionMaterialUtilization;
+        if (!items?.length) return "";
+        return `
+          <div class="approval-section">
+            <div class="approval-title" style="color: #1E3A5F">Material Utilization</div>
+            <table class="approval-table">
+              <thead>
+                <tr>
+                  <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Material</th>
+                  <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Unit</th>
+                  <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Open Stock</th>
+                  <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Received</th>
+                  <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Close Stock</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${items.map((item) => `
+                  <tr>
+                    <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.material)}</td>
+                    <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.unit)}</td>
+                    <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.openingStock)}</td>
+                    <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.received)}</td>
+                    <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.closingStock)}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        `;
+      })()}
+      ${(() => {
+        const items = (report as unknown as { constructionTomorrowWorkPlan?: Array<{ activity: string; location: string; unit: string; plannedQuantity: string }> }).constructionTomorrowWorkPlan;
+        if (!items?.length) return "";
+        return `
+          <div class="approval-section">
+            <div class="approval-title" style="color: #1E3A5F">Tomorrow's Plan</div>
+            <table class="approval-table">
+              <thead>
+                <tr>
+                  <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Activity</th>
+                  <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Location</th>
+                  <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Unit</th>
+                  <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Plan Qty</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${items.map((item) => `
+                  <tr>
+                    <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.activity)}</td>
+                    <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.location)}</td>
+                    <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.unit)}</td>
+                    <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.plannedQuantity)}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        `;
+      })()}
+      ${(() => {
+        const items = (report as unknown as { nextDayApprovalItems?: Array<{ particulars: string; amountINR: number; amountRiyal: number; reason: string; review: string; approval: string }> }).nextDayApprovalItems;
+        if (!items?.length) return "";
+        return `
+          <div class="approval-section">
+            <div class="approval-title">Next Day Approval Required</div>
+            <table class="approval-table">
+              <thead>
+                <tr>
+                  <th>Particulars</th>
+                  <th style="text-align:right">Amount (INR)</th>
+                  <th style="text-align:right">Amount (Riyal)</th>
+                  <th>Reason</th>
+                  <th>Review</th>
+                  <th style="text-align:center">Approval</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${items.map((item) => `
+                  <tr>
+                    <td>${escapeHtml(item.particulars)}</td>
+                    <td style="text-align:right">${Number(item.amountINR).toLocaleString("en-IN")}</td>
+                    <td style="text-align:right">${Number(item.amountRiyal).toLocaleString("en-SA")}</td>
+                    <td>${item.reason ? escapeHtml(item.reason) : "—"}</td>
+                    <td>${item.review ? escapeHtml(item.review) : "—"}</td>
+                    <td style="text-align:center">
+                      <span class="approval-badge approval-${item.approval || "pending"}">${item.approval === "yes" ? "Yes" : item.approval === "no" ? "No" : "Pending"}</span>
+                    </td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        `;
+      })()}
+    </article>
+  `;
+}
+
+function renderTeamCard(teamGroup: ReportSheetTeamGroup) {
+  const resolvedTeamLabel =
+    !teamGroup.teamName?.trim() || teamGroup.teamName.toLowerCase() === "undefined" || teamGroup.teamName === "MIF Tech Members"
+      ? ""
+      : teamGroup.teamName;
+  if (!resolvedTeamLabel) return "";
+
+  const memberCount = new Set([
+    ...teamGroup.reports.map((report) => report.employeeId ?? report.name),
+    ...(teamGroup.leaveMembers ?? []).map((member) => member.employeeId),
+    ...(teamGroup.notSharedMembers ?? []).map((member) => member.employeeId)
+  ]).size;
+
+  return `
+    <section class="team-card">
+      <div class="team-head">
+        <div>
+          <div class="team-title">${escapeHtml(resolvedTeamLabel)}</div>
+          <div class="team-subtitle">${memberCount} member${memberCount === 1 ? "" : "s"}</div>
+        </div>
+      </div>
+      ${teamGroup.leaveMembers?.length ? `
+        <div class="leave-strip">
+          <div class="leave-strip-title">On Leave (${teamGroup.leaveMembers.length})</div>
+          <div class="leave-strip-list">
+            ${teamGroup.leaveMembers
+              .map((member) => `
+                <span class="leave-strip-item ${member.status === "approved" ? "approved" : "requested"}">
+                  ${escapeHtml(member.name)} · ${escapeHtml(member.status === "approved" ? "On Leave" : "Leave Requested")}${member.leaveDuration ? ` · ${escapeHtml(member.leaveDuration === "full_day" ? "Full Day" : "Half Day")}` : ""}${member.leaveDuration === "half_day" && member.leaveHalf ? ` · ${escapeHtml(member.leaveHalf === "first_half" ? "First Half" : "Second Half")}` : ""}${member.reviewedByName ? ` · ${escapeHtml(member.status === "approved" ? "Approved by" : "Reviewed by")} ${escapeHtml(member.reviewedByName)}` : ""}
+                </span>
+              `)
+              .join("")}
+          </div>
+        </div>
+      ` : ""}
+      ${teamGroup.notSharedMembers?.length ? `
+        <div class="not-shared-strip">
+          <div class="not-shared-strip-title">Not Shared (${teamGroup.notSharedMembers.length})</div>
+          <div class="not-shared-strip-list">
+            ${teamGroup.notSharedMembers
+              .map((member) => `
+                <span class="not-shared-strip-item">
+                  ${escapeHtml(member.name)} · Not Shared
+                </span>
+              `)
+              .join("")}
+          </div>
+        </div>
+      ` : ""}
+      ${teamGroup.dailyMeetingUpdate?.trim() ? `
+        <div class="update-box">
+          <div class="section-label">Daily Meeting Update</div>
+          <div class="update-text">${escapeHtml(teamGroup.dailyMeetingUpdate)}</div>
+        </div>
+      ` : ""}
+      <div class="reports">
+        ${teamGroup.reports.map((report) => renderReportCard(report)).join("")}
+      </div>
+    </section>
+  `;
+}
+
 export function buildConsolidatedReportHtml(data: ConsolidatedReportPdfData) {
   const companyName = data.companyName ?? "MIF TECHNOLOGY";
   const projectName = data.projectName ?? "MIF Cortex";
   const subtitle = data.subtitle ?? "Completed Work · Pending Work · Blockers · Clarifications";
-  const totalLeaveCount = data.teamGroups.reduce((total, teamGroup) => total + (teamGroup.leaveMembers?.length ?? 0), 0);
-  const totalNotSharedCount = data.teamGroups.reduce((total, teamGroup) => total + (teamGroup.notSharedMembers?.length ?? 0), 0);
+  
+  const totalLeaveCount = data.departmentSections?.length
+    ? data.departmentSections.reduce(
+        (acc, d) => acc + d.teamGroups.reduce((tc, tg) => tc + (tg.leaveMembers?.length ?? 0), 0),
+        0
+      )
+    : data.teamGroups.reduce((total, teamGroup) => total + (teamGroup.leaveMembers?.length ?? 0), 0);
 
-  const body = data.teamGroups
-    .map((teamGroup) => {
-      const resolvedTeamLabel =
-        !teamGroup.teamName?.trim() || teamGroup.teamName.toLowerCase() === "undefined"
-          ? "MIF Tech Members"
-          : teamGroup.teamName;
-      const memberCount = new Set([
-        ...teamGroup.reports.map((report) => report.employeeId ?? report.name),
-        ...(teamGroup.leaveMembers ?? []).map((member) => member.employeeId),
-        ...(teamGroup.notSharedMembers ?? []).map((member) => member.employeeId)
-      ]).size;
+  const totalNotSharedCount = data.departmentSections?.length
+    ? data.departmentSections.reduce(
+        (acc, d) => acc + d.teamGroups.reduce((tc, tg) => tc + (tg.notSharedMembers?.length ?? 0), 0),
+        0
+      )
+    : data.teamGroups.reduce((total, teamGroup) => total + (teamGroup.notSharedMembers?.length ?? 0), 0);
 
-      return `
-        <section class="team-card">
-          <div class="team-head">
-            <div>
-              <div class="team-title">${escapeHtml(resolvedTeamLabel)}</div>
-              <div class="team-subtitle">${memberCount} member${memberCount === 1 ? "" : "s"}</div>
+  let body = "";
+  if (data.departmentSections && data.departmentSections.length > 0) {
+    body = data.departmentSections
+      .map((deptSec) => {
+        const hasHodOrRm = deptSec.hodReports.length > 0 || deptSec.reportManagerReports.length > 0;
+        const hasTeams = deptSec.teamGroups.length > 0;
+        const totalDeptReports =
+          deptSec.hodReports.length +
+          deptSec.reportManagerReports.length +
+          deptSec.teamGroups.reduce((c, g) => c + g.reports.length, 0);
+
+        return `
+          <div class="dept-section" style="margin-top: 24px; border: 1px solid var(--line); border-radius: 20px; padding: 16px; background: #F8FAFC;">
+            <div style="display: flex; justify-content: space-between; align-items: center; background: var(--navbar); color: #fff; padding: 12px 18px; border-radius: 12px; margin-bottom: 16px;">
+              <div style="font-size: 20px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;">🏢 ${escapeHtml(deptSec.department)}</div>
+              <div style="font-size: 12px; font-weight: 700; background: rgba(255,255,255,0.15); padding: 4px 12px; border-radius: 9999px;">${deptSec.teamGroups.length} Teams · ${totalDeptReports} Reports</div>
             </div>
-          </div>
-          ${teamGroup.leaveMembers?.length ? `
-            <div class="leave-strip">
-              <div class="leave-strip-title">On Leave (${teamGroup.leaveMembers.length})</div>
-              <div class="leave-strip-list">
-                ${teamGroup.leaveMembers
-                  .map((member) => `
-                    <span class="leave-strip-item ${member.status === "approved" ? "approved" : "requested"}">
-                      ${escapeHtml(member.name)} · ${escapeHtml(member.status === "approved" ? "On Leave" : "Leave Requested")}${member.leaveDuration ? ` · ${escapeHtml(member.leaveDuration === "full_day" ? "Full Day" : "Half Day")}` : ""}${member.leaveDuration === "half_day" && member.leaveHalf ? ` · ${escapeHtml(member.leaveHalf === "first_half" ? "First Half" : "Second Half")}` : ""}${member.reviewedByName ? ` · ${escapeHtml(member.status === "approved" ? "Approved by" : "Reviewed by")} ${escapeHtml(member.reviewedByName)}` : ""}
-                    </span>
-                  `)
-                  .join("")}
+
+            ${hasHodOrRm ? `
+              <div style="margin-bottom: 16px;">
+                <div style="font-size: 11px; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px;">👑 HOD & Report Manager Reports</div>
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                  ${deptSec.hodReports.map((r) => renderReportCard(r)).join("")}
+                  ${deptSec.reportManagerReports.map((r) => renderReportCard(r)).join("")}
+                </div>
               </div>
-            </div>
-          ` : ""}
-          ${teamGroup.notSharedMembers?.length ? `
-            <div class="not-shared-strip">
-              <div class="not-shared-strip-title">Not Shared (${teamGroup.notSharedMembers.length})</div>
-              <div class="not-shared-strip-list">
-                ${teamGroup.notSharedMembers
-                  .map((member) => `
-                    <span class="not-shared-strip-item">
-                      ${escapeHtml(member.name)} · Not Shared
-                    </span>
-                  `)
-                  .join("")}
+            ` : ""}
+
+            ${hasTeams ? `
+              <div style="display: flex; flex-direction: column; gap: 16px;">
+                ${deptSec.teamGroups.map((tg) => renderTeamCard(tg)).join("")}
               </div>
-            </div>
-          ` : ""}
-          ${teamGroup.dailyMeetingUpdate?.trim() ? `
-            <div class="update-box">
-              <div class="section-label">Daily Meeting Update</div>
-              <div class="update-text">${escapeHtml(teamGroup.dailyMeetingUpdate)}</div>
-            </div>
-          ` : ""}
-          <div class="reports">
-            ${teamGroup.reports
-              .map((report) => {
-                const isLead = report.employeeRole === "team_lead";
-                const leaveLabel = report.leaveStatus === "approved" ? "On Leave" : "Leave Requested";
-                return `
-                  <article class="report-card ${isLead ? "report-lead" : ""}">
-                    <div class="report-head ${isLead ? "report-head-lead" : ""}">
-                      <div class="report-name-row">
-                        <div class="report-name">${escapeHtml(report.name)}</div>
-                        ${report.employeeRole ? `<span class="role-badge ${isLead ? "role-lead" : "role-member"}">${isLead ? "Team Lead" : "Team Member"}</span>` : ""}
-                        ${report.leaveStatus ? `<span class="leave-badge ${report.leaveStatus === "approved" ? "leave-approved" : "leave-requested"}">${escapeHtml(leaveLabel)}${report.leaveType ? ` · ${escapeHtml(report.leaveType)}` : ""}${report.leaveReviewedByName ? ` · Approved by ${escapeHtml(report.leaveReviewedByName)}` : ""}</span>` : ""}
-                      </div>
-                      <div class="report-meta">
-                        <span>${escapeHtml(formatDisplayDate(report.reportDate))}</span>
-                        <span>${escapeHtml(report.reportType)}</span>
-                      </div>
-                    </div>
-                    <div class="report-body">
-                      ${report.attachmentLink?.trim() ? `
-                        <div class="field-row">
-                          <div class="field-label">Attachment Link</div>
-                          <div class="field-value">
-                            <a href="${escapeHtml(report.attachmentLink)}">${escapeHtml(report.attachmentLink)}</a>
-                          </div>
-                        </div>
-                      ` : ""}
-                      <div class="field-row">
-                        <div class="field-label">Completed Work</div>
-                        <div class="field-value">${taskCell(report.completedWork)}</div>
-                      </div>
-                      <div class="field-row">
-                        <div class="field-label">Pending Work</div>
-                        <div class="field-value">${taskCell(report.pendingWork)}</div>
-                      </div>
-                      <div class="field-row">
-                        <div class="field-label">Blockers</div>
-                        <div class="field-value">${taskCell(report.blockers)}</div>
-                      </div>
-                      <div class="field-row">
-                        <div class="field-label">Required Clarification</div>
-                        <div class="field-value">${taskCell(report.requiredClarification)}</div>
-                      </div>
-                      ${report.leaveStatus ? `
-                        <div class="field-row">
-                          <div class="field-label">Leave Status</div>
-                          <div class="field-value">
-                            ${escapeHtml(leaveLabel)}${report.leaveType ? ` · ${escapeHtml(report.leaveType)}` : ""}
-                            ${report.leaveReviewedByName ? `<div class="leave-reason">Approved by ${escapeHtml(report.leaveReviewedByName)}</div>` : ""}
-                            ${report.leaveReason ? `<div class="leave-reason">${escapeHtml(report.leaveReason)}</div>` : ""}
-                          </div>
-                        </div>
-                      ` : ""}
-                      ${report.reviewedByName || report.reviewNotes || report.status ? `
-                        <div class="field-row" style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 6px 10px;">
-                          <div class="field-label" style="color: #334155; font-weight: bold;">Verification & Review</div>
-                          <div class="field-value">
-                            ${report.status ? `<span style="font-weight: bold; text-transform: uppercase;">${escapeHtml(report.status)}</span>` : ""}
-                            ${report.verificationLevel ? ` <span style="font-size: 10px; color: #475569;">(${escapeHtml(report.verificationLevel.toUpperCase())} Verified)</span>` : ""}
-                            ${report.reviewedByName ? `<div style="font-size: 11px; margin-top: 2px;"><strong>Reviewed by:</strong> ${escapeHtml(report.reviewedByName)}</div>` : ""}
-                            ${report.reviewNotes || report.rejectionReason ? `<div style="font-size: 11px; font-style: italic; color: #334155; margin-top: 2px;">"${escapeHtml(report.reviewNotes || report.rejectionReason || "")}"</div>` : ""}
-                          </div>
-                        </div>
-                      ` : ""}
-                    </div>
-                    ${(() => {
-                      const items = (report as unknown as { constructionWorkPlan?: Array<{ activity: string; location: string; unit: string; plannedQuantity: string; executedQuantity: string; completionPercentage: string; remarks: string }> }).constructionWorkPlan;
-                      if (!items?.length) return "";
-                      return `
-                        <div class="approval-section">
-                          <div class="approval-title" style="color: #1E3A5F">Construction Work Plan</div>
-                          <table class="approval-table">
-                            <thead>
-                              <tr>
-                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Activity</th>
-                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Location</th>
-                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Unit</th>
-                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Plan Qty</th>
-                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Exec Qty</th>
-                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Done %</th>
-                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Remarks</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              ${items.map((item) => `
-                                <tr>
-                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.activity)}</td>
-                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.location)}</td>
-                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.unit)}</td>
-                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.plannedQuantity)}</td>
-                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.executedQuantity)}</td>
-                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.completionPercentage)}</td>
-                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.remarks)}</td>
-                                </tr>
-                              `).join("")}
-                            </tbody>
-                          </table>
-                        </div>
-                      `;
-                    })()}
-                    ${(() => {
-                      const items = (report as unknown as { constructionMaterialUtilization?: Array<{ material: string; unit: string; openingStock: string; received: string; closingStock: string }> }).constructionMaterialUtilization;
-                      if (!items?.length) return "";
-                      return `
-                        <div class="approval-section">
-                          <div class="approval-title" style="color: #1E3A5F">Material Utilization</div>
-                          <table class="approval-table">
-                            <thead>
-                              <tr>
-                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Material</th>
-                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Unit</th>
-                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Open Stock</th>
-                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Received</th>
-                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Close Stock</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              ${items.map((item) => `
-                                <tr>
-                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.material)}</td>
-                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.unit)}</td>
-                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.openingStock)}</td>
-                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.received)}</td>
-                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.closingStock)}</td>
-                                </tr>
-                              `).join("")}
-                            </tbody>
-                          </table>
-                        </div>
-                      `;
-                    })()}
-                    ${(() => {
-                      const items = (report as unknown as { constructionTomorrowWorkPlan?: Array<{ activity: string; location: string; unit: string; plannedQuantity: string }> }).constructionTomorrowWorkPlan;
-                      if (!items?.length) return "";
-                      return `
-                        <div class="approval-section">
-                          <div class="approval-title" style="color: #1E3A5F">Tomorrow's Plan</div>
-                          <table class="approval-table">
-                            <thead>
-                              <tr>
-                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Activity</th>
-                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Location</th>
-                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Unit</th>
-                                <th style="border-bottom-color: #94A3B8; color: #1E3A5F">Plan Qty</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              ${items.map((item) => `
-                                <tr>
-                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.activity)}</td>
-                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.location)}</td>
-                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.unit)}</td>
-                                  <td style="border-bottom-color: #E2E8F0">${escapeHtml(item.plannedQuantity)}</td>
-                                </tr>
-                              `).join("")}
-                            </tbody>
-                          </table>
-                        </div>
-                      `;
-                    })()}
-                    ${(() => {
-                      const items = (report as unknown as { nextDayApprovalItems?: Array<{ particulars: string; amountINR: number; amountRiyal: number; reason: string; review: string; approval: string }> }).nextDayApprovalItems;
-                      if (!items?.length) return "";
-                      return `
-                        <div class="approval-section">
-                          <div class="approval-title">Next Day Approval Required</div>
-                          <table class="approval-table">
-                            <thead>
-                              <tr>
-                                <th>Particulars</th>
-                                <th style="text-align:right">Amount (INR)</th>
-                                <th style="text-align:right">Amount (Riyal)</th>
-                                <th>Reason</th>
-                                <th>Review</th>
-                                <th style="text-align:center">Approval</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              ${items.map((item) => `
-                                <tr>
-                                  <td>${escapeHtml(item.particulars)}</td>
-                                  <td style="text-align:right">${Number(item.amountINR).toLocaleString("en-IN")}</td>
-                                  <td style="text-align:right">${Number(item.amountRiyal).toLocaleString("en-SA")}</td>
-                                  <td>${item.reason ? escapeHtml(item.reason) : "—"}</td>
-                                  <td>${item.review ? escapeHtml(item.review) : "—"}</td>
-                                  <td style="text-align:center">
-                                    <span class="approval-badge approval-${item.approval || "pending"}">${item.approval === "yes" ? "Yes" : item.approval === "no" ? "No" : "Pending"}</span>
-                                  </td>
-                                </tr>
-                              `).join("")}
-                            </tbody>
-                          </table>
-                        </div>
-                      `;
-                    })()}
-                  </article>
-                `;
-              })
-              .join("")}
+            ` : (!hasHodOrRm ? `<div style="text-align: center; color: var(--muted); padding: 20px;">No reports submitted for this department.</div>` : "")}
           </div>
-        </section>
-      `;
-    })
-    .join("");
+        `;
+      })
+      .join("");
+  } else {
+    body = data.teamGroups.map((teamGroup) => renderTeamCard(teamGroup)).join("");
+  }
 
   return `<!doctype html>
 <html lang="en">
@@ -590,6 +668,22 @@ export function buildConsolidatedReportHtml(data: ConsolidatedReportPdfData) {
       .role-member {
         background: var(--success);
         color: #ffffff;
+      }
+      .role-hod {
+        background: #F3E8FF;
+        color: #581C87;
+      }
+      .role-rm {
+        background: #E0E7FF;
+        color: #312E81;
+      }
+      .role-ceo {
+        background: #DBEAFE;
+        color: #1E40AF;
+      }
+      .role-admin {
+        background: #E2E8F0;
+        color: #0F172A;
       }
       .leave-badge {
         display: inline-flex;

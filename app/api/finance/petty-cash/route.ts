@@ -3,6 +3,7 @@ import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessBanksAndPettyCash } from "@/lib/permissions";
 import { getOrCreatePettyCash } from "@/lib/petty-cash-sync";
+import { buildWorkspaceFilter, isWorkspaceAuthorizedForUser } from "@/lib/workspace-context";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -20,42 +21,15 @@ export async function GET(request: Request) {
     }
 
     const url = new URL(request.url);
-    const workspaceId = url.searchParams.get("workspaceId") || request.headers.get("x-workspace-id") || user.workspaceId;
+    const workspaceId = url.searchParams.get("workspaceId") || request.headers.get("x-workspace-id");
 
-    let filterWorkspaceId: any = workspaceId;
-
-    if (user.role !== "admin") {
-      const memberships = await db.workspaceMember.findMany({
-        where: {
-          userId: user.id,
-          status: "active",
-          isActive: true
-        },
-        select: { workspaceId: true }
-      });
-      const allowedWorkspaceIds = memberships.map((m) => String(m.workspaceId));
-
-      if (!workspaceId || workspaceId === "all") {
-        filterWorkspaceId = { in: allowedWorkspaceIds };
-      } else if (!allowedWorkspaceIds.includes(workspaceId)) {
-        filterWorkspaceId = allowedWorkspaceIds.includes(user.workspaceId) ? user.workspaceId : { in: allowedWorkspaceIds };
-      } else {
-        filterWorkspaceId = workspaceId;
-      }
-    } else {
-      if (!workspaceId || workspaceId === "all") {
-        filterWorkspaceId = undefined;
-      }
-    }
+    const workspaceFilter = await buildWorkspaceFilter(user, workspaceId);
 
     const transactionFilter: any = {
       bankName: "Petty Cash",
-      isDeleted: false
+      isDeleted: false,
+      ...workspaceFilter
     };
-
-    if (filterWorkspaceId) {
-      transactionFilter.workspaceId = filterWorkspaceId;
-    }
 
     const transactions = await db.transaction.findMany({
       where: transactionFilter,
@@ -133,18 +107,13 @@ export async function POST(request: Request) {
     const rawWorkspaceId = workspaceId || headerWorkspaceId;
     const activeWorkspaceId = rawWorkspaceId && rawWorkspaceId !== "all" ? rawWorkspaceId : user.workspaceId;
 
-    if (user.role !== "admin") {
-      const isMember = await db.workspaceMember.findFirst({
-        where: {
-          userId: user.id,
-          workspaceId: activeWorkspaceId,
-          status: "active",
-          isActive: true
-        }
-      });
-      if (!isMember) {
-        return NextResponse.json({ success: false, status: "FORBIDDEN", message: "Forbidden workspace context" }, { status: 403 });
-      }
+    if (!activeWorkspaceId) {
+      return NextResponse.json({ success: false, status: "VALIDATION_ERROR", message: "Workspace context is required" }, { status: 400 });
+    }
+
+    const isAuthorized = await isWorkspaceAuthorizedForUser(user, activeWorkspaceId);
+    if (!isAuthorized) {
+      return NextResponse.json({ success: false, status: "FORBIDDEN", message: "Forbidden workspace context" }, { status: 403 });
     }
 
     let pettyCash = await getOrCreatePettyCash(activeWorkspaceId, user.id);

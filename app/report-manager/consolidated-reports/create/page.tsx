@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
+import { ArrowLeft } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,7 +18,12 @@ export default async function CreateConsolidatedReportPage() {
   return (
     <AppShell title="Create Consolidated Report" role={user.role}>
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center gap-3">
+          <Button asChild variant="outline" size="icon" className="h-9 w-9 rounded-xl shrink-0">
+            <Link href="/consolidated-reports" title="Back" aria-label="Back">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
           <CardTitle>New Consolidated Report</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">

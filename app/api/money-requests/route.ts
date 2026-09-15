@@ -6,19 +6,19 @@ import { logAuditEntry } from "@/lib/audit";
 import { getINRtoSARRate } from "@/lib/currency";
 import { financeReportSchema } from "@/lib/validation";
 import { encryptPayload, decryptPayload } from "@/lib/crypto";
+import { notifyCeoOfMoneyRequests, notifyHodOfMoneyRequests } from "@/lib/notifications";
+import { buildWorkspaceFilter, isWorkspaceAuthorizedForUser } from "@/lib/workspace-context";
 
 export async function GET(request: Request) {
   try {
     const auth = await authorizeApi(["authenticated"]);
     if (!auth.authorized) return auth.response;
+    const user = auth.user;
 
     const { searchParams } = new URL(request.url);
-    const workspaceId = searchParams.get("workspaceId");
+    const workspaceId = searchParams.get("workspaceId") || request.headers.get("x-workspace-id");
 
-    const where: any = {};
-    if (workspaceId && workspaceId !== "all") {
-      where.workspaceId = workspaceId;
-    }
+    const where: any = await buildWorkspaceFilter(user, workspaceId);
 
     const moneyRequests = await db.moneyRequest.findMany({
       where,
@@ -68,6 +68,11 @@ export async function POST(request: Request) {
       return ApiResponse.validationError("Workspace ID is required");
     }
 
+    const isAuthorized = await isWorkspaceAuthorizedForUser(user, workspaceId);
+    if (!isAuthorized) {
+      return ApiResponse.forbidden("You do not have permission to submit money requests for this company/workspace.");
+    }
+
     const nextDayApprovals = parsed.data.nextDayApprovals || [];
     if (nextDayApprovals.length === 0) {
       return ApiResponse.validationError("At least one money request item is required");
@@ -98,6 +103,28 @@ export async function POST(request: Request) {
       userId: user.id,
       userName: user.name,
       newValue: createdRequests
+    });
+
+    await notifyHodOfMoneyRequests({
+      moneyRequests: createdRequests.map((r) => ({
+        id: String(r.id),
+        particulars: r.particulars,
+        amountINR: r.amountINR,
+        description: r.description
+      })),
+      submitter: { id: user.id, name: user.name },
+      workspaceId
+    });
+
+    await notifyCeoOfMoneyRequests({
+      moneyRequests: createdRequests.map((r) => ({
+        id: String(r.id),
+        particulars: r.particulars,
+        amountINR: r.amountINR,
+        description: r.description
+      })),
+      submitter: { id: user.id, name: user.name },
+      workspaceId
     });
 
     const encryptedData = await encryptPayload(createdRequests);

@@ -149,6 +149,7 @@ export async function POST(request: Request) {
           userId: targetCeoId,
           workspaceId: newWorkspace.id,
           empID: "CEO",
+          empIDNormalized: "ceo",
           role: "ceo",
           status: "active",
           isActive: true

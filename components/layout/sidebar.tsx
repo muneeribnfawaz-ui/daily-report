@@ -8,6 +8,37 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { SidebarNavItem } from "@/lib/constants";
 import { CompanySelector } from "@/components/layout/company-selector";
+import { useTranslation } from "@/lib/i18n";
+
+const NAV_LABEL_KEYS: Record<string, string> = {
+  "Dashboard": "nav.dashboard",
+  "Users": "nav.users",
+  "Employees": "nav.employees",
+  "My Team": "nav.myTeam",
+  "Companies": "nav.companies",
+  "Team Types": "nav.teamTypes",
+  "Reports": "nav.reports",
+  "Team Reports": "nav.teamReports",
+  "All Reports": "nav.allReports",
+  "Daily Reports": "nav.dailyReports",
+  "TL Reports": "nav.tlReports",
+  "My Reports": "nav.myReports",
+  "My Report": "nav.myReports",
+  "Consolidated": "nav.consolidated",
+  "Consolidated Reports": "nav.consolidatedReports",
+  "Finance": "nav.finance",
+  "Finance Report": "nav.financeReport",
+  "Money Request": "nav.moneyRequest",
+  "Money Requests": "nav.moneyRequests",
+  "Banks": "nav.banks",
+  "Bank List": "nav.bankList",
+  "Petty Cash": "nav.pettyCash",
+  "Leave Requests": "nav.leaveRequests",
+  "Profile": "nav.profile",
+  "Settings": "nav.settings",
+  "Audit Logs": "nav.auditLogs",
+  "Logout": "nav.logout"
+};
 
 export function Sidebar({
   roleLabel,
@@ -24,10 +55,15 @@ export function Sidebar({
   open: boolean;
   onClose: () => void;
 }) {
+  const { t, isRTL } = useTranslation();
+
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 z-50 flex h-full w-[min(88vw,320px)] -translate-x-full invisible flex-col overflow-hidden rounded-r-2xl border-r border-primary/20 bg-sidebar p-4 text-sidebarText shadow-2xl transition-transform duration-300 ease-out lg:w-[300px] lg:min-w-[300px] lg:max-w-[300px] lg:translate-x-0 lg:visible lg:rounded-r-none",
+        "fixed inset-y-0 z-50 flex h-full w-[min(88vw,320px)] invisible flex-col overflow-hidden bg-sidebar p-4 text-sidebarText shadow-2xl transition-transform duration-300 ease-out lg:w-[300px] lg:min-w-[300px] lg:max-w-[300px] lg:translate-x-0 lg:visible",
+        isRTL
+          ? "right-0 translate-x-full border-l border-primary/20 rounded-l-2xl lg:rounded-l-none"
+          : "left-0 -translate-x-full border-r border-primary/20 rounded-r-2xl lg:rounded-r-none",
         open && "translate-x-0 visible"
       )}
     >
@@ -40,9 +76,9 @@ export function Sidebar({
               </div>
               <div>
                 <div className="text-sm font-bold text-sidebarText tracking-tight">
-                  MIF Technology
+                  MIF Technologies
                 </div>
-                <div className="mt-0.5 text-xs text-primary font-medium">Daily Reports</div>
+                <div className="mt-0.5 text-xs text-primary font-medium">{t("nav.dailyReports")}</div>
               </div>
             </div>
             <Button
@@ -51,13 +87,13 @@ export function Sidebar({
               size="sm"
               className="h-9 w-9 rounded-full p-0 text-sidebarText hover:bg-primary/20 hover:text-primary lg:hidden"
               onClick={onClose}
-              aria-label="Close sidebar"
+              aria-label={t("nav.closeMenu")}
             >
               <X className="h-4 w-4" />
             </Button>
           </div>
           <div className="mt-4 flex items-center justify-between gap-2">
-            <Badge className="w-fit rounded-md border border-primary/30 bg-primary/15 px-3 py-1 capitalize text-[11px] font-bold text-primary shadow-none">
+            <Badge className="w-fit rounded-md border border-primary/30 bg-primary/15 px-3 py-1 text-[11px] font-bold text-primary shadow-none">
               {roleLabel}
             </Badge>
             <div className="lg:hidden">
@@ -68,10 +104,58 @@ export function Sidebar({
 
         <nav className="mt-4 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
           {items.map((item) => {
-            const active =
-              item.href === "/finance"
-                ? pathname === "/finance" || (pathname.startsWith("/finance/") && !pathname.startsWith("/finance/requests") && !pathname.startsWith("/finance/banks") && !pathname.startsWith("/finance/petty-cash") && !pathname.startsWith("/finance/create") && !pathname.startsWith("/finance/my-reports"))
-                : pathname === item.href || (item.href !== "/" && pathname.startsWith(`${item.href}/`));
+            const isMyReportsItem =
+              item.label === "My Reports" ||
+              item.label === "My Report" ||
+              item.href === "/daily-report/my-reports" ||
+              item.href === "/tm/my-reports" ||
+              item.href === "/marketing/my-reports" ||
+              item.href === "/construction/my-reports" ||
+              item.href === "/finance/my-reports";
+
+            const isMyReportsPath =
+              pathname === "/daily-report/my-reports" ||
+              pathname.startsWith("/daily-report/my-reports/") ||
+              pathname.startsWith("/daily-report/create") ||
+              pathname.startsWith("/daily-report/preview") ||
+              pathname.startsWith("/daily-report/edit") ||
+              pathname === "/tm/my-reports" ||
+              pathname.startsWith("/tm/my-reports/") ||
+              pathname === "/marketing/my-reports" ||
+              pathname.startsWith("/marketing/my-reports/") ||
+              pathname.startsWith("/marketing/create") ||
+              pathname.startsWith("/marketing/edit") ||
+              pathname.startsWith("/marketing/preview") ||
+              (pathname.startsWith("/marketing/") && !pathname.startsWith("/marketing/reports")) ||
+              pathname === "/construction/my-reports" ||
+              pathname.startsWith("/construction/my-reports/") ||
+              pathname.startsWith("/construction/create") ||
+              pathname.startsWith("/construction/edit") ||
+              pathname.startsWith("/construction/preview") ||
+              (pathname.startsWith("/construction/") && !pathname.startsWith("/construction/reports")) ||
+              pathname === "/finance/my-reports" ||
+              pathname.startsWith("/finance/my-reports/") ||
+              pathname === "/finance/create";
+
+            let active = false;
+            if (isMyReportsItem) {
+              active = isMyReportsPath;
+            } else if (item.href === "/finance") {
+              active =
+                pathname === "/finance" ||
+                (pathname.startsWith("/finance/") &&
+                  !pathname.startsWith("/finance/requests") &&
+                  !pathname.startsWith("/finance/banks") &&
+                  !pathname.startsWith("/finance/petty-cash") &&
+                  !pathname.startsWith("/finance/create") &&
+                  !pathname.startsWith("/finance/my-reports"));
+            } else {
+              active = pathname === item.href || (item.href !== "/" && pathname.startsWith(`${item.href}/`));
+            }
+
+            const translationKey = NAV_LABEL_KEYS[item.label];
+            const localizedLabel = translationKey ? t(translationKey) : item.label;
+
             return (
               <Link
                 key={item.href}
@@ -85,8 +169,14 @@ export function Sidebar({
                 )}
               >
                 <LayoutGrid className={cn("h-5 w-5 shrink-0", active ? "text-primary-foreground" : "text-primary")} />
-                <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                <ChevronRight className={cn("h-4 w-4 opacity-0 transition group-hover:translate-x-0.5 group-hover:opacity-80", active && "opacity-90 text-primary-foreground")} />
+                <span className="min-w-0 flex-1 truncate">{localizedLabel}</span>
+                <ChevronRight
+                  className={cn(
+                    "h-4 w-4 opacity-0 transition group-hover:opacity-80 rtl:rotate-180",
+                    isRTL ? "group-hover:-translate-x-0.5" : "group-hover:translate-x-0.5",
+                    active && "opacity-90 text-primary-foreground"
+                  )}
+                />
               </Link>
             );
           })}

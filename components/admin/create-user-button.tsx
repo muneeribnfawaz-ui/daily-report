@@ -6,12 +6,14 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import type { SessionUser } from "@/lib/types";
+import { useTranslation } from "@/lib/i18n";
 
 export function CreateUserButton({
   href = "/report-manager/users/create"
 }: {
   href?: Route;
 }) {
+  const { t } = useTranslation();
   const { data: currentUser } = useQuery({
     queryKey: ["current-user"],
     queryFn: async () => {
@@ -33,7 +35,7 @@ export function CreateUserButton({
 
   return (
     <Button asChild variant="outline">
-      <Link href={targetHref as Route}>Create User</Link>
+      <Link href={targetHref as Route}>{t("users.addUser")}</Link>
     </Button>
   );
 }

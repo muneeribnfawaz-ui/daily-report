@@ -18,12 +18,16 @@ import {
 import type { SessionUser } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ArrowLeft } from "lucide-react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ReportField, ReportInput, ReportSelect, ReportTextarea } from "@/components/forms/report-controls";
+import { useTranslation } from "@/lib/i18n";
 
 type LeaveRequestValues = z.infer<typeof leaveRequestSchema>;
 
 export function LeaveRequestCreateForm() {
+  const { t } = useTranslation();
   const [message, setMessage] = useState<string | null>(null);
   const leaveDateWindow = getLeaveRequestDateWindow();
   const { data: currentUser } = useQuery({
@@ -62,40 +66,47 @@ export function LeaveRequestCreateForm() {
 
   useEffect(() => {
     if (watchedLeaveDuration === "half_day" && watchedFromDate && watchedToDate !== watchedFromDate) {
-      setValue("toDate", watchedFromDate, { shouldDirty: true });
+      setValue("toDate", watchedFromDate, { shouldValidate: true });
+    }
+  }, [setValue, watchedFromDate, watchedLeaveDuration, watchedToDate]);
+
+  useEffect(() => {
+    if (watchedLeaveDuration === "half_day" && !watchedLeaveHalf) {
+      setValue("leaveHalf", "first_half", { shouldValidate: true });
     }
     if (watchedLeaveDuration === "full_day" && watchedLeaveHalf) {
-      setValue("leaveHalf", undefined, { shouldDirty: true });
+      setValue("leaveHalf", undefined, { shouldValidate: true });
     }
-    if (watchedLeaveDuration === "full_day" && watchedFromDate && watchedToDate && watchedFromDate > watchedToDate) {
-      setValue("toDate", watchedFromDate, { shouldDirty: true });
-    }
-  }, [setValue, watchedFromDate, watchedLeaveDuration, watchedLeaveHalf, watchedToDate]);
+  }, [setValue, watchedLeaveDuration, watchedLeaveHalf]);
 
   const onSubmit = async (values: LeaveRequestValues) => {
     setMessage(null);
-    try {
-      const parsed = leaveRequestSchema.safeParse(values);
-      if (!parsed.success) {
-        clearErrors();
+    clearErrors();
 
-        for (const issue of parsed.error.issues) {
-          const fieldName = issue.path[0];
-          if (typeof fieldName === "string") {
-            setError(fieldName as keyof LeaveRequestValues, {
-              type: issue.code,
-              message: issue.message
-            });
-          }
+    const normalizedValues = {
+      ...values,
+      leaveHalf: values.leaveDuration === "half_day" ? values.leaveHalf ?? "first_half" : undefined,
+      toDate: values.leaveDuration === "half_day" ? values.fromDate : values.toDate
+    };
+
+    const parsed = leaveRequestSchema.safeParse(normalizedValues);
+    if (!parsed.success) {
+      parsed.error.issues.forEach((issue) => {
+        const fieldName = issue.path[0] as keyof LeaveRequestValues;
+        if (fieldName) {
+          setError(fieldName, {
+            type: "manual",
+            message: issue.message
+          });
         }
+      });
+      setMessage(parsed.error.issues[0]?.message ?? t("validation.fixHighlighted", "Please fix the highlighted fields."));
+      return;
+    }
 
-        const messages = parsed.error.issues.map((issue) => issue.message).filter(Boolean);
-        setMessage(messages.length ? messages.join(" | ") : "Please fix the highlighted fields and try again.");
-        return;
-      }
-
-      const response = await api.post("/api/leave-requests", parsed.data);
-      setMessage(response.data?.message ?? "Leave request submitted successfully.");
+    try {
+      await api.post("/api/leave-requests", parsed.data);
+      setMessage(t("leave.submitSuccess", "Leave request submitted successfully."));
       reset({
         leaveType: parsed.data.leaveType,
         leaveDuration: parsed.data.leaveDuration,
@@ -105,7 +116,7 @@ export function LeaveRequestCreateForm() {
         reason: ""
       });
     } catch {
-      setMessage("Submission failed. Please try again.");
+      setMessage(t("leave.submitFailed", "Submission failed. Please try again."));
     }
   };
 
@@ -114,7 +125,7 @@ export function LeaveRequestCreateForm() {
       .map((error) => error?.message)
       .filter((message): message is string => Boolean(message));
 
-    setMessage(messages.length ? messages.join(" | ") : "Please fix the highlighted fields and try again.");
+    setMessage(messages.length ? messages.join(" | ") : t("validation.fixHighlightedAndRetry", "Please fix the highlighted fields and try again."));
   };
 
   const allowSelfService = currentUser?.role === "team_member" || currentUser?.role === "team_lead";
@@ -122,26 +133,35 @@ export function LeaveRequestCreateForm() {
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader>
-          <CardTitle>Create Leave Request</CardTitle>
+        <CardHeader className="flex flex-row items-center gap-3">
+          <Button asChild variant="outline" size="icon" className="h-9 w-9 rounded-xl shrink-0">
+            <Link href="/leave-requests" title={t("common.back", "Back")} aria-label={t("common.back", "Back")}>
+              <ArrowLeft className="h-4 w-4 rtl:rotate-180" />
+            </Link>
+          </Button>
+          <CardTitle>{t("leave.createLeaveRequest", "Create Leave Request")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="rounded-2xl border bg-background/70 p-4 text-sm text-muted-foreground">
             {currentUser?.role === "team_member"
-              ? "Your request will go to your Team Lead first."
+              ? t("leave.teamMemberNotice", "Your request will go to your Team Lead first.")
               : currentUser?.role === "team_lead"
-                ? "Team Leads can approve or reject requests from their members directly."
-                : "Use this page to submit a new leave request."}
+                ? t("leave.teamLeadNotice", "Team Leads can approve or reject requests from their members directly.")
+                : t("leave.generalNotice", "Use this page to submit a new leave request.")}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="soft">{currentUser?.name ?? "Loading user..."}</Badge>
+            <Badge variant="soft">{currentUser?.name ?? t("common.loading", "Loading user...")}</Badge>
             {currentUser?.teamName ? <Badge variant="outline">{currentUser.teamName}</Badge> : null}
-            {currentUser?.role ? <Badge variant="outline">{ROLE_LABELS[currentUser.role]}</Badge> : null}
+            {currentUser?.role ? (
+              <Badge variant="outline">
+                {t(`roles.${currentUser.role}`, ROLE_LABELS[currentUser.role] ?? currentUser.role)}
+              </Badge>
+            ) : null}
           </div>
 
           {allowSelfService ? (
             <form className="grid gap-4" onSubmit={handleSubmit(onSubmit, onInvalid)}>
-              <ReportField label="Leave type" required error={errors.leaveType?.message}>
+              <ReportField label={t("leave.leaveType", "Leave type")} required error={errors.leaveType?.message}>
                 <ReportSelect {...register("leaveType")}>
                   {LEAVE_TYPE_OPTIONS.map((type) => (
                     <option key={type} value={type}>
@@ -150,7 +170,7 @@ export function LeaveRequestCreateForm() {
                   ))}
                 </ReportSelect>
               </ReportField>
-              <ReportField label="Leave duration" required error={errors.leaveDuration?.message}>
+              <ReportField label={t("leave.leaveDuration", "Leave duration")} required error={errors.leaveDuration?.message}>
                 <ReportSelect {...register("leaveDuration")}>
                   {LEAVE_DURATION_OPTIONS.map((duration) => (
                     <option key={duration} value={duration}>
@@ -160,9 +180,9 @@ export function LeaveRequestCreateForm() {
                 </ReportSelect>
               </ReportField>
               {watchedLeaveDuration === "half_day" ? (
-                <ReportField label="Half day slot" required error={errors.leaveHalf?.message}>
+                <ReportField label={t("leave.halfDaySlot", "Half day slot")} required error={errors.leaveHalf?.message}>
                   <ReportSelect {...register("leaveHalf")}>
-                    <option value="">Select slot</option>
+                    <option value="">{t("leave.selectSlot", "Select slot")}</option>
                     {LEAVE_HALF_OPTIONS.map((half) => (
                       <option key={half} value={half}>
                         {LEAVE_HALF_LABELS[half]}
@@ -172,7 +192,7 @@ export function LeaveRequestCreateForm() {
                 </ReportField>
               ) : null}
               <div className="grid gap-4 md:grid-cols-2">
-                <ReportField label="From date" required error={errors.fromDate?.message}>
+                <ReportField label={t("leave.fromDate", "From date")} required error={errors.fromDate?.message}>
                   <ReportInput
                     type="date"
                     min={leaveDateWindow.startValue}
@@ -180,7 +200,7 @@ export function LeaveRequestCreateForm() {
                     {...register("fromDate")}
                   />
                 </ReportField>
-                <ReportField label="To date" required error={errors.toDate?.message}>
+                <ReportField label={t("leave.toDate", "To date")} required error={errors.toDate?.message}>
                   <ReportInput
                     type="date"
                     min={watchedFromDate ?? leaveDateWindow.startValue}
@@ -191,18 +211,18 @@ export function LeaveRequestCreateForm() {
                 </ReportField>
               </div>
               {watchedLeaveDuration === "half_day" ? (
-                <p className="text-xs text-textSecondary">Half-day leave uses the same start and end date.</p>
+                <p className="text-xs text-textSecondary">{t("leave.halfDayNotice", "Half-day leave uses the same start and end date.")}</p>
               ) : null}
-              <ReportField label="Reason" required error={errors.reason?.message}>
-                <ReportTextarea placeholder="Reason for leave" {...register("reason")} />
+              <ReportField label={t("leave.reason", "Reason")} required error={errors.reason?.message}>
+                <ReportTextarea placeholder={t("leave.reasonPlaceholder", "Reason for leave")} {...register("reason")} />
               </ReportField>
               {message ? <p className="text-sm text-success">{message}</p> : null}
               <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? "Submitting..." : "Send Request"}
+                {isSubmitting ? t("common.submitting", "Submitting...") : t("leave.sendRequest", "Send Request")}
               </Button>
             </form>
           ) : (
-            <div className="text-sm text-muted-foreground">Leave requests can be viewed from this page, but your role does not submit self-service requests.</div>
+            <div className="text-sm text-muted-foreground">{t("leave.noSelfService", "Leave requests can be viewed from this page, but your role does not submit self-service requests.")}</div>
           )}
         </CardContent>
       </Card>

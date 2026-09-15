@@ -4,6 +4,7 @@ import { getCurrentUser, hashPassword } from "@/lib/auth";
 import { adminCreateUserSchema } from "@/lib/validation";
 import { getActiveTeamTypeNames, getActiveTeamTypeShowNameMap } from "@/lib/team-types";
 import { getUserTeamLabel, sortUsersForDirectory } from "@/lib/user-directory-sort";
+import { normalizeEmpId } from "@/lib/utils";
 
 function normalizeTeamNames(teamName?: string | null, teamNames?: string[] | null) {
   const values = [teamName, ...(teamNames ?? [])]
@@ -41,17 +42,22 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const search = url.searchParams.get("search")?.trim();
+  const role = url.searchParams.get("role");
   const workspaceId = url.searchParams.get("workspaceId") || request.headers.get("x-workspace-id") || user.workspaceId;
   const department = url.searchParams.get("department") || request.headers.get("x-department");
 
-  const teamTypeShowNameMap = await getActiveTeamTypeShowNameMap();
+  const teamTypeShowNameMap = await getActiveTeamTypeShowNameMap(workspaceId || undefined);
 
   const filter: Record<string, any> = { isActive: true };
+  if (role) {
+    filter.role = role;
+  }
 
   if (department && department !== "all" && department !== "All") {
     const matchingTeamTypes = await db.teamType.findMany({
       where: {
         isDeleted: false,
+        ...(workspaceId && workspaceId !== "all" ? { workspaceId } : {}),
         OR: [
           { name: department },
           { showName: department },
@@ -97,7 +103,7 @@ export async function GET(request: Request) {
     include: { user: true, departments: true }
   });
 
-  const validTeamNames = await getActiveTeamTypeNames();
+  const validTeamNames = await getActiveTeamTypeNames(workspaceId || undefined);
 
   const allUsers = members.map((m) => {
     const u = m.user || ({} as any);
@@ -158,7 +164,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
-  if (!user || (user.role !== "admin" && user.role !== "ceo" && user.role !== "team_lead" && user.role !== "hod")) {
+  if (!user || (user.role !== "admin" && user.role !== "ceo" && user.role !== "team_lead" && user.role !== "hod" && (user.role as string) !== "report_manager")) {
     return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
   }
 
@@ -176,7 +182,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, message: "HOD cannot create admin, CEO, or HOD users" }, { status: 403 });
   }
 
-  const validTeamNames = await getActiveTeamTypeNames();
+  const targetWorkspaceId = parsed.data.workspaceId || user.workspaceId;
+  const validTeamNames = await getActiveTeamTypeNames(targetWorkspaceId || undefined);
   const existingUser = await db.user.findFirst({ where: { email: parsed.data.email.toLowerCase() } });
   if (existingUser) {
     return NextResponse.json({ success: false, message: "A user with this email already exists" }, { status: 409 });
@@ -221,7 +228,14 @@ export async function POST(request: Request) {
       });
       if (managerMember?.departments?.length) {
         const deptNames = managerMember.departments.map((d: any) => d.name);
-        const deptTeams = await db.teamType.findMany({ where: { department: { in: deptNames }, isActive: true, isDeleted: false } });
+        const deptTeams = await db.teamType.findMany({
+          where: {
+            department: { in: deptNames },
+            isActive: true,
+            isDeleted: false,
+            ...(targetWorkspaceId ? { workspaceId: targetWorkspaceId } : {})
+          }
+        });
         allowedTeamNames = deptTeams.map((t: any) => t.name);
       }
     }
@@ -236,16 +250,43 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, message: `Selected team is not managed by the chosen team lead: ${invalidLeadTeamName}` }, { status: 400 });
   }
 
+  const rawEmpId = parsed.data.empID ? parsed.data.empID.trim() : "";
+  const normalizedEmpId = normalizeEmpId(rawEmpId);
+
+  if (targetWorkspaceId && normalizedEmpId) {
+    const existingMember = await (db.workspaceMember as any).findFirst({
+      where: {
+        workspaceId: targetWorkspaceId,
+        OR: [
+          { empIDNormalized: normalizedEmpId },
+          { empID: { equals: rawEmpId, mode: "insensitive" } }
+        ]
+      }
+    });
+    if (existingMember) {
+      return NextResponse.json(
+        {
+          success: false,
+          statusCode: 2004,
+          message: "Employee ID already exists. Please enter a unique Employee ID."
+        },
+        { status: 409 }
+      );
+    }
+  }
+
   const password = await hashPassword(parsed.data.password);
   const fullName = `${parsed.data.firstName} ${parsed.data.lastName}`.trim();
   const nextManagerName =
     user.role === "team_lead"
       ? user.name
-      : parsed.data.role === "team_member"
-        ? parsed.data.managerName
-        : user.name;
-
-  const targetWorkspaceId = parsed.data.workspaceId || user.workspaceId;
+      : user.role === "hod" && (parsed.data.role === "team_lead" || parsed.data.role === "report_manager")
+        ? user.name
+        : user.role === "report_manager" && parsed.data.role === "team_lead"
+          ? user.name
+          : parsed.data.role === "team_member"
+            ? parsed.data.managerName
+            : user.name;
 
   // 1. Create global User
   const newUser = await db.user.create({
@@ -263,24 +304,40 @@ export async function POST(request: Request) {
   });
 
   // 2. Create WorkspaceMember
-  const newMember = await db.workspaceMember.create({
-    data: {
-      userId: newUser.id,
-      workspaceId: targetWorkspaceId,
-      empID: parsed.data.empID,
-      role: parsed.data.role,
-      roleTypes: parsed.data.roleTypes,
-      teamNames: parsed.data.teamNames,
-      teamName: parsed.data.teamNames?.[0] || "",
-      departments: {
-        create: parsed.data.departments?.map((d: any) => ({ name: d.name, subTeams: d.subTeams })) || []
+  try {
+    const newMember = await (db.workspaceMember as any).create({
+      data: {
+        userId: newUser.id,
+        workspaceId: targetWorkspaceId,
+        empID: rawEmpId || "EMP",
+        empIDNormalized: normalizedEmpId || "emp",
+        role: parsed.data.role,
+        roleTypes: parsed.data.roleTypes,
+        teamNames: parsed.data.teamNames,
+        teamName: parsed.data.teamNames?.[0] || "",
+        departments: {
+          create: parsed.data.departments?.map((d: any) => ({ name: d.name, subTeams: d.subTeams })) || []
+        },
+        managerName: parsed.data.role === "admin" || parsed.data.role === "ceo" ? "" : nextManagerName ?? "",
+        status: "active",
+        isActive: true
       },
-      managerName: parsed.data.role === "admin" || parsed.data.role === "ceo" ? "" : nextManagerName ?? "",
-      status: "active",
-      isActive: true
-    },
-    include: { departments: true }
-  });
+      include: { departments: true }
+    });
 
-  return NextResponse.json({ success: true, data: { ...newUser, ...newMember } }, { status: 201 });
+    return NextResponse.json({ success: true, data: { ...newUser, ...newMember } }, { status: 201 });
+  } catch (dbError: any) {
+    await db.user.delete({ where: { id: newUser.id } }).catch(() => {});
+    if (dbError?.code === "P2002" || String(dbError?.message).includes("empID") || String(dbError?.message).includes("Unique constraint")) {
+      return NextResponse.json(
+        {
+          success: false,
+          statusCode: 2004,
+          message: "Employee ID already exists. Please enter a unique Employee ID."
+        },
+        { status: 409 }
+      );
+    }
+    throw dbError;
+  }
 }

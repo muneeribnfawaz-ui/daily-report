@@ -1,9 +1,8 @@
-"use client";
-
 import { cn, formatDisplayName } from "@/lib/utils";
 import { LEAVE_DURATION_LABELS, LEAVE_HALF_LABELS } from "@/lib/constants";
 import { ConstructionReportPreview } from "./construction-report-preview";
 import { MarketingReportPreview } from "./marketing-report-preview";
+import { useTranslation } from "@/lib/i18n";
 
 export type ReportSheetEntry = {
   _id?: string;
@@ -26,6 +25,22 @@ export type ReportSheetEntry = {
   reviewedAt?: string | Date | null;
   verificationLevel?: string | null;
   rejectionReason?: string | null;
+  reportManagerStatus?: string | null;
+  reportManagerReview?: string | null;
+  reportManagerReviewedByName?: string | null;
+  reportManagerReviewedAt?: string | Date | null;
+  teamLeadReviews?: Array<{
+    id?: string;
+    name: string;
+    teamName?: string;
+    reportType?: string;
+    reportDate?: string | Date;
+    status?: string;
+    reportManagerStatus?: string | null;
+    reportManagerReview?: string | null;
+    reportManagerReviewedByName?: string | null;
+    reportManagerReviewedAt?: string | Date | null;
+  }>;
   constructionWorkPlan?: Array<{ activity?: string; location?: string; unit?: string; plannedQuantity?: string; executedQuantity?: string; completionPercentage?: string; remarks?: string }>;
   constructionMaterialUtilization?: Array<{ material?: string; unit?: string; openingStock?: string; received?: string; closingStock?: string }>;
   constructionTomorrowWorkPlan?: Array<{ activity?: string; location?: string; unit?: string; plannedQuantity?: string }>;
@@ -69,10 +84,18 @@ export type ReportSheetTeamGroup = {
   }>;
 };
 
+export type DepartmentSection = {
+  department: string;
+  hodReports: ReportSheetEntry[];
+  reportManagerReports: ReportSheetEntry[];
+  teamGroups: ReportSheetTeamGroup[];
+};
+
 type ReportSheetPreviewProps = {
   title: string;
   dateLabel: string;
   teamGroups: ReportSheetTeamGroup[];
+  departmentSections?: DepartmentSection[];
   projectName?: string;
   companyName?: string;
   subtitle?: string;
@@ -120,18 +143,41 @@ function DetailRow({ label, value }: { label: string; value?: string | null }) {
 }
 
 function RoleText({ role }: { role?: string | null }) {
+  const { t } = useTranslation();
   if (!role) return null;
+  const normalized = role.toLowerCase();
+
+  let label = formatDisplayName(role);
+  let colorClass = "bg-emerald-100 text-emerald-900 border-emerald-200";
+
+  if (normalized === "team_lead") {
+    label = t("roles.team_lead");
+    colorClass = "bg-amber-100 text-amber-900 border-amber-200";
+  } else if (normalized === "report_manager") {
+    label = t("roles.report_manager");
+    colorClass = "bg-indigo-100 text-indigo-900 border-indigo-200";
+  } else if (normalized === "hod") {
+    label = t("roles.hod");
+    colorClass = "bg-purple-100 text-purple-900 border-purple-200";
+  } else if (normalized === "ceo") {
+    label = t("roles.ceo");
+    colorClass = "bg-blue-100 text-blue-900 border-blue-200";
+  } else if (normalized === "admin") {
+    label = t("roles.admin");
+    colorClass = "bg-slate-200 text-slate-900 border-slate-300";
+  } else if (normalized === "team_member") {
+    label = t("roles.team_member");
+    colorClass = "bg-emerald-100 text-emerald-900 border-emerald-200";
+  }
 
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em]",
-        role === "team_lead"
-          ? "bg-amber-100 text-amber-900"
-          : "bg-emerald-100 text-emerald-900"
+        "inline-flex items-center rounded-full px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] border",
+        colorClass
       )}
     >
-      {role === "team_lead" ? "Team Lead" : "Team Member"}
+      {label}
     </span>
   );
 }
@@ -161,11 +207,12 @@ function LeaveBadge({
 }
 
 function AttachmentRow({ value }: { value?: string | null }) {
+  const { t } = useTranslation();
   if (!value?.trim()) return null;
 
   return (
     <div className="grid gap-2 border-b border-slate-200 py-2 last:border-b-0 md:grid-cols-[170px_1fr] md:items-start md:gap-4">
-      <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">Attachment Link</div>
+      <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">{t("reports.attachments")}</div>
       <div className="min-w-0">
         <a
           href={value}
@@ -180,7 +227,128 @@ function AttachmentRow({ value }: { value?: string | null }) {
   );
 }
 
+function ReportManagerReviewRow({ report }: { report: ReportSheetEntry }) {
+  const { t } = useTranslation();
+  if (!report.reportManagerReviewedByName && !report.reportManagerReview && !report.reportManagerStatus) return null;
+
+  const isApproved = report.reportManagerStatus === "approved";
+  const isRejected = report.reportManagerStatus === "rejected";
+
+  return (
+    <div
+      className={cn(
+        "border-t border-slate-200 px-4 py-3 text-xs",
+        isApproved ? "bg-indigo-50/70" : isRejected ? "bg-rose-50/70" : "bg-slate-50"
+      )}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-700">
+            {t("reports.reportManagerReview")}
+          </span>
+          {report.reportManagerStatus && (
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em]",
+                isApproved
+                  ? "bg-emerald-100 text-emerald-900"
+                  : isRejected
+                    ? "bg-rose-100 text-rose-800"
+                    : "bg-amber-100 text-amber-900"
+              )}
+            >
+              {isApproved ? t("reports.approved") : isRejected ? t("reports.rejected") : formatDisplayName(report.reportManagerStatus)}
+            </span>
+          )}
+        </div>
+        {report.reportManagerReviewedByName && (
+          <div className="text-[11px] font-semibold text-slate-700">
+            {t("reports.reviewedBy")}: <span className="text-slate-900">{report.reportManagerReviewedByName}</span>
+          </div>
+        )}
+      </div>
+
+      {report.reportManagerReview && (
+        <div className="mt-2 text-xs text-slate-800">
+          <span className="font-semibold text-slate-700">{t("reports.rmRemark")}: </span>
+          <span className="italic">"{report.reportManagerReview}"</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TeamLeadReviewsSection({ reviews }: { reviews?: ReportSheetEntry["teamLeadReviews"] }) {
+  const { t } = useTranslation();
+  if (!reviews || reviews.length === 0) return null;
+
+  return (
+    <div className="border-t border-slate-200 bg-indigo-50/40 px-4 py-3.5 space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-indigo-900 flex items-center gap-1.5">
+          <span>📋</span>
+          {t("reports.teamLeadReviewsAndRemarks", { count: reviews.length })}
+        </span>
+      </div>
+
+      <div className="space-y-2.5">
+        {reviews.map((rev, i) => {
+          const isApproved = rev.reportManagerStatus === "approved";
+          const isRejected = rev.reportManagerStatus === "rejected";
+          return (
+            <div key={rev.id || i} className="rounded-xl border border-indigo-200/80 bg-white p-3.5 shadow-xs space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-indigo-100 pb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-900">{rev.name}</span>
+                  {rev.teamName ? (
+                    <span className="text-[10px] text-slate-500 font-medium">({formatDisplayName(rev.teamName)})</span>
+                  ) : null}
+                  <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em] text-amber-900 border border-amber-200">
+                    {t("roles.team_lead")}
+                  </span>
+                </div>
+                {rev.reportManagerStatus ? (
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded-full px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em]",
+                      isApproved
+                        ? "bg-emerald-100 text-emerald-900"
+                        : isRejected
+                        ? "bg-rose-100 text-rose-800"
+                        : "bg-amber-100 text-amber-900"
+                    )}
+                  >
+                    {isApproved ? t("reports.approved") : isRejected ? t("reports.rejected") : formatDisplayName(rev.reportManagerStatus)}
+                  </span>
+                ) : null}
+              </div>
+
+              {rev.reportManagerReview ? (
+                <div className="text-xs">
+                  <span className="font-semibold text-slate-700">{t("reports.rmRemark")}: </span>
+                  <span className="text-slate-900 whitespace-pre-wrap leading-relaxed italic">
+                    "{rev.reportManagerReview}"
+                  </span>
+                </div>
+              ) : (
+                <div className="text-xs text-slate-400 italic">{t("reports.noRemarkProvided")}</div>
+              )}
+
+              {rev.reportManagerReviewedAt ? (
+                <div className="text-[10px] text-slate-500">
+                  {t("reports.reviewedAt")}: {new Date(rev.reportManagerReviewedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function VerificationReviewRow({ report }: { report: ReportSheetEntry }) {
+  const { t } = useTranslation();
   if (!report.reviewedByName && !report.reviewNotes && !report.status) return null;
 
   const isApproved = report.status === "approved";
@@ -196,17 +364,15 @@ function VerificationReviewRow({ report }: { report: ReportSheetEntry }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-700">
-            Verification & Review
+            {t("reports.verificationAndReview")}
           </span>
           {report.verificationLevel && (
             <span className="inline-flex items-center rounded-full bg-slate-200 px-2.5 py-0.5 text-[9px] font-bold uppercase text-slate-800">
               {report.verificationLevel === "tl"
-                ? "Verified by Team Lead"
+                ? t("reports.verifiedByTl")
                 : report.verificationLevel === "hod"
-                ? "Verified by HOD"
-                : report.verificationLevel === "ceo"
-                ? "Verified by CEO"
-                : `${formatDisplayName(report.verificationLevel)} Verified`}
+                ? t("reports.verifiedByHod")
+                : `${formatDisplayName(report.verificationLevel)}`}
             </span>
           )}
           {report.status && (
@@ -220,20 +386,20 @@ function VerificationReviewRow({ report }: { report: ReportSheetEntry }) {
                     : "bg-amber-100 text-amber-900"
               )}
             >
-              {formatDisplayName(report.status)}
+              {isApproved ? t("reports.approved") : isRejected ? t("reports.rejected") : formatDisplayName(report.status)}
             </span>
           )}
         </div>
         {report.reviewedByName && (
           <div className="text-[11px] font-semibold text-slate-700">
-            Reviewed by: <span className="text-slate-900">{report.reviewedByName}</span>
+            {t("reports.reviewedBy")}: <span className="text-slate-900">{report.reviewedByName}</span>
           </div>
         )}
       </div>
 
       {(report.reviewNotes || report.rejectionReason) && (
         <div className="mt-2 text-xs text-slate-800">
-          <span className="font-semibold text-slate-700">Review Notes: </span>
+          <span className="font-semibold text-slate-700">{t("common.remarks")}: </span>
           <span className="italic">"{report.reviewNotes || report.rejectionReason}"</span>
         </div>
       )}
@@ -242,17 +408,23 @@ function VerificationReviewRow({ report }: { report: ReportSheetEntry }) {
 }
 
 function ReportCard({ report }: { report: ReportSheetEntry }) {
+  const { t } = useTranslation();
   const isLead = report.employeeRole === "team_lead";
-  const isConstruction = 
-    report.teamName?.toLowerCase().includes("construction") || 
-    (report.constructionWorkPlan && report.constructionWorkPlan.length > 0) ||
-    (report.constructionMaterialUtilization && report.constructionMaterialUtilization.length > 0) ||
-    (report.constructionTomorrowWorkPlan && report.constructionTomorrowWorkPlan.length > 0);
+  const hasConstructionTables = 
+    Boolean(report.constructionWorkPlan && report.constructionWorkPlan.length > 0) ||
+    Boolean(report.constructionMaterialUtilization && report.constructionMaterialUtilization.length > 0) ||
+    Boolean(report.constructionTomorrowWorkPlan && report.constructionTomorrowWorkPlan.length > 0);
   
-  const isMarketing = 
-    report.teamName?.toLowerCase().includes("marketing") || 
-    (report.marketingSelfItems && report.marketingSelfItems.length > 0) ||
-    (report.marketingClientItems && report.marketingClientItems.length > 0);
+  const hasMarketingTables = 
+    Boolean(report.marketingSelfItems && report.marketingSelfItems.length > 0) ||
+    Boolean(report.marketingClientItems && report.marketingClientItems.length > 0);
+
+  const hasStandardDetails = 
+    Boolean(report.completedWork?.trim()) || 
+    Boolean(report.pendingWork?.trim()) || 
+    Boolean(report.blockers?.trim()) || 
+    Boolean(report.requiredClarification?.trim()) ||
+    Boolean(report.attachmentLink?.trim());
 
   return (
     <div className={cn("pdf-no-break overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm", isLead ? "ring-1 ring-amber-100" : "")}>
@@ -268,46 +440,55 @@ function ReportCard({ report }: { report: ReportSheetEntry }) {
         </div>
       </div>
 
-      {(!isConstruction && !isMarketing || (isConstruction && report.attachmentLink) || (isMarketing && report.attachmentLink)) && (
+      {(!hasConstructionTables && !hasMarketingTables || hasStandardDetails) && (
         <div className="px-4 py-3">
           <AttachmentRow value={report.attachmentLink} />
-          {(!isConstruction && !isMarketing) && (
+          {(!hasConstructionTables && !hasMarketingTables) ? (
             <>
-              <DetailRow label="Completed Work" value={report.completedWork} />
-              <DetailRow label="Pending Work" value={report.pendingWork} />
-              <DetailRow label="Blockers" value={report.blockers} />
-              <DetailRow label="Required Clarification" value={report.requiredClarification} />
+              <DetailRow label={t("reports.completedTasks")} value={report.completedWork} />
+              <DetailRow label={t("reports.pendingTasks")} value={report.pendingWork} />
+              <DetailRow label={t("reports.blockers")} value={report.blockers} />
+              <DetailRow label={t("reports.clarifications")} value={report.requiredClarification} />
+            </>
+          ) : (
+            <>
+              {report.completedWork?.trim() ? <DetailRow label={t("reports.completedTasks")} value={report.completedWork} /> : null}
+              {report.pendingWork?.trim() ? <DetailRow label={t("reports.pendingTasks")} value={report.pendingWork} /> : null}
+              {report.blockers?.trim() ? <DetailRow label={t("reports.blockers")} value={report.blockers} /> : null}
+              {report.requiredClarification?.trim() ? <DetailRow label={t("reports.clarifications")} value={report.requiredClarification} /> : null}
             </>
           )}
         </div>
       )}
       <ConstructionReportPreview report={report} />
       <MarketingReportPreview report={report} />
+      <ReportManagerReviewRow report={report} />
+      <TeamLeadReviewsSection reviews={report.teamLeadReviews} />
       <VerificationReviewRow report={report} />
 
       {report.nextDayApprovalItems?.length ? (
         <div className="border-t border-slate-200 bg-amber-50/60 px-4 py-3">
           <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.25em] text-amber-700">
-            Next Day Approval Required
+            {t("reports.nextDayApprovalRequired")}
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-[12px]">
               <thead>
                 <tr className="border-b border-amber-200">
-                  <th className="py-1.5 px-2 text-left font-bold text-amber-800">Particulars</th>
-                  <th className="py-1.5 px-2 text-right font-bold text-amber-800 w-24">INR</th>
-                  <th className="py-1.5 px-2 text-right font-bold text-amber-800 w-24">Riyal</th>
-                  <th className="py-1.5 px-2 text-left font-bold text-amber-800">Reason</th>
-                  <th className="py-1.5 px-2 text-left font-bold text-amber-800">Review</th>
-                  <th className="py-1.5 px-2 text-center font-bold text-amber-800 w-24">Approval</th>
+                  <th className="py-1.5 px-2 text-left rtl:text-right font-bold text-amber-800">{t("reports.particulars")}</th>
+                  <th className="py-1.5 px-2 text-right rtl:text-left font-bold text-amber-800 w-24">{t("common.inr")}</th>
+                  <th className="py-1.5 px-2 text-right rtl:text-left font-bold text-amber-800 w-24">{t("common.sar")}</th>
+                  <th className="py-1.5 px-2 text-left rtl:text-right font-bold text-amber-800">{t("common.reason")}</th>
+                  <th className="py-1.5 px-2 text-left rtl:text-right font-bold text-amber-800">{t("reports.remark")}</th>
+                  <th className="py-1.5 px-2 text-center font-bold text-amber-800 w-24">{t("reports.approval")}</th>
                 </tr>
               </thead>
               <tbody>
                 {report.nextDayApprovalItems.map((item, i) => (
                   <tr key={`approval-preview-${i}`} className="border-b border-amber-100">
                     <td className="py-1.5 px-2 text-slate-900 font-medium">{item.particulars}</td>
-                    <td className="py-1.5 px-2 text-right text-slate-900 tabular-nums">{item.amountINR.toLocaleString("en-IN")}</td>
-                    <td className="py-1.5 px-2 text-right text-slate-900 tabular-nums">{item.amountRiyal.toLocaleString("en-SA")}</td>
+                    <td className="py-1.5 px-2 text-right rtl:text-left text-slate-900 tabular-nums">{item.amountINR.toLocaleString("en-IN")}</td>
+                    <td className="py-1.5 px-2 text-right rtl:text-left text-slate-900 tabular-nums">{item.amountRiyal.toLocaleString("en-SA")}</td>
                     <td className="py-1.5 px-2 text-slate-700">{item.reason || "—"}</td>
                     <td className="py-1.5 px-2 text-slate-700">{item.review || "—"}</td>
                     <td className="py-1.5 px-2 text-center">
@@ -321,7 +502,7 @@ function ReportCard({ report }: { report: ReportSheetEntry }) {
                               : "bg-amber-100 text-amber-700"
                         )}
                       >
-                        {item.approval === "yes" ? "Yes" : item.approval === "no" ? "No" : "Pending"}
+                        {item.approval === "yes" ? t("common.yes") : item.approval === "no" ? t("common.no") : t("reports.pending")}
                       </span>
                     </td>
                   </tr>
@@ -336,9 +517,14 @@ function ReportCard({ report }: { report: ReportSheetEntry }) {
 }
 
 function TeamCard({ teamGroup }: { teamGroup: ReportSheetTeamGroup }) {
+  const { t } = useTranslation();
   const teamLabel = teamGroup.teamName?.trim();
   const resolvedTeamLabel =
-    !teamLabel || teamLabel.toLowerCase() === "undefined" ? "MIF Tech Members" : formatDisplayName(teamLabel);
+    !teamLabel || teamLabel.toLowerCase() === "undefined" || teamLabel === "MIF Tech Members"
+      ? ""
+      : formatDisplayName(teamLabel);
+  if (!resolvedTeamLabel) return null;
+
   const memberCount = new Set([
     ...teamGroup.reports.map((report) => report.employeeId ?? report.name),
     ...(teamGroup.leaveMembers ?? []).map((member) => member.employeeId),
@@ -350,14 +536,14 @@ function TeamCard({ teamGroup }: { teamGroup: ReportSheetTeamGroup }) {
         <span className="text-2xl">⚙️</span>
         <div>
           <h3 className="break-words text-xl font-bold leading-tight">{resolvedTeamLabel}</h3>
-          <p className="text-sm text-white/75">{memberCount} member{memberCount === 1 ? "" : "s"}</p>
+          <p className="text-sm text-white/75">{memberCount} {t("reports.teamMembers")}</p>
         </div>
       </div>
 
       {teamGroup.leaveMembers?.length ? (
         <div className="border-b border-amber-200 bg-amber-50 px-5 py-4">
           <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.3em] text-amber-700">
-            On Leave ({teamGroup.leaveMembers.length})
+            {t("reports.onLeaveWithCount", { count: teamGroup.leaveMembers.length })}
           </div>
           <div className="flex flex-wrap gap-2">
             {teamGroup.leaveMembers.map((member) => (
@@ -383,7 +569,7 @@ function TeamCard({ teamGroup }: { teamGroup: ReportSheetTeamGroup }) {
       {teamGroup.notSharedMembers?.length ? (
         <div className="border-b border-rose-200 bg-rose-50 px-5 py-4">
           <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.3em] text-rose-700">
-            Not Shared ({teamGroup.notSharedMembers.length})
+            {t("reports.notSharedWithCount", { count: teamGroup.notSharedMembers.length })}
           </div>
           <div className="flex flex-wrap gap-2">
             {teamGroup.notSharedMembers.map((member) => (
@@ -392,7 +578,7 @@ function TeamCard({ teamGroup }: { teamGroup: ReportSheetTeamGroup }) {
                 className="inline-flex items-center rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-900 ring-1 ring-slate-200"
               >
                 {member.name}
-                <span className="ml-2 text-[10px] uppercase tracking-[0.12em] opacity-80">Not Shared</span>
+                <span className="ml-2 text-[10px] uppercase tracking-[0.12em] opacity-80">{t("reports.notShared")}</span>
               </span>
             ))}
           </div>
@@ -403,7 +589,7 @@ function TeamCard({ teamGroup }: { teamGroup: ReportSheetTeamGroup }) {
         <div className="bg-amber-50 px-5 py-1.5">
           <div className="mb-1.5 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.3em] text-amber-700">
             <span>📢</span>
-            Daily Meeting Updates
+            {t("reports.dailyMeetingUpdates")}
           </div>
           <div className="space-y-2">
             {teamGroup.dailyMeetingUpdates.map((entry, index) => (
@@ -412,7 +598,7 @@ function TeamCard({ teamGroup }: { teamGroup: ReportSheetTeamGroup }) {
                   <span className="text-sm font-semibold text-slate-900">{entry.name}</span>
                   {entry.role ? (
                     <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-amber-900">
-                      {entry.role === "team_lead" ? "Team Lead" : "Team Member"}
+                      {entry.role === "team_lead" ? t("roles.team_lead") : t("roles.team_member")}
                     </span>
                   ) : null}
                 </div>
@@ -425,7 +611,7 @@ function TeamCard({ teamGroup }: { teamGroup: ReportSheetTeamGroup }) {
         <div className="bg-amber-50 px-5 py-1.5">
           <div className="mb-1.5 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.3em] text-amber-700">
             <span>📢</span>
-            Daily Meeting Update
+            {t("reports.dailyMeetingUpdate")}
           </div>
           <div className="mt-1 whitespace-pre-line break-words text-sm font-bold leading-5 text-slate-900">{teamGroup.dailyMeetingUpdate}</div>
         </div>
@@ -436,7 +622,7 @@ function TeamCard({ teamGroup }: { teamGroup: ReportSheetTeamGroup }) {
           teamGroup.reports.map((report) => <ReportCard key={report.id || report._id} report={report} />)
         ) : (
           <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
-            No reports submitted for this team on this date.
+            {t("reports.noReportsSubmitted")}
           </div>
         )}
       </div>
@@ -448,12 +634,41 @@ export function ReportSheetPreview({
   title,
   dateLabel,
   teamGroups,
+  departmentSections,
   projectName = "MIF Cortex",
   companyName = "MIF TECHNOLOGY",
   subtitle = "Completed Work · Pending Work · Blockers · Clarifications"
 }: ReportSheetPreviewProps) {
-  const totalLeaveCount = teamGroups.reduce((total, teamGroup) => total + (teamGroup.leaveMembers?.length ?? 0), 0);
-  const totalNotSharedCount = teamGroups.reduce((total, teamGroup) => total + (teamGroup.notSharedMembers?.length ?? 0), 0);
+  const { t } = useTranslation();
+
+  const totalLeaveCount = departmentSections?.length
+    ? departmentSections.reduce(
+        (acc, d) => acc + d.teamGroups.reduce((tc, tg) => tc + (tg.leaveMembers?.length ?? 0), 0),
+        0
+      )
+    : teamGroups.reduce((total, teamGroup) => total + (teamGroup.leaveMembers?.length ?? 0), 0);
+
+  const totalNotSharedCount = departmentSections?.length
+    ? departmentSections.reduce(
+        (acc, d) => acc + d.teamGroups.reduce((tc, tg) => tc + (tg.notSharedMembers?.length ?? 0), 0),
+        0
+      )
+    : teamGroups.reduce((total, teamGroup) => total + (teamGroup.notSharedMembers?.length ?? 0), 0);
+
+  const totalReportsCount = departmentSections?.length
+    ? departmentSections.reduce(
+        (acc, d) =>
+          acc +
+          d.hodReports.length +
+          d.reportManagerReports.length +
+          d.teamGroups.reduce((tc, tg) => tc + tg.reports.length, 0),
+        0
+      )
+    : teamGroups.reduce((count, teamGroup) => count + teamGroup.reports.length, 0);
+
+  const totalTeamCount = departmentSections?.length
+    ? departmentSections.reduce((acc, d) => acc + d.teamGroups.length, 0)
+    : teamGroups.length;
 
   return (
     <div className="mx-auto w-full max-w-[1400px] overflow-hidden rounded-2xl border border-slate-200 bg-white px-5 py-8 text-slate-900 shadow-sm md:px-10 md:py-10">
@@ -481,39 +696,103 @@ export function ReportSheetPreview({
       <div className="mb-8 rounded-2xl border border-slate-200 bg-slate-50 px-6 py-4">
         <div className="space-y-4 text-center">
           <div className="flex items-baseline gap-2">
-            <span className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500">Project Name</span>
+            <span className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500">{t("common.name")}</span>
             <span className="text-lg font-extrabold text-slate-900 md:text-xl">{projectName}</span>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
             <div className="flex items-baseline gap-2">
-              <span className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500">Total Teams</span>
-              <span className="text-lg font-extrabold text-slate-900 md:text-xl">{teamGroups.length}</span>
+              <span className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500">{t("teamTypes.titleList")}</span>
+              <span className="text-lg font-extrabold text-slate-900 md:text-xl">{totalTeamCount}</span>
             </div>
             <div className="hidden h-6 w-px bg-slate-200 md:block" />
             <div className="flex items-baseline gap-2">
-              <span className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500">Total Reports</span>
-              <span className="text-lg font-extrabold text-slate-900 md:text-xl">{teamGroups.reduce((count, teamGroup) => count + teamGroup.reports.length, 0)}</span>
+              <span className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500">{t("dashboard.totalReports")}</span>
+              <span className="text-lg font-extrabold text-slate-900 md:text-xl">{totalReportsCount}</span>
             </div>
             <div className="hidden h-6 w-px bg-slate-200 md:block" />
             <div className="flex items-baseline gap-2">
-              <span className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500">On Leave</span>
+              <span className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500">{t("leave.eyebrow")}</span>
               <span className="text-lg font-extrabold text-slate-900 md:text-xl">{totalLeaveCount}</span>
             </div>
             <div className="hidden h-6 w-px bg-slate-200 md:block" />
             <div className="flex items-baseline gap-2">
-              <span className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500">Not Shared</span>
+              <span className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500">{t("reports.notShared")}</span>
               <span className="text-lg font-extrabold text-slate-900 md:text-xl">{totalNotSharedCount}</span>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="space-y-12">
-        {teamGroups.map((teamGroup) => (
-          <TeamCard key={teamGroup.teamName} teamGroup={teamGroup} />
-        ))}
-        {teamGroups.length === 0 ? <div className="text-sm text-slate-500">No report data available.</div> : null}
-      </div>
+      {departmentSections && departmentSections.length > 0 ? (
+        <div className="space-y-12">
+          {departmentSections.map((deptSec) => {
+            const hasHodOrRmReports = deptSec.hodReports.length > 0 || deptSec.reportManagerReports.length > 0;
+            const hasTeamGroups = deptSec.teamGroups.length > 0;
+            const deptReportsCount =
+              deptSec.hodReports.length +
+              deptSec.reportManagerReports.length +
+              deptSec.teamGroups.reduce((c, g) => c + g.reports.length, 0);
+
+            return (
+              <div
+                key={deptSec.department}
+                className="rounded-2xl border border-slate-200 bg-slate-50/60 overflow-hidden shadow-xs space-y-6 p-4 sm:p-6"
+              >
+                {/* Department Header Banner */}
+                <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900 rounded-xl px-5 py-4 text-white">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">🏢</span>
+                    <h2 className="text-xl font-bold uppercase tracking-wider text-white">{deptSec.department}</h2>
+                  </div>
+                  <span className="text-xs font-semibold uppercase tracking-wider bg-white/15 px-3 py-1 rounded-full text-white/90">
+                    {deptSec.teamGroups.length} {t("roles.team")} · {deptReportsCount} {t("nav.reports")}
+                  </span>
+                </div>
+
+                {/* HOD & Report Manager Reports Section */}
+                {hasHodOrRmReports && (
+                  <div className="space-y-3">
+                    <div className="text-xs font-bold uppercase tracking-[0.2em] text-slate-700 flex items-center gap-1.5 px-1">
+                      <span>👑</span>
+                      <span>{t("roles.hod")} / {t("roles.report_manager")} {t("nav.reports")}</span>
+                    </div>
+                    <div className="space-y-4">
+                      {deptSec.hodReports.map((report) => (
+                        <ReportCard key={report.id || report._id} report={report} />
+                      ))}
+                      {deptSec.reportManagerReports.map((report) => (
+                        <ReportCard key={report.id || report._id} report={report} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Teams and Team Lead / Member Reports Section */}
+                {hasTeamGroups ? (
+                  <div className="space-y-6">
+                    {deptSec.teamGroups.map((teamGroup) => (
+                      <TeamCard key={teamGroup.teamName} teamGroup={teamGroup} />
+                    ))}
+                  </div>
+                ) : (
+                  !hasHodOrRmReports ? (
+                    <div className="rounded-xl border border-dashed border-slate-300 bg-white/70 p-6 text-center text-sm text-slate-500">
+                      {t("reports.noReportsSubmitted")}
+                    </div>
+                  ) : null
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="space-y-12">
+          {teamGroups.map((teamGroup) => (
+            <TeamCard key={teamGroup.teamName} teamGroup={teamGroup} />
+          ))}
+          {teamGroups.length === 0 ? <div className="text-sm text-slate-500">{t("common.noData")}</div> : null}
+        </div>
+      )}
     </div>
   );
 }

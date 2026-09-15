@@ -7,7 +7,7 @@ import { DashboardPageHeader, DashboardPanel, DashboardStatCard } from "@/compon
 import { FinanceDashboardSection } from "@/components/finance/finance-dashboard-section";
 import Link from "next/link";
 import { useSelectedCompany } from "@/hooks/use-selected-company";
-import { Loader2 } from "lucide-react";
+import { useTranslation } from "@/lib/i18n";
 
 type AdminDashboardStats = {
   totalUsers: number;
@@ -17,6 +17,7 @@ type AdminDashboardStats = {
 };
 
 export function AdminDashboardContent() {
+  const { t } = useTranslation();
   const selectedCompanyId = useSelectedCompany();
 
   const { data: stats, isLoading } = useQuery<AdminDashboardStats>({
@@ -35,19 +36,19 @@ export function AdminDashboardContent() {
   return (
     <div className="space-y-6">
       <DashboardPageHeader
-        eyebrow="System Control"
-        title="Manage users, reports, and configuration from one command center"
-        description="This view highlights platform health, access control, and compliance signals for administrators."
+        eyebrow={t("dashboard.systemControlEyebrow")}
+        title={t("dashboard.adminTitle")}
+        description={t("dashboard.adminDesc")}
         actions={
           <>
             <Button asChild>
-              <Link href="/admin/users">Manage Users</Link>
+              <Link href="/admin/users">{t("dashboard.manageUsers")}</Link>
             </Button>
             <Button asChild variant="outline">
-              <Link href="/admin/team-types">Team Types</Link>
+              <Link href="/admin/team-types">{t("dashboard.teamTypes")}</Link>
             </Button>
             <Button asChild variant="outline">
-              <Link href="/admin/settings">System Settings</Link>
+              <Link href="/admin/settings">{t("dashboard.systemSettings")}</Link>
             </Button>
           </>
         }
@@ -55,27 +56,27 @@ export function AdminDashboardContent() {
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <DashboardStatCard
-          label="Total Users"
+          label={t("dashboard.totalUsers")}
           value={isLoading ? "..." : String(stats?.totalUsers ?? 0)}
-          delta="Company users"
+          delta={t("dashboard.companyUsers")}
           accent="from-primary/20 via-primary/5 to-transparent"
         />
         <DashboardStatCard
-          label="Total Employees"
+          label={t("dashboard.totalEmployees")}
           value={isLoading ? "..." : String(stats?.totalEmployees ?? 0)}
-          delta="Team members"
+          delta={t("dashboard.teamMembers")}
           accent="from-primaryDark/20 via-primaryDark/5 to-transparent"
         />
         <DashboardStatCard
-          label="Total Reports"
+          label={t("dashboard.totalReports")}
           value={isLoading ? "..." : String(stats?.totalReports ?? 0)}
-          delta="Total submitted"
+          delta={t("dashboard.totalSubmitted")}
           accent="from-success/20 via-success/5 to-transparent"
         />
         <DashboardStatCard
-          label="Active Users"
+          label={t("dashboard.activeUsers")}
           value={isLoading ? "..." : String(stats?.activeUsers ?? 0)}
-          delta="Active accounts"
+          delta={t("dashboard.activeAccounts")}
           accent="from-warning/20 via-warning/5 to-transparent"
         />
       </div>
@@ -86,13 +87,13 @@ export function AdminDashboardContent() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <DashboardPanel title="Platform Health" subtitle="Current state of the workflow engine">
+        <DashboardPanel title={t("dashboard.platformHealth")} subtitle={t("dashboard.platformHealthSubtitle")}>
           <div className="space-y-4">
             {[
-              ["Auth Service", "Healthy", "text-success"],
-              ["MongoDB Connection", "Healthy", "text-success"],
-              ["PDF Generation", "Queued", "text-warning"],
-              ["Audit Logging", "Healthy", "text-success"]
+              [t("dashboard.authService"), t("dashboard.healthy"), "text-success"],
+              [t("dashboard.mongoDbConnection"), t("dashboard.healthy"), "text-success"],
+              [t("dashboard.pdfGeneration"), t("dashboard.queued"), "text-warning"],
+              [t("dashboard.auditLogging"), t("dashboard.healthy"), "text-success"]
             ].map(([label, status, color]) => (
               <div key={label} className="flex items-center justify-between rounded-2xl border px-4 py-3">
                 <div className="font-medium">{label}</div>
@@ -102,17 +103,17 @@ export function AdminDashboardContent() {
           </div>
         </DashboardPanel>
 
-        <DashboardPanel title="Admin Priorities" subtitle="Most common next actions">
+        <DashboardPanel title={t("dashboard.adminPriorities")} subtitle={t("dashboard.adminPrioritiesSubtitle")}>
           <div className="space-y-3">
             {[
-              "Add or suspend users",
-              "Review locked reports",
-              "Inspect audit trails",
-              "Update system settings"
+              t("dashboard.addOrSuspendUsers"),
+              t("dashboard.reviewLockedReports"),
+              t("dashboard.inspectAuditTrails"),
+              t("dashboard.updateSystemSettings")
             ].map((item) => (
               <div key={item} className="flex items-center justify-between rounded-2xl border bg-background/70 px-4 py-3">
                 <div className="text-sm">{item}</div>
-                <Badge variant="soft">Open</Badge>
+                <Badge variant="soft">{t("dashboard.open")}</Badge>
               </div>
             ))}
           </div>

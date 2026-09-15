@@ -15,6 +15,7 @@ import type { SessionUser } from "@/lib/types";
 import { ReportField, ReportInput, ReportSelect, ReportTextarea } from "@/components/forms/report-controls";
 import { ConstructionReportFields } from "./construction-report-fields";
 import { MarketingReportFields } from "./marketing-report-fields";
+import { useTranslation } from "@/lib/i18n";
 
 type ApprovalItem = {
   particulars: string;
@@ -67,6 +68,7 @@ type TeamMeetingUpdateItem = {
 };
 
 export function MarketingReportForm() {
+  const { t } = useTranslation();
   const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
   const [isActuallySubmitting, setIsActuallySubmitting] = useState(false);
@@ -249,7 +251,6 @@ export function MarketingReportForm() {
           pendingTasks?: string[];
           blockerTasks?: string[];
           completedDraft?: string;
-          pendingDraft?: string;
           pendingDraft?: string;
           blockerDraft?: string;
           workPlanItems?: any[]; materialItems?: any[]; tomorrowWorkPlanItems?: any[]; marketingSelfItems?: any[]; marketingClientItems?: any[]; };
@@ -469,19 +470,7 @@ export function MarketingReportForm() {
             });
           }
         }
-        let hasMarketingError = false;
-        const messages = parsed.error.issues.map((issue) => {
-          if (issue.path[0] === "marketingSelfItems" || issue.path[0] === "marketingClientItems") {
-            hasMarketingError = true;
-            return null;
-          }
-          return issue.message;
-        }).filter(Boolean);
-        
-        if (hasMarketingError) {
-          messages.push("Please fill all mandatory fields (*) correctly in the Marketing tables.");
-        }
-        
+        const messages = parsed.error.issues.map((issue) => issue.message).filter(Boolean);
         const uniqueMessages = Array.from(new Set(messages));
         setMessage(uniqueMessages.length ? uniqueMessages.join(" | ") : "Please fix the highlighted fields and try again.");
         return;
@@ -520,27 +509,48 @@ export function MarketingReportForm() {
     }
   };
 
-  if (existingReportNeedsEditAccess && existingReport) {
+  if (existingReport && (currentUser?.role === "team_lead" || existingReportNeedsEditAccess)) {
+    if (currentUser?.role === "team_member" || currentUser?.role === "team_lead") {
+      const returnPath = "/marketing/my-reports";
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border bg-card p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-foreground">Report Already Submitted</h3>
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">
+              {currentUser?.role === "team_lead"
+                ? "You’ve already submitted today’s report. To make changes, please use the Edit option."
+                : "You’ve already submitted today’s report. To make changes, please request edit access."}
+            </p>
+            <div className="mt-6 flex justify-end">
+              <Button onClick={() => router.push(returnPath)}>
+                OK
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="space-y-4">
         <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">{existingReport.teamName}</Badge>
             <Badge variant="outline">{new Intl.DateTimeFormat("en-IN", { dateStyle: "medium" }).format(new Date(existingReport.reportDate))}</Badge>
-            {existingReport.editAccessRequested ? <Badge variant="outline">Edit requested</Badge> : null}
+            {existingReport.editAccessRequested ? <Badge variant="outline">{t("reports.editRequested")}</Badge> : null}
           </div>
-          <h3 className="mt-3 text-base font-semibold text-amber-950">Report already submitted</h3>
+          <h3 className="mt-3 text-base font-semibold text-amber-950">{t("reports.noReportsSubmitted")}</h3>
           <p className="mt-2 text-sm leading-6 text-amber-900">
-            This report cannot be edited from the create page until edit access is enabled by your team lead or manager.
+            {t("reports.tmEditNotice")}
           </p>
         </div>
         <div className="rounded-2xl border bg-background/70 p-4">
-          <div className="text-xs font-semibold uppercase tracking-[0.25em] text-muted-foreground">Completed Work</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.25em] text-muted-foreground">{t("reports.completedTasks")}</div>
           <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground">{existingReport.completedWork || "N/A"}</div>
         </div>
         {message ? <p className={`text-sm ${message.toLowerCase().includes("success") ? "text-success" : "text-destructive font-medium"}`}>{message}</p> : null}
         <Button type="button" disabled={Boolean(existingReport.editAccessRequested)} onClick={requestEditAccess}>
-          {existingReport.editAccessRequested ? "Edit Requested" : "Request Edit Access"}
+          {existingReport.editAccessRequested ? t("reports.editRequested") : t("reports.requestEdit")}
         </Button>
       </div>
     );
@@ -548,16 +558,18 @@ export function MarketingReportForm() {
 
   return (
     <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSubmit(onSubmit)}>
-      <div className="md:col-span-2 rounded-2xl border bg-background/70 p-4">
-        <div className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Submitting as</div>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Badge variant="soft">{currentUser?.name ?? "Loading user..."}</Badge>
-          <span className="text-sm text-muted-foreground">{currentUser?.email ?? ""}</span>
-          {resolvedSelectedTeam ? <Badge variant="outline">{formatDisplayName(resolvedSelectedTeam)}</Badge> : null}
-          <Badge variant="soft" className="bg-amber-100 text-amber-800 hover:bg-amber-100">Status: Draft</Badge>
+      {currentUser?.role !== "team_lead" && (
+        <div className="md:col-span-2 rounded-2xl border bg-background/70 p-4">
+          <div className="text-xs uppercase tracking-[0.25em] text-muted-foreground">{t("reports.editingAs")}</div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Badge variant="soft">{currentUser?.name ?? t("common.loading")}</Badge>
+            <span className="text-sm text-muted-foreground">{currentUser?.email ?? ""}</span>
+            {resolvedSelectedTeam ? <Badge variant="outline">{formatDisplayName(resolvedSelectedTeam)}</Badge> : null}
+            <Badge variant="soft" className="bg-amber-100 text-amber-800 hover:bg-amber-100">{t("common.status")}: {t("reports.pending")}</Badge>
+          </div>
+          <div className="mt-3 text-xs text-muted-foreground">{t("reports.completedWorkRequiredNotice")}</div>
         </div>
-        <div className="mt-3 text-xs text-muted-foreground">Only completed work is required. All other fields are optional.</div>
-      </div>
+      )}
       {!hasTeamAssignment ? (
         <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/35 dark:text-amber-100">
           No team type is assigned to this account yet, so reports cannot be submitted. Please contact an admin or your manager.
@@ -568,12 +580,12 @@ export function MarketingReportForm() {
         <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 dark:border-amber-900/60 dark:bg-amber-950/35">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-700 dark:text-amber-200">Team Meeting Updates</div>
+              <div className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-700 dark:text-amber-200">{t("reports.dailyMeetingUpdates")}</div>
               <p className="mt-2 text-sm text-muted-foreground dark:text-slate-300">
                 Daily meeting points submitted by your team members for the selected date.
               </p>
             </div>
-            <Badge variant="outline">{teamMeetingUpdates?.length ?? 0} updates</Badge>
+            <Badge variant="outline">{teamMeetingUpdates?.length ?? 0} {t("reports.teamMembers")}</Badge>
           </div>
           <div className="mt-4 space-y-3">
             {teamMeetingUpdates?.length ? (
@@ -585,7 +597,7 @@ export function MarketingReportForm() {
                       <div className="text-sm font-semibold text-foreground dark:text-slate-50">{item.name}</div>
                       {item.employeeRole ? (
                         <Badge variant="outline" className="dark:border-amber-800 dark:bg-amber-900/50 dark:text-amber-100">
-                          {item.employeeRole === "team_lead" ? "Team Lead" : "Team Member"}
+                          {item.employeeRole === "team_lead" ? t("roles.team_lead") : t("roles.team_member")}
                         </Badge>
                       ) : null}
                     </div>
@@ -596,62 +608,68 @@ export function MarketingReportForm() {
                 ))
             ) : (
               <div className="rounded-xl border border-dashed border-amber-200 bg-white p-4 text-sm text-muted-foreground dark:border-amber-900/50 dark:bg-slate-950/60 dark:text-slate-400">
-                No team member daily meeting updates found for this date.
+                {t("reports.noReportsSubmitted")}
               </div>
             )}
           </div>
         </div>
       ) : null}
-      <ReportField label="Team / Department" error={errors.teamName?.message}>
-        {teamOptions.length > 1 ? (
-          <ReportSelect
-            value={resolvedSelectedTeam}
-            onChange={(e) => {
-              const val = e.target.value;
-              setSelectedTeam(val);
-              setValue("teamName", val, { shouldDirty: true, shouldValidate: true });
-            }}
-          >
-            {teamOptions.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-          </ReportSelect>
-        ) : (
-          <>
-            <ReportInput disabled value={teamOptions[0]?.label || formatDisplayName(resolvedSelectedTeam)} />
-            <input type="hidden" {...register("teamName")} value={resolvedSelectedTeam} />
-          </>
-        )}
-      </ReportField>
-      <ReportField label="Report type" error={errors.reportType?.message}>
-        <ReportSelect {...register("reportType")}>
-          {["Daily Update", "Bug Fix", "Meeting Notes", "Blocker", "Attendance", "Other"].map((type) => (
-            <option key={type} value={type}>
-              {type}
-            </option>
-          ))}
-        </ReportSelect>
-      </ReportField>
-      <ReportField className="md:col-span-2" label="Attachment link" error={errors.attachmentLink?.message}>
+      {currentUser?.role === "team_lead" ? (
+        <>
+          <input type="hidden" {...register("teamName")} value={resolvedSelectedTeam} />
+          <input type="hidden" {...register("reportType")} />
+        </>
+      ) : (
+        <>
+          <ReportField label={t("reports.teamOrDepartment")} error={errors.teamName?.message}>
+            {teamOptions.length > 1 ? (
+              <ReportSelect
+                value={resolvedSelectedTeam}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSelectedTeam(val);
+                  setValue("teamName", val, { shouldDirty: true, shouldValidate: true });
+                }}
+              >
+                {teamOptions.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </ReportSelect>
+            ) : (
+              <>
+                <ReportInput disabled value={teamOptions[0]?.label || formatDisplayName(resolvedSelectedTeam)} />
+                <input type="hidden" {...register("teamName")} value={resolvedSelectedTeam} />
+              </>
+            )}
+          </ReportField>
+          <ReportField label={t("reports.reportTypeLabel")} error={errors.reportType?.message}>
+            <ReportSelect {...register("reportType")}>
+              {["Daily Update", "Bug Fix", "Meeting Notes", "Blocker", "Attendance", "Other"].map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </ReportSelect>
+          </ReportField>
+        </>
+      )}
+      <ReportField className="md:col-span-2" label={t("reports.attachments")} error={errors.attachmentLink?.message}>
         <ReportInput
           type="url"
           inputMode="url"
-          placeholder="Attachment link (optional)"
+          placeholder={t("reports.attachmentsPlaceholder")}
           {...register("attachmentLink")}
         />
       </ReportField>
       {showDailyMeetingUpdate ? (
         <ReportField
           className="md:col-span-2"
-          label="Daily meeting update"
-          helperText={
-            "Optional. Add only points that were not already mentioned in the meeting."
-          }
+          label={t("reports.dailyMeetingUpdate")}
           error={errors.dailyMeetingUpdate?.message}
         >
-          <ReportTextarea placeholder="Add any new meeting points here" {...register("dailyMeetingUpdate")} />
+          <ReportTextarea placeholder={t("reports.dailyMeetingUpdate")} {...register("dailyMeetingUpdate")} />
         </ReportField>
       ) : null}
       {(!isConstructionTeam && !isMarketingTeam) ? (
@@ -828,9 +846,11 @@ export function MarketingReportForm() {
         </div>
       ) : null}
       {message ? <p className={`text-sm md:col-span-2 ${message.toLowerCase().includes("success") ? "text-success" : "text-destructive font-medium"}`}>{message}</p> : null}
-      <Button className="md:col-span-2 w-fit" type="submit" disabled={isActuallySubmitting || !hasTeamAssignment}>
-        {isActuallySubmitting ? (existingReport ? "Saving..." : "Submitting...") : existingReport ? "Save Changes" : "Submit Report"}
-      </Button>
+      <div className="md:col-span-2 flex justify-end">
+        <Button className="w-fit" type="submit" disabled={isActuallySubmitting || !hasTeamAssignment}>
+          {isActuallySubmitting ? (existingReport ? t("common.saving") : t("common.submitting")) : existingReport ? t("common.saveChanges") : t("reports.createReport")}
+        </Button>
+      </div>
     </form>
   );
 }

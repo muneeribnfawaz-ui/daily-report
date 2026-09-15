@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { TeamTypeForm } from "@/components/admin/team-type-form";
+import { useTranslation } from "@/lib/i18n";
 
 type TeamTypeRecord = {
   id: string;
@@ -25,18 +26,22 @@ type TeamTypeRecord = {
 
 export function TeamTypesManager() {
   const queryClient = useQueryClient();
+  const { t, isRtl } = useTranslation();
   const [search, setSearch] = useState("");
   const [activeModal, setActiveModal] = useState<"create" | "edit" | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedDept, setSelectedDept] = useState<string>("all");
+  const [selectedCompany, setSelectedCompany] = useState<string>("");
 
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
     if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("daily_report_selected_department");
-      if (stored) setSelectedDept(stored);
+      const storedDept = localStorage.getItem("daily_report_selected_department");
+      if (storedDept) setSelectedDept(storedDept);
+      const storedComp = localStorage.getItem("daily_report_selected_company");
+      if (storedComp) setSelectedCompany(storedComp);
     }
     const handleDeptChange = (e: Event) => {
       const customEvent = e as CustomEvent<string>;
@@ -44,16 +49,31 @@ export function TeamTypesManager() {
         setSelectedDept(customEvent.detail);
       }
     };
+    const handleCompanyChange = (e: Event) => {
+      const customEvent = e as CustomEvent<string>;
+      if (customEvent.detail) {
+        setSelectedCompany(customEvent.detail);
+      }
+    };
     window.addEventListener("department-changed", handleDeptChange);
-    return () => window.removeEventListener("department-changed", handleDeptChange);
+    window.addEventListener("company-changed", handleCompanyChange);
+    return () => {
+      window.removeEventListener("department-changed", handleDeptChange);
+      window.removeEventListener("company-changed", handleCompanyChange);
+    };
   }, []);
 
   const { data, isLoading, isError } = useQuery<TeamTypeRecord[]>({
-    queryKey: ["admin-team-types", selectedDept],
+    queryKey: ["admin-team-types", selectedDept, selectedCompany],
     queryFn: async () => {
-      const response = await api.get("/api/admin/team-types", {
-        params: { department: selectedDept, includeInactive: "true" }
-      });
+      const params: Record<string, string> = {
+        department: selectedDept,
+        includeInactive: "true"
+      };
+      if (selectedCompany && selectedCompany !== "all") {
+        params.workspaceId = selectedCompany;
+      }
+      const response = await api.get("/api/admin/team-types", { params });
       return (response.data?.data as TeamTypeRecord[]) ?? [];
     },
     refetchOnMount: "always",
@@ -87,7 +107,7 @@ export function TeamTypesManager() {
     return (
       <Card className="border-none shadow-none">
         <CardContent className="space-y-4 p-0 px-4 pb-4 dark:px-0 dark:pb-0">
-          <div className="px-4 py-6 text-sm text-muted-foreground">Loading team types...</div>
+          <div className="px-4 py-6 text-sm text-muted-foreground">{t("common.loading")}</div>
         </CardContent>
       </Card>
     );
@@ -98,45 +118,45 @@ export function TeamTypesManager() {
       <CardContent className="space-y-4 p-0 px-4 pb-4 dark:px-0 dark:pb-0">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="w-full md:max-w-sm">
-            <div className="mb-1 text-sm font-medium text-foreground">Search team types</div>
+            <div className="mb-1 text-sm font-medium text-foreground">{t("teamTypes.searchPlaceholder") || "Search team types"}</div>
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Search className={`pointer-events-none absolute top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground ${isRtl ? "right-3" : "left-3"}`} />
               <Input
-                className="pl-9"
-                placeholder="Search team name, department, or creator"
+                className={isRtl ? "pr-9 pl-3 text-right" : "pl-9 pr-3"}
+                placeholder={t("teamTypes.searchPlaceholder") || "Search team name, department, or creator"}
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
               />
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <Badge variant="soft">{visibleTeamTypes.length} team types</Badge>
+            <Badge variant="soft">{visibleTeamTypes.length} {t("nav.teamTypes")}</Badge>
             <Button
               onClick={() => {
                 setEditingId(null);
                 setActiveModal("create");
               }}
             >
-              <Plus className="mr-2 h-4 w-4" /> Create Team Type
+              <Plus className="mr-2 rtl:ml-2 rtl:mr-0 h-4 w-4" /> {t("teamTypes.createTeamType")}
             </Button>
           </div>
         </div>
 
         <div className="overflow-hidden rounded-xl border border-cardBorder">
           <div className="grid grid-cols-12 gap-3 border-b bg-muted/40 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-            <div className="col-span-3">Show Name</div>
-            <div className="col-span-3">Department</div>
-            <div className="col-span-2">Internal Name</div>
-            <div className="col-span-2">Status</div>
-            <div className="col-span-2 text-right">Actions</div>
+            <div className="col-span-3">{t("teamTypes.teamName")}</div>
+            <div className="col-span-3">{t("common.department")}</div>
+            <div className="col-span-2">{t("teamTypes.internalName")}</div>
+            <div className="col-span-2">{t("common.status")}</div>
+            <div className="col-span-2 text-right rtl:text-left">{t("common.actions")}</div>
           </div>
           <div className="divide-y">
             {isLoading ? (
-              <div className="px-4 py-6 text-sm text-muted-foreground">Loading team types...</div>
+              <div className="px-4 py-6 text-sm text-muted-foreground">{t("common.loading")}</div>
             ) : isError ? (
-              <div className="px-4 py-6 text-sm text-danger">Failed to load team types.</div>
+              <div className="px-4 py-6 text-sm text-danger">{t("common.somethingWentWrong")}</div>
             ) : visibleTeamTypes.length === 0 ? (
-              <div className="px-4 py-6 text-sm text-muted-foreground">No team types found.</div>
+              <div className="px-4 py-6 text-sm text-muted-foreground">{t("teamTypes.noTeamTypesFound")}</div>
             ) : (
               visibleTeamTypes.map((teamType) => (
                 <div key={teamType.id || teamType._id} className="grid grid-cols-12 items-center gap-3 px-4 py-4 text-sm">
@@ -164,10 +184,10 @@ export function TeamTypesManager() {
                   <div className="col-span-2 text-muted-foreground text-xs font-mono">{teamType.name}</div>
                   <div className="col-span-2">
                     <Badge variant={teamType.isActive ? "soft" : "outline"}>
-                      {teamType.isDeleted ? "Deleted" : teamType.isActive ? "Active" : "Inactive"}
+                      {teamType.isDeleted ? "Deleted" : teamType.isActive ? t("common.active") : t("common.inactive")}
                     </Badge>
                   </div>
-                  <div className="col-span-2 flex justify-end">
+                  <div className="col-span-2 flex justify-end rtl:justify-start">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -176,7 +196,7 @@ export function TeamTypesManager() {
                         setActiveModal("edit");
                       }}
                     >
-                      <Edit2 className="mr-1 h-3.5 w-3.5" /> Edit
+                      <Edit2 className="mr-1 rtl:ml-1 rtl:mr-0 h-3.5 w-3.5" /> {t("common.edit")}
                     </Button>
                   </div>
                 </div>
@@ -187,7 +207,7 @@ export function TeamTypesManager() {
 
         <div className="flex items-center gap-3 pb-2 dark:pb-0">
           <Button variant="outline" onClick={() => queryClient.invalidateQueries({ queryKey: ["admin-team-types"] })}>
-            Refresh
+            {t("common.refresh")}
           </Button>
         </div>
       </CardContent>
@@ -197,7 +217,7 @@ export function TeamTypesManager() {
           <div className="w-full max-w-lg rounded-xl border bg-card p-6 shadow-xl space-y-4">
             <div className="flex items-center justify-between border-b pb-3">
               <h3 className="text-base font-semibold text-foreground">
-                {activeModal === "create" ? "Create New Team Type" : "Edit Team Type"}
+                {activeModal === "create" ? t("teamTypes.titleCreate") : t("teamTypes.titleEdit")}
               </h3>
               <Button variant="ghost" size="sm" onClick={() => setActiveModal(null)}>
                 ✕

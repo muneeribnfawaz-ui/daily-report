@@ -33,15 +33,25 @@ export const adminCreateReportManagerSchema = z.object({
   teamName: z.string().min(1)
 });
 
-export const tenDigitPhoneSchema = z
+import { validateInternationalPhone, formatToE164 } from "@/lib/phone";
+
+export const internationalPhoneSchema = z
   .string()
-  .transform((val) => val.replace(/[\s-]/g, ""))
-  .refine((val) => /^\d{10}$/.test(val), {
-    message: "Phone number must be exactly 10 digits"
+  .min(1, "Phone number is required")
+  .superRefine((val, ctx) => {
+    const validation = validateInternationalPhone(val);
+    if (!validation.isValid) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: validation.message || "Invalid phone number"
+      });
+    }
   })
-  .refine((val) => !/^(?:0{10}|1{10}|2{10}|3{10}|4{10}|5{10}|6{10}|7{10}|8{10}|9{10}|1234567890)$/.test(val), {
-    message: "Sequential or repetitive dummy numbers are not allowed"
+  .transform((val) => {
+    return formatToE164(val);
   });
+
+export const tenDigitPhoneSchema = internationalPhoneSchema;
 
 export const adminCreateUserSchema = z.object({
   firstName: z
@@ -128,7 +138,11 @@ export const adminUpdateUserSchema = z.object({
     .refine((val) => !val || /^[a-zA-Z\s'-]+$/.test(val), {
       message: "Last name must contain only letters"
     }),
-  phone: z.string().min(7).optional(),
+  phone: z.preprocess((value) => {
+    if (typeof value !== "string") return value;
+    const trimmed = value.trim();
+    return trimmed === "" ? undefined : trimmed;
+  }, internationalPhoneSchema.optional()),
   empID: z.string().min(2).optional(),
   workspaceId: z.string().optional(),
   role: z.enum(AUTH_ROLE_OPTIONS).optional(),
@@ -302,6 +316,25 @@ export const nextDayApprovalItemSchema = z.object({
   approval: z.enum(["pending", "yes", "no"]).optional().default("pending")
 });
 
+export function isValidEmail(email?: string | null): boolean {
+  if (!email || !email.trim()) return false;
+  const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+  if (!emailRegex.test(email.trim())) return false;
+  const parts = email.trim().split("@");
+  if (parts.length !== 2) return false;
+  const domain = parts[1];
+  if (!domain.includes(".")) return false;
+  const domainParts = domain.split(".");
+  if (domainParts.some((p) => p.length === 0)) return false;
+  if (domainParts[domainParts.length - 1].length < 2) return false;
+  return true;
+}
+
+export function isValidMobile(mobile?: string | null): boolean {
+  if (!mobile) return false;
+  return /^\d{10}$/.test(mobile.trim());
+}
+
 export const dailyReportSchema = z.object({
   workspaceId: z.string().optional(),
   teamName: z.union([z.string().min(1), z.literal("")]).optional(),
@@ -340,7 +373,6 @@ export const dailyReportSchema = z.object({
     unit: z.string().optional().default(""),
     plannedQuantity: z.string().optional().default("")
   })).optional().default([]),
-  
   // Marketing Report Fields
   marketingSelfItems: z.array(z.object({
     date: z.string().optional().default(""),
@@ -348,7 +380,7 @@ export const dailyReportSchema = z.object({
     clientName: z.string().min(1, "Client Name is required"),
     companyName: z.string().min(1, "Company Name is required"),
     clientType: z.string().min(1, "Client Type is required"),
-    mobileNo: z.string().regex(/^\+?[0-9\s\-()]{7,25}$/, "Invalid phone number format"),
+    mobileNo: z.string().min(1, "Mobile number is required").regex(/^\d{10}$/, "Mobile number must be exactly 10 digits."),
     location: z.string().min(1, "Location is required"),
     referredBy: z.string().min(1, "Referred By is required"),
     discussionSummary: z.string().min(1, "Discussion Summary is required"),
@@ -371,8 +403,8 @@ export const dailyReportSchema = z.object({
     companyName: z.string().min(1, "Company Name is required"),
     clientType: z.string().min(1, "Client Type is required"),
     contactPerson: z.string().min(1, "Contact Person is required"),
-    mobileNo: z.string().regex(/^\+?[0-9\s\-()]{7,25}$/, "Invalid phone number format"),
-    email: z.string().email("Invalid email format"),
+    mobileNo: z.string().min(1, "Mobile number is required").regex(/^\d{10}$/, "Mobile number must be exactly 10 digits."),
+    email: z.string().min(1, "Email is required").refine(isValidEmail, "Please enter a valid email address."),
     projectType: z.string().min(1, "Project Type is required"),
     requirementDiscussed: z.string().min(1, "Requirement Discussed is required"),
     projectStage: z.string().min(1, "Project Stage is required"),
@@ -498,8 +530,14 @@ const numericField = z.preprocess(
 );
 
 const financeItemSchema = z.object({
-  particulars: z.string().min(1, "Particulars is required"),
-  description: z.string().optional().default(""),
+  particulars: z.preprocess(
+    (v) => (typeof v === "string" ? v.trim() : v),
+    z.string().min(1, "Particulars is required")
+  ),
+  description: z.preprocess(
+    (v) => (typeof v === "string" ? v.trim() : (v ?? "")),
+    z.string().optional().default("")
+  ),
   amountINR: numericField,
   amountSAR: numericField,
   priority: z.enum(["low", "medium", "high", "urgent"]).optional().default("medium"),

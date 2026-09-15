@@ -90,9 +90,13 @@ export async function getFreshSessionUser(sessionUser: SessionUser) {
     return null;
   }
 
-  // Fetch active team types to dynamically filter out any corrupted/stale values
+  // Fetch active team types for this workspace to dynamically filter out any corrupted/stale values
+  const teamTypeWhere: Record<string, any> = { isActive: true, isDeleted: false };
+  if (member.workspaceId) {
+    teamTypeWhere.workspaceId = member.workspaceId;
+  }
   const activeTeamTypes = await db.teamType.findMany({
-    where: { isActive: true, isDeleted: false },
+    where: teamTypeWhere,
     select: { name: true }
   });
   const validTeamNames = activeTeamTypes.map((t) => t.name);

@@ -25,6 +25,12 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
+import { useTranslation } from "@/lib/i18n";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import { decryptPayload } from "@/lib/crypto";
+import { useSelectedCompany } from "@/hooks/use-selected-company";
+
 export type RequestItemData = {
   reportId: string;
   reportDate: Date | string;
@@ -47,7 +53,7 @@ export type RequestItemData = {
 };
 
 interface MoneyRequestsTableProps {
-  initialRequests: RequestItemData[];
+  initialRequests?: RequestItemData[];
   canCreateRequest: boolean;
   userRole?: string;
   canForward?: boolean;
@@ -72,23 +78,24 @@ function formatDate(value: Date | string) {
 }
 
 function PriorityBadge({ priority }: { priority?: string }) {
+  const { t } = useTranslation();
   const p = priority?.toLowerCase() || "medium";
   const variants: Record<string, { className: string; label: string }> = {
     urgent: {
       className: "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/15 dark:text-rose-300 font-bold",
-      label: "Urgent"
+      label: t("moneyRequests.priorityUrgent", "Urgent")
     },
     high: {
       className: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300 font-semibold",
-      label: "High"
+      label: t("moneyRequests.priorityHigh", "High")
     },
     medium: {
       className: "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/15 dark:text-sky-300",
-      label: "Medium"
+      label: t("moneyRequests.priorityMedium", "Medium")
     },
     low: {
       className: "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-700/60 dark:bg-slate-800/60 dark:text-slate-300",
-      label: "Low"
+      label: t("moneyRequests.priorityLow", "Low")
     }
   };
   const v = variants[p] || variants.medium;
@@ -99,26 +106,52 @@ function PriorityBadge({ priority }: { priority?: string }) {
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, userRole }: { status: string; userRole?: string }) {
+  const { t } = useTranslation();
+  if (userRole === "ceo") {
+    if (status === "pending") {
+      return (
+        <Badge
+          variant="outline"
+          className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold shadow-none border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/15 dark:text-sky-300"
+        >
+          <Clock className="h-3 w-3" />
+          <span>{t("moneyRequests.waitingForHod", "Waiting for HOD's Forward")}</span>
+        </Badge>
+      );
+    }
+    if (status === "forwarded_to_ceo") {
+      return (
+        <Badge
+          variant="outline"
+          className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold shadow-none border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300"
+        >
+          <Clock className="h-3 w-3" />
+          <span>{t("moneyRequests.pending", "Pending")}</span>
+        </Badge>
+      );
+    }
+  }
+
   const variants: Record<string, { className: string; label: string; icon: any }> = {
     pending: {
       className: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300",
-      label: "Pending",
+      label: t("moneyRequests.pending", "Pending"),
       icon: Clock
     },
     forwarded_to_ceo: {
       className: "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/15 dark:text-indigo-300",
-      label: "Forwarded to CEO",
+      label: t("moneyRequests.forwardedToCeo", "Forwarded to CEO"),
       icon: Clock
     },
     approved: {
       className: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300",
-      label: "Approved",
+      label: t("moneyRequests.approved", "Approved"),
       icon: CheckCircle2
     },
     rejected: {
       className: "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/15 dark:text-rose-300",
-      label: "Rejected",
+      label: t("moneyRequests.rejected", "Rejected"),
       icon: XCircle
     }
   };
@@ -133,13 +166,16 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export function MoneyRequestsTable({
-  initialRequests,
+  initialRequests = [],
   canCreateRequest,
   userRole,
   canForward = false,
   canApprove = false
 }: MoneyRequestsTableProps) {
   const router = useRouter();
+  const { t, isRtl } = useTranslation();
+  const selectedCompanyId = useSelectedCompany();
+
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
@@ -154,25 +190,65 @@ export function MoneyRequestsTable({
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
 
+  const { data: queryRequests = initialRequests, refetch } = useQuery({
+    queryKey: ["money-requests-list", selectedCompanyId],
+    queryFn: async () => {
+      const params: Record<string, string> = { limit: "100" };
+      if (selectedCompanyId && selectedCompanyId !== "all") {
+        params.workspaceId = selectedCompanyId;
+      }
+      const res = await api.get("/api/money-requests", { params });
+      const payload = res.data;
+      let rawData: any[] = [];
+      if (payload?.encryptedData) {
+        rawData = (await decryptPayload(payload.encryptedData)) as any[];
+      } else {
+        rawData = (payload?.data || []) as any[];
+      }
+      return rawData.map((item: any) => ({
+        reportId: String(item.id || item._id),
+        reportDate: item.reportDate ? new Date(item.reportDate).toISOString() : new Date().toISOString(),
+        submittedBy: item.submittedBy,
+        submittedByName: item.submittedByName || "Finance User",
+        particulars: item.particulars || "N/A",
+        amountINR: item.amountINR || 0,
+        amountRiyal: item.amountSAR || 0,
+        reason: item.description || "",
+        priority: item.priority || "medium",
+        bankName: item.bankName || "",
+        revisedAmountINR: item.revisedAmountINR ?? null,
+        revisedAmountSAR: item.revisedAmountSAR ?? null,
+        revisionReference: item.revisionReference || "",
+        approval: item.status || "pending",
+        reviewedBy: item.reviewedBy || null,
+        reviewedByName: item.reviewedByName || "",
+        reviewedAt: item.reviewedAt ? new Date(item.reviewedAt).toISOString() : null,
+        reviewComment: item.reviewComment || ""
+      })) as RequestItemData[];
+    }
+  });
+
+  const currentRequests = queryRequests;
+
   const isHod = userRole === "hod" || canForward;
   const isCeoOrAdmin = userRole === "ceo" || userRole === "admin" || canApprove;
   const hasReviewRights = isHod || isCeoOrAdmin;
 
-  const totalAmountINR = initialRequests.reduce((acc, r) => acc + (r.amountINR || 0), 0);
-  const pendingCount = initialRequests.filter((r) => r.approval === "pending").length;
-  const forwardedCount = initialRequests.filter((r) => r.approval === "forwarded_to_ceo").length;
-  const approvedCount = initialRequests.filter((r) => r.approval === "approved").length;
-  const rejectedCount = initialRequests.filter((r) => r.approval === "rejected").length;
+  const totalAmountINR = currentRequests.reduce((acc, r) => acc + (r.amountINR || 0), 0);
+  const pendingCount = currentRequests.filter((r) => r.approval === "pending").length;
+  const forwardedCount = currentRequests.filter((r) => r.approval === "forwarded_to_ceo").length;
+  const approvedCount = currentRequests.filter((r) => r.approval === "approved").length;
+  const rejectedCount = currentRequests.filter((r) => r.approval === "rejected").length;
   
-  const approvedAmountINR = initialRequests
+  const approvedAmountINR = currentRequests
     .filter((r) => r.approval === "approved")
     .reduce((acc, r) => acc + (r.revisedAmountINR ?? r.amountINR ?? 0), 0);
-  const rejectedAmountINR = initialRequests
+  const rejectedAmountINR = currentRequests
     .filter((r) => r.approval === "rejected")
     .reduce((acc, r) => acc + (r.amountINR || 0), 0);
 
   const filteredRequests = useMemo(() => {
-    return initialRequests.filter((req) => {
+    return currentRequests.filter((req) => {
       if (statusFilter !== "all" && req.approval !== statusFilter) return false;
       if (priorityFilter !== "all" && req.priority !== priorityFilter) return false;
 
@@ -188,7 +264,7 @@ export function MoneyRequestsTable({
       }
       return true;
     });
-  }, [initialRequests, search, statusFilter, priorityFilter]);
+  }, [currentRequests, search, statusFilter, priorityFilter]);
 
   const handleAction = async (reportId: string, action: "forward" | "approve" | "reject", reason?: string) => {
     try {
@@ -206,7 +282,7 @@ export function MoneyRequestsTable({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message || "Failed to process request action");
+        throw new Error(data.message || t("moneyRequests.failedProcess", "Failed to process request action"));
       }
 
       if (action === "reject") {
@@ -214,9 +290,10 @@ export function MoneyRequestsTable({
         setRejectReason("");
       }
 
+      await refetch();
       router.refresh();
     } catch (err: any) {
-      setErrorMsg(err.message || "An error occurred");
+      setErrorMsg(err.message || t("common.errorOccurred", "An error occurred"));
     } finally {
       setActionLoadingId(null);
     }
@@ -241,7 +318,7 @@ export function MoneyRequestsTable({
     if (!reviseModalItem) return;
     const amount = Number(revisedAmountINRInput);
     if (isNaN(amount) || amount <= 0) {
-      setErrorMsg("Please enter a valid revised amount in INR.");
+      setErrorMsg(t("moneyRequests.enterValidAmount", "Please enter a valid revised amount in INR."));
       return;
     }
 
@@ -264,13 +341,14 @@ export function MoneyRequestsTable({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message || "Failed to revise and approve request");
+        throw new Error(data.message || t("moneyRequests.failedRevise", "Failed to revise and approve request"));
       }
 
       setReviseModalItem(null);
+      await refetch();
       router.refresh();
     } catch (err: any) {
-      setErrorMsg(err.message || "An error occurred");
+      setErrorMsg(err.message || t("common.errorOccurred", "An error occurred"));
     } finally {
       setActionLoadingId(null);
     }
@@ -282,20 +360,20 @@ export function MoneyRequestsTable({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="relative overflow-hidden rounded-2xl border border-cardBorder bg-card p-5 shadow-soft transition-all duration-200 hover:shadow-md dark:border-border/60">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total Requested</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("moneyRequests.totalRequested", "Total Requested")}</span>
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-500/10 text-sky-600 dark:bg-sky-500/20 dark:text-sky-400">
               <DollarSign className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-3">
             <div className="text-2xl font-bold tabular-nums tracking-tight text-foreground">{formatCurrency(totalAmountINR)}</div>
-            <div className="mt-1 text-xs text-muted-foreground">{initialRequests.length} total request items</div>
+            <div className="mt-1 text-xs text-muted-foreground">{t("moneyRequests.totalItems", { count: initialRequests.length }, `${initialRequests.length} total request items`)}</div>
           </div>
         </div>
 
         <div className="relative overflow-hidden rounded-2xl border border-cardBorder bg-card p-5 shadow-soft transition-all duration-200 hover:shadow-md dark:border-border/60">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total Approved</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("moneyRequests.totalApproved", "Total Approved")}</span>
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
               <CheckCircle2 className="h-4 w-4" />
             </div>
@@ -304,13 +382,13 @@ export function MoneyRequestsTable({
             <div className="text-2xl font-bold tabular-nums tracking-tight text-emerald-600 dark:text-emerald-400">
               {formatCurrency(approvedAmountINR)}
             </div>
-            <div className="mt-1 text-xs text-muted-foreground">{approvedCount} approved items</div>
+            <div className="mt-1 text-xs text-muted-foreground">{t("moneyRequests.approvedItems", { count: approvedCount }, `${approvedCount} approved items`)}</div>
           </div>
         </div>
 
         <div className="relative overflow-hidden rounded-2xl border border-cardBorder bg-card p-5 shadow-soft transition-all duration-200 hover:shadow-md dark:border-border/60">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pending / Forwarded</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("moneyRequests.pendingForwarded", "Pending / Forwarded")}</span>
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400">
               <Clock className="h-4 w-4" />
             </div>
@@ -320,14 +398,14 @@ export function MoneyRequestsTable({
               {pendingCount + forwardedCount}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {pendingCount} pending, {forwardedCount} forwarded to CEO
+              {pendingCount} {t("moneyRequests.pending", "pending")}, {forwardedCount} {t("moneyRequests.forwardedToCeo", "forwarded to CEO")}
             </div>
           </div>
         </div>
 
         <div className="relative overflow-hidden rounded-2xl border border-cardBorder bg-card p-5 shadow-soft transition-all duration-200 hover:shadow-md dark:border-border/60">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total Rejected</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("moneyRequests.totalRejected", "Total Rejected")}</span>
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-500/10 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400">
               <XCircle className="h-4 w-4" />
             </div>
@@ -336,7 +414,7 @@ export function MoneyRequestsTable({
             <div className="text-2xl font-bold tabular-nums tracking-tight text-rose-600 dark:text-rose-400">
               {formatCurrency(rejectedAmountINR)}
             </div>
-            <div className="mt-1 text-xs text-muted-foreground">{rejectedCount} rejected items</div>
+            <div className="mt-1 text-xs text-muted-foreground">{t("moneyRequests.rejectedItems", { count: rejectedCount }, `${rejectedCount} rejected items`)}</div>
           </div>
         </div>
       </div>
@@ -354,30 +432,59 @@ export function MoneyRequestsTable({
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            All <span className="ml-1 text-xs text-muted-foreground">({initialRequests.length})</span>
+            {t("common.all", "All")} <span className="ml-1 rtl:mr-1 rtl:ml-0 text-xs text-muted-foreground">({initialRequests.length})</span>
           </button>
-          <button
-            type="button"
-            onClick={() => setStatusFilter("pending")}
-            className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
-              statusFilter === "pending"
-                ? "bg-background text-foreground shadow-sm font-semibold dark:bg-card"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Pending <span className="ml-1 text-xs text-amber-600 dark:text-amber-400 font-semibold">({pendingCount})</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setStatusFilter("forwarded_to_ceo")}
-            className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
-              statusFilter === "forwarded_to_ceo"
-                ? "bg-background text-foreground shadow-sm font-semibold dark:bg-card"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Forwarded <span className="ml-1 text-xs text-indigo-600 dark:text-indigo-400 font-semibold">({forwardedCount})</span>
-          </button>
+          {userRole === "ceo" ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setStatusFilter("forwarded_to_ceo")}
+                className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
+                  statusFilter === "forwarded_to_ceo"
+                    ? "bg-background text-foreground shadow-sm font-semibold dark:bg-card"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {t("moneyRequests.pending", "Pending")} <span className="ml-1 rtl:mr-1 rtl:ml-0 text-xs text-amber-600 dark:text-amber-400 font-semibold">({forwardedCount})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter("pending")}
+                className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
+                  statusFilter === "pending"
+                    ? "bg-background text-foreground shadow-sm font-semibold dark:bg-card"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {t("moneyRequests.waitingForHod", "Waiting for HOD")} <span className="ml-1 rtl:mr-1 rtl:ml-0 text-xs text-sky-600 dark:text-sky-400 font-semibold">({pendingCount})</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => setStatusFilter("pending")}
+                className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
+                  statusFilter === "pending"
+                    ? "bg-background text-foreground shadow-sm font-semibold dark:bg-card"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {t("moneyRequests.pending", "Pending")} <span className="ml-1 rtl:mr-1 rtl:ml-0 text-xs text-amber-600 dark:text-amber-400 font-semibold">({pendingCount})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter("forwarded_to_ceo")}
+                className={`rounded-lg px-3 py-1.5 font-medium transition-colors ${
+                  statusFilter === "forwarded_to_ceo"
+                    ? "bg-background text-foreground shadow-sm font-semibold dark:bg-card"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {t("moneyRequests.forwarded", "Forwarded")} <span className="ml-1 rtl:mr-1 rtl:ml-0 text-xs text-indigo-600 dark:text-indigo-400 font-semibold">({forwardedCount})</span>
+              </button>
+            </>
+          )}
           <button
             type="button"
             onClick={() => setStatusFilter("approved")}
@@ -387,7 +494,7 @@ export function MoneyRequestsTable({
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            Approved <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400 font-semibold">({approvedCount})</span>
+            {t("moneyRequests.approved", "Approved")} <span className="ml-1 rtl:mr-1 rtl:ml-0 text-xs text-emerald-600 dark:text-emerald-400 font-semibold">({approvedCount})</span>
           </button>
           <button
             type="button"
@@ -398,19 +505,19 @@ export function MoneyRequestsTable({
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            Rejected <span className="ml-1 text-xs text-rose-600 dark:text-rose-400 font-semibold">({rejectedCount})</span>
+            {t("moneyRequests.rejected", "Rejected")} <span className="ml-1 rtl:mr-1 rtl:ml-0 text-xs text-rose-600 dark:text-rose-400 font-semibold">({rejectedCount})</span>
           </button>
         </div>
 
         {/* Search & Priority Selector */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[220px]">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className={`pointer-events-none absolute top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground ${isRtl ? "right-3" : "left-3"}`} />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search particulars, user, reason..."
-              className="h-9 pl-9 text-xs rounded-xl bg-background text-foreground"
+              placeholder={t("moneyRequests.searchPlaceholder", "Search particulars, user, reason...")}
+              className={`h-9 text-xs rounded-xl bg-background text-foreground ${isRtl ? "pr-9 pl-3 text-right" : "pl-9 pr-3"}`}
             />
           </div>
 
@@ -420,11 +527,11 @@ export function MoneyRequestsTable({
             aria-label="Filter by priority"
             className="h-9 rounded-xl border border-input bg-background text-foreground px-3 py-1 text-xs font-medium shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
           >
-            <option value="all">All Priorities</option>
-            <option value="urgent">Urgent</option>
-            <option value="high">High</option>
-            <option value="medium">Medium</option>
-            <option value="low">Low</option>
+            <option value="all">{t("moneyRequests.allPriorities", "All Priorities")}</option>
+            <option value="urgent">{t("moneyRequests.priorityUrgent", "Urgent")}</option>
+            <option value="high">{t("moneyRequests.priorityHigh", "High")}</option>
+            <option value="medium">{t("moneyRequests.priorityMedium", "Medium")}</option>
+            <option value="low">{t("moneyRequests.priorityLow", "Low")}</option>
           </select>
         </div>
       </div>
@@ -436,35 +543,35 @@ export function MoneyRequestsTable({
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/60 dark:bg-muted/30 text-muted-foreground">
               <FileText className="h-6 w-6" />
             </div>
-            <h3 className="mt-4 text-base font-semibold text-foreground">No Money Requests Found</h3>
+            <h3 className="mt-4 text-base font-semibold text-foreground">{t("moneyRequests.noRequestsFound", "No Money Requests Found")}</h3>
             <p className="mt-1 max-w-sm text-xs text-muted-foreground">
               {search || statusFilter !== "all" || priorityFilter !== "all"
-                ? "No money requests match your current filters. Try changing your search query or status filter."
-                : "No money requests or next-day approvals have been submitted yet."}
+                ? t("moneyRequests.noMatchFilter", "No money requests match your current filters. Try changing your search query or status filter.")
+                : t("moneyRequests.noRequestsSubmitted", "No money requests or next-day approvals have been submitted yet.")}
             </p>
             {canCreateRequest && !search && statusFilter === "all" ? (
               <Button asChild className="mt-4" size="sm">
                 <Link href="/finance/requests/create">
-                  <Plus className="mr-1.5 h-4 w-4" />
-                  Create Request
+                  <Plus className="mr-1.5 rtl:ml-1.5 rtl:mr-0 h-4 w-4" />
+                  {t("moneyRequests.createRequest", "Create Request")}
                 </Link>
               </Button>
             ) : null}
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm border-collapse min-w-[1020px]">
+            <table className="w-full text-left rtl:text-right text-sm border-collapse min-w-[1020px]">
               <thead>
                 <tr className="border-b bg-muted/40 dark:bg-muted/20 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  <th className="py-3.5 pl-5 pr-3 min-w-[240px]">Particulars & Details</th>
-                  <th className="py-3.5 px-3">Submitted By</th>
-                  <th className="py-3.5 px-3 text-center">Priority</th>
-                  <th className="py-3.5 px-3">Date</th>
-                  <th className="py-3.5 px-3 text-right">Requested Amount</th>
-                  <th className="py-3.5 px-3 text-right">Approved Money</th>
-                  <th className="py-3.5 px-3 text-center">Status</th>
+                  <th className="py-3.5 pl-5 pr-3 rtl:pr-5 rtl:pl-3 min-w-[240px]">{t("moneyRequests.particularsDetails", "Particulars & Details")}</th>
+                  <th className="py-3.5 px-3">{t("reports.submittedBy", "Submitted By")}</th>
+                  <th className="py-3.5 px-3 text-center">{t("moneyRequests.priority", "Priority")}</th>
+                  <th className="py-3.5 px-3">{t("common.date", "Date")}</th>
+                  <th className="py-3.5 px-3 text-right rtl:text-left">{t("moneyRequests.requestedAmount", "Requested Amount")}</th>
+                  <th className="py-3.5 px-3 text-right rtl:text-left">{t("moneyRequests.approvedMoney", "Approved Money")}</th>
+                  <th className="py-3.5 px-3 text-center">{t("common.status", "Status")}</th>
                   {hasReviewRights && (
-                    <th className="py-3.5 pr-5 pl-3 text-center min-w-[210px]">Actions</th>
+                    <th className="py-3.5 pr-5 pl-3 rtl:pl-5 rtl:pr-3 text-center min-w-[210px]">{t("common.actions", "Actions")}</th>
                   )}
                 </tr>
               </thead>
@@ -480,8 +587,8 @@ export function MoneyRequestsTable({
 
                   // HOD can forward pending requests to CEO or reject them with a reason
                   const canHodAction = isHod && !isCeoOrAdmin && isPending;
-                  // CEO or Admin can approve, revise, or reject pending/forwarded requests
-                  const canCeoAction = isCeoOrAdmin && (isPending || isForwarded);
+                  // CEO can approve, revise, or reject ONLY after HOD forward (i.e. isForwarded)
+                  const canCeoAction = userRole === "ceo" ? isForwarded : userRole === "admin" ? (isPending || isForwarded) : canApprove && isForwarded;
 
                   return (
                     <tr
@@ -490,7 +597,7 @@ export function MoneyRequestsTable({
                       className="group cursor-pointer transition-colors hover:bg-muted/60 dark:hover:bg-muted/30"
                     >
                       {/* Particulars & Details */}
-                      <td className="py-3.5 pl-5 pr-3">
+                      <td className="py-3.5 pl-5 pr-3 rtl:pr-5 rtl:pl-3">
                         <div className="font-semibold text-foreground">{req.particulars}</div>
                         {req.reason ? (
                           <div className="mt-0.5 text-xs text-muted-foreground line-clamp-2 max-w-[320px]">
@@ -504,7 +611,7 @@ export function MoneyRequestsTable({
                             <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-600 dark:text-rose-400" />
                             <div>
                               <span className="font-semibold">
-                                Rejection Reason{req.reviewedByName ? ` (${req.reviewedByName})` : ""}:
+                                {t("moneyRequests.rejectionReason", "Rejection Reason")}{req.reviewedByName ? ` (${req.reviewedByName})` : ""}:
                               </span>{" "}
                               <span>{req.reviewComment}</span>
                             </div>
@@ -515,7 +622,7 @@ export function MoneyRequestsTable({
                         {isForwarded && req.reviewedByName && (
                           <div className="mt-1.5 flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50/80 px-2 py-1 text-[11px] font-medium text-indigo-800 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300">
                             <Clock className="h-3 w-3 text-indigo-600 dark:text-indigo-400" />
-                            <span>Forwarded to CEO by <strong className="font-semibold">{req.reviewedByName}</strong></span>
+                            <span>{t("moneyRequests.forwardedBy", { name: req.reviewedByName }, `Forwarded to CEO by ${req.reviewedByName}`)}</span>
                           </div>
                         )}
                       </td>
@@ -542,7 +649,7 @@ export function MoneyRequestsTable({
                       </td>
 
                       {/* Requested Amount */}
-                      <td className="py-3.5 px-3 text-right tabular-nums">
+                      <td className="py-3.5 px-3 text-right rtl:text-left tabular-nums">
                         <div className="font-bold text-foreground">{formatCurrency(req.amountINR)}</div>
                         {req.amountRiyal > 0 ? (
                           <div className="text-[11px] text-muted-foreground">{formatSAR(req.amountRiyal)}</div>
@@ -550,7 +657,7 @@ export function MoneyRequestsTable({
                       </td>
 
                       {/* Revised / Approved Money */}
-                      <td className="py-3.5 px-3 text-right tabular-nums">
+                      <td className="py-3.5 px-3 text-right rtl:text-left tabular-nums">
                         {displayApprovedMoney !== null ? (
                           <div>
                             <span className="font-bold text-emerald-600 dark:text-emerald-400">
@@ -558,7 +665,7 @@ export function MoneyRequestsTable({
                             </span>
                             {hasRevision && (
                               <span className="block text-[10px] uppercase tracking-wider font-semibold text-amber-600 dark:text-amber-400">
-                                Revised ({req.revisionReference || "Revision"})
+                                {t("moneyRequests.revised", "Revised")} ({req.revisionReference || t("moneyRequests.revision", "Revision")})
                               </span>
                             )}
                           </div>
@@ -569,12 +676,12 @@ export function MoneyRequestsTable({
 
                       {/* Status */}
                       <td className="py-3.5 px-3 text-center">
-                        <StatusBadge status={req.approval} />
+                        <StatusBadge status={req.approval} userRole={userRole} />
                       </td>
 
                       {/* Actions Column for HOD, CEO, Admin */}
                       {hasReviewRights && (
-                        <td className="py-3.5 pr-5 pl-3 text-center" onClick={(e) => e.stopPropagation()}>
+                        <td className="py-3.5 pr-5 pl-3 rtl:pl-5 rtl:pr-3 text-center" onClick={(e) => e.stopPropagation()}>
                           {isLoading ? (
                             <div className="flex items-center justify-center">
                               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -588,8 +695,8 @@ export function MoneyRequestsTable({
                                 className="h-8 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white text-xs font-semibold px-2.5 shadow-sm"
                                 onClick={() => handleAction(req.reportId, "forward")}
                               >
-                                <Send className="mr-1 h-3.5 w-3.5" />
-                                Forward
+                                <Send className="mr-1 rtl:ml-1 rtl:mr-0 h-3.5 w-3.5" />
+                                {t("moneyRequests.forward", "Forward")}
                               </Button>
 
                               {/* HOD Action: Reject with Reason */}
@@ -599,8 +706,8 @@ export function MoneyRequestsTable({
                                 className="h-8 border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-500/40 dark:text-rose-300 dark:hover:bg-rose-500/20 text-xs font-semibold px-2.5"
                                 onClick={(e) => openRejectModal(e, req)}
                               >
-                                <XCircle className="mr-1 h-3.5 w-3.5" />
-                                Reject
+                                <XCircle className="mr-1 rtl:ml-1 rtl:mr-0 h-3.5 w-3.5" />
+                                {t("moneyRequests.reject", "Reject")}
                               </Button>
                             </div>
                           ) : canCeoAction ? (
@@ -612,8 +719,8 @@ export function MoneyRequestsTable({
                                 className="h-8 bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white text-xs font-semibold px-2 shadow-sm"
                                 onClick={() => handleAction(req.reportId, "approve")}
                               >
-                                <Check className="mr-1 h-3.5 w-3.5" />
-                                Approve
+                                <Check className="mr-1 rtl:ml-1 rtl:mr-0 h-3.5 w-3.5" />
+                                {t("moneyRequests.approve", "Approve")}
                               </Button>
 
                               {/* CEO Action: Revise & Approve */}
@@ -623,8 +730,8 @@ export function MoneyRequestsTable({
                                 className="h-8 border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/20 text-xs font-semibold px-2"
                                 onClick={(e) => openReviseModal(e, req)}
                               >
-                                <Edit3 className="mr-1 h-3.5 w-3.5" />
-                                Revise
+                                <Edit3 className="mr-1 rtl:ml-1 rtl:mr-0 h-3.5 w-3.5" />
+                                {t("moneyRequests.revise", "Revise")}
                               </Button>
 
                               {/* CEO Action: Reject with Reason */}
@@ -634,8 +741,8 @@ export function MoneyRequestsTable({
                                 className="h-8 border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-500/40 dark:text-rose-300 dark:hover:bg-rose-500/20 text-xs font-semibold px-2"
                                 onClick={(e) => openRejectModal(e, req)}
                               >
-                                <XCircle className="mr-1 h-3.5 w-3.5" />
-                                Reject
+                                <XCircle className="mr-1 rtl:ml-1 rtl:mr-0 h-3.5 w-3.5" />
+                                {t("moneyRequests.reject", "Reject")}
                               </Button>
                             </div>
                           ) : (
@@ -662,8 +769,8 @@ export function MoneyRequestsTable({
                   <Edit3 className="h-5 w-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-foreground">Revise & Approve Money Request</h3>
-                  <p className="text-xs text-muted-foreground">Adjust the approved money amount before approval</p>
+                  <h3 className="text-base font-bold text-foreground">{t("moneyRequests.reviseApproveTitle", "Revise & Approve Money Request")}</h3>
+                  <p className="text-xs text-muted-foreground">{t("moneyRequests.reviseApproveSubtitle", "Adjust the approved money amount before approval")}</p>
                 </div>
               </div>
               <Button
@@ -684,7 +791,7 @@ export function MoneyRequestsTable({
                 <span className="text-foreground font-bold">{formatCurrency(reviseModalItem.amountINR)}</span>
               </div>
               <div className="text-muted-foreground">
-                Submitted by <span className="font-medium text-foreground">{reviseModalItem.submittedByName}</span>
+                {t("reports.submittedBy", "Submitted by")} <span className="font-medium text-foreground">{reviseModalItem.submittedByName}</span>
               </div>
             </div>
 
@@ -692,7 +799,7 @@ export function MoneyRequestsTable({
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <label htmlFor="revised-amount-input" className="block text-xs font-semibold text-foreground">
-                  Revised Amount (INR) <span className="text-amber-600 dark:text-amber-400">*</span>
+                  {t("moneyRequests.revisedAmountInr", "Revised Amount (INR)")} <span className="text-amber-600 dark:text-amber-400">*</span>
                 </label>
                 <Input
                   id="revised-amount-input"
@@ -702,20 +809,20 @@ export function MoneyRequestsTable({
                     setRevisedAmountINRInput(e.target.value);
                     if (errorMsg) setErrorMsg("");
                   }}
-                  placeholder="Enter revised INR amount..."
+                  placeholder={t("moneyRequests.enterRevisedAmount", "Enter revised INR amount...")}
                   className="w-full text-xs rounded-xl bg-background border-input text-foreground"
                 />
               </div>
 
               <div className="space-y-1.5">
                 <label htmlFor="revision-reference-input" className="block text-xs font-semibold text-foreground">
-                  Revision Reference / Note
+                  {t("moneyRequests.revisionReference", "Revision Reference / Note")}
                 </label>
                 <Input
                   id="revision-reference-input"
                   value={revisionReferenceInput}
                   onChange={(e) => setRevisionReferenceInput(e.target.value)}
-                  placeholder="e.g. Approved with revised budget allocation"
+                  placeholder={t("moneyRequests.revisionRefPlaceholder", "e.g. Approved with revised budget allocation")}
                   className="w-full text-xs rounded-xl bg-background border-input text-foreground"
                 />
               </div>
@@ -737,7 +844,7 @@ export function MoneyRequestsTable({
                 onClick={() => setReviseModalItem(null)}
                 disabled={actionLoadingId !== null}
               >
-                Cancel
+                {t("common.cancel", "Cancel")}
               </Button>
               <Button
                 type="button"
@@ -748,11 +855,11 @@ export function MoneyRequestsTable({
               >
                 {actionLoadingId === reviseModalItem.reportId ? (
                   <>
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                    Saving...
+                    <Loader2 className="mr-1.5 rtl:ml-1.5 rtl:mr-0 h-3.5 w-3.5 animate-spin" />
+                    {t("common.saving", "Saving...")}
                   </>
                 ) : (
-                  "Confirm & Approve Revision"
+                  t("moneyRequests.confirmApproveRevision", "Confirm & Approve Revision")
                 )}
               </Button>
             </div>
@@ -770,8 +877,8 @@ export function MoneyRequestsTable({
                   <XCircle className="h-5 w-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-foreground">Reject Money Request</h3>
-                  <p className="text-xs text-muted-foreground">Provide a reason for rejecting this request</p>
+                  <h3 className="text-base font-bold text-foreground">{t("moneyRequests.rejectTitle", "Reject Money Request")}</h3>
+                  <p className="text-xs text-muted-foreground">{t("moneyRequests.rejectSubtitle", "Provide a reason for rejecting this request")}</p>
                 </div>
               </div>
               <Button
@@ -792,7 +899,7 @@ export function MoneyRequestsTable({
                 <span className="text-rose-600 dark:text-rose-400 font-bold">{formatCurrency(rejectModalItem.amountINR)}</span>
               </div>
               <div className="text-muted-foreground">
-                Submitted by <span className="font-medium text-foreground">{rejectModalItem.submittedByName}</span> on {formatDate(rejectModalItem.reportDate)}
+                {t("reports.submittedBy", "Submitted by")} <span className="font-medium text-foreground">{rejectModalItem.submittedByName}</span> {t("common.on", "on")} {formatDate(rejectModalItem.reportDate)}
               </div>
               {rejectModalItem.reason ? (
                 <div className="text-xs text-muted-foreground italic border-t border-border/40 pt-1 mt-1">
@@ -804,7 +911,7 @@ export function MoneyRequestsTable({
             {/* Rejection Reason Form */}
             <div className="space-y-2">
               <label htmlFor="rejection-reason-input" className="block text-xs font-semibold text-foreground">
-                Reason for Rejection <span className="text-rose-600 dark:text-rose-400">*</span>
+                {t("moneyRequests.reasonForRejection", "Reason for Rejection")} <span className="text-rose-600 dark:text-rose-400">*</span>
               </label>
               <Textarea
                 id="rejection-reason-input"
@@ -813,7 +920,7 @@ export function MoneyRequestsTable({
                   setRejectReason(e.target.value);
                   if (errorMsg) setErrorMsg("");
                 }}
-                placeholder="Enter specific reasons why this money request is being rejected..."
+                placeholder={t("moneyRequests.rejectReasonPlaceholder", "Enter specific reasons why this money request is being rejected...")}
                 rows={3}
                 className="w-full text-xs rounded-xl bg-background border-input text-foreground placeholder:text-muted-foreground"
               />
@@ -834,7 +941,7 @@ export function MoneyRequestsTable({
                 onClick={() => setRejectModalItem(null)}
                 disabled={actionLoadingId !== null}
               >
-                Cancel
+                {t("common.cancel", "Cancel")}
               </Button>
               <Button
                 type="button"
@@ -845,11 +952,11 @@ export function MoneyRequestsTable({
               >
                 {actionLoadingId === rejectModalItem.reportId ? (
                   <>
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                    Rejecting...
+                    <Loader2 className="mr-1.5 rtl:ml-1.5 rtl:mr-0 h-3.5 w-3.5 animate-spin" />
+                    {t("moneyRequests.rejecting", "Rejecting...")}
                   </>
                 ) : (
-                  "Confirm Rejection"
+                  t("moneyRequests.confirmRejection", "Confirm Rejection")
                 )}
               </Button>
             </div>

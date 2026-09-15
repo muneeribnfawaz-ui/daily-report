@@ -29,7 +29,58 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
   }
 
-  return NextResponse.json({ success: true, data: mapReportRelations({ ...report, canEdit: canEditDailyReport(report, user) }) });
+  const employee = await db.user.findUnique({ where: { id: String(report.employeeId) } });
+  const member = await db.workspaceMember.findFirst({
+    where: { userId: String(report.employeeId), workspaceId: report.workspaceId as string, isActive: true }
+  });
+  const effectiveRole = member?.role || employee?.role || "team_member";
+
+  let teamLeadReviews: any[] = [];
+  if (effectiveRole === "report_manager" || effectiveRole === "admin" || effectiveRole === "ceo" || effectiveRole === "hod") {
+    const dateStr = typeof report.reportDate === "string" 
+      ? (report.reportDate as string).slice(0, 10) 
+      : new Date(report.reportDate as Date).toISOString().slice(0, 10);
+    const dayStart = new Date(dateStr);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+
+    const tlReports = await db.dailyReport.findMany({
+      where: {
+        workspaceId: report.workspaceId as string,
+        reportDate: { gte: dayStart, lt: dayEnd },
+        OR: [
+          { reportManagerReviewedBy: String(report.employeeId) },
+          { reportManagerReviewedByName: employee?.name || (report.name as string) }
+        ]
+      },
+      select: {
+        id: true,
+        name: true,
+        teamName: true,
+        reportType: true,
+        reportDate: true,
+        status: true,
+        reportManagerStatus: true,
+        reportManagerReview: true,
+        reportManagerReviewedByName: true,
+        reportManagerReviewedAt: true
+      },
+      orderBy: { createdAt: "asc" }
+    });
+
+    teamLeadReviews = tlReports.filter((r) => Boolean(r.reportManagerStatus || r.reportManagerReview));
+  }
+
+  return NextResponse.json({
+    success: true,
+    data: mapReportRelations({
+      ...report,
+      _id: report.id,
+      employeeRole: effectiveRole,
+      teamLeadReviews,
+      canEdit: canEditDailyReport(report, { ...user, role: effectiveRole })
+    })
+  });
 }
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -48,9 +99,9 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     return NextResponse.json({ success: false, message: "Forbidden: You can only update your own report." }, { status: 403 });
   }
 
-  if ((user.role === "team_member" || user.role === "team_lead") && !canEditDailyReport(report, user)) {
+  if (user.role !== "admin" && !canEditDailyReport(report, user)) {
     return NextResponse.json(
-      { success: false, message: "Team members need edit access approval before editing a report." },
+      { success: false, message: "You do not have permission to edit this report or the edit window has expired." },
       { status: 423 }
     );
   }

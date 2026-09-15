@@ -6,6 +6,7 @@ import { Bell, Check, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import type { Route } from "next";
+import { useTranslation } from "@/lib/i18n";
 
 type NotificationItem = {
   id?: string;
@@ -18,21 +19,22 @@ type NotificationItem = {
   createdAt: string;
 };
 
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
 export function NotificationBell() {
+  const { t, isRtl } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
+
+  function timeAgo(dateStr: string): string {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const minutes = Math.floor(diff / 60_000);
+    if (minutes < 1) return t("common.justNow");
+    if (minutes < 60) return t("common.minuteAgo", { count: minutes });
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return t("common.hourAgo", { count: hours });
+    const days = Math.floor(hours / 24);
+    return t("common.dayAgo", { count: days });
+  }
 
   const { data } = useQuery({
     queryKey: ["notifications"],
@@ -83,20 +85,20 @@ export function NotificationBell() {
         size="sm"
         className="relative h-9 w-9 rounded-full px-0"
         onClick={() => setIsOpen(!isOpen)}
-        aria-label="Notifications"
+        aria-label={t("common.notifications")}
       >
         <Bell className="h-4 w-4" />
         {unreadCount > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-danger text-[10px] font-bold text-white shadow-md">
+          <span className="absolute -right-1 -top-1 rtl:-left-1 rtl:-right-auto flex h-5 w-5 items-center justify-center rounded-full bg-danger text-[10px] font-bold text-white shadow-md">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}
       </Button>
 
       {isOpen && (
-        <div className="fixed left-3 right-3 top-16 z-50 overflow-hidden rounded-xl border border-cardBorder bg-card shadow-2xl sm:absolute sm:left-auto sm:right-0 sm:top-11 sm:w-[380px]">
+        <div className="fixed left-3 right-3 top-16 z-50 overflow-hidden rounded-xl border border-cardBorder bg-card shadow-2xl sm:absolute sm:left-auto sm:right-0 rtl:sm:right-auto rtl:sm:left-0 sm:top-11 sm:w-[380px]">
           <div className="flex items-center justify-between border-b px-4 py-3">
-            <div className="text-sm font-semibold">Notifications</div>
+            <div className="text-sm font-semibold">{t("common.notifications")}</div>
             {unreadCount > 0 && (
               <button
                 type="button"
@@ -104,7 +106,7 @@ export function NotificationBell() {
                 onClick={() => markReadMutation.mutate({ markAllRead: true })}
               >
                 <Check className="h-3 w-3" />
-                Mark all read
+                {t("common.markAllRead")}
               </button>
             )}
           </div>
@@ -112,7 +114,7 @@ export function NotificationBell() {
           <div className="max-h-[360px] overflow-y-auto">
             {notifications.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                No notifications yet
+                {t("common.noNotificationsYet")}
               </div>
             ) : (
               notifications.map((n, idx) => {
@@ -148,7 +150,7 @@ export function NotificationBell() {
                                 setIsOpen(false);
                               }}
                             >
-                              View <ExternalLink className="h-2.5 w-2.5" />
+                              {t("common.view")} <ExternalLink className={`h-2.5 w-2.5 ${isRtl ? "rotate-180" : ""}`} />
                             </Link>
                           )}
                         </div>

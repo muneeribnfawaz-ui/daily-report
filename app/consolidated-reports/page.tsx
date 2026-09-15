@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
-import { DashboardPageHeader } from "@/components/dashboard/ui";
-import { ConsolidatedReportBrowser } from "@/components/consolidated/consolidated-report-browser";
+import { ConsolidatedReportsContent } from "@/components/consolidated/consolidated-reports-content";
 import { getCurrentUser } from "@/lib/auth";
 
 export default async function StandaloneConsolidatedReportsPage() {
@@ -15,21 +14,12 @@ export default async function StandaloneConsolidatedReportsPage() {
 
   return (
     <AppShell title="Consolidated Reports" role={user.role}>
-      <div className="space-y-6">
-        <DashboardPageHeader
-          eyebrow="Consolidated View"
-          title="Consolidated Reports"
-          description="Browse consolidated daily report summaries tailored to your enrolled department and role."
-        />
-        <ConsolidatedReportBrowser
-          endpoint="/api/consolidated-reports"
-          detailBaseHref="/consolidated-reports"
-          userDepartment={userPrimaryDept}
-          enrolledDepartments={enrolledDepartments}
-          enrolledTeams={user.teamNames || []}
-          userRole={user.role}
-        />
-      </div>
+      <ConsolidatedReportsContent
+        userPrimaryDept={userPrimaryDept}
+        enrolledDepartments={enrolledDepartments}
+        enrolledTeams={user.teamNames || []}
+        userRole={user.role}
+      />
     </AppShell>
   );
 }

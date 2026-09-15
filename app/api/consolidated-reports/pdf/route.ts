@@ -94,6 +94,7 @@ export async function GET(request: Request) {
       reportCount: data.reportCount,
       teamCount: data.teamCount,
       teamGroups: data.teamGroups,
+      departmentSections: data.departmentSections,
       title: reportTitle,
       generatedBy: user.name,
       subtitle: `${data.reportCount} reports · ${data.teamCount} teams`

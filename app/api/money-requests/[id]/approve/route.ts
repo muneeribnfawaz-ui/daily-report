@@ -5,6 +5,8 @@ import { canApproveFinanceReport, canForwardFinanceReport } from "@/lib/permissi
 import { logAuditEntry } from "@/lib/audit";
 import { getINRtoSARRate } from "@/lib/currency";
 import { encryptPayload, decryptPayload } from "@/lib/crypto";
+import { getCeoUserIdsForWorkspace } from "@/lib/notifications";
+import { isWorkspaceAuthorizedForUser } from "@/lib/workspace-context";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -55,6 +57,21 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
+    const isAuthorized = await isWorkspaceAuthorizedForUser(user, moneyRequest.workspaceId);
+    if (!isAuthorized) {
+      return NextResponse.json(
+        { success: false, status: "FORBIDDEN", statusCode: 4003, message: "Forbidden: You cannot review a money request from another company/workspace." },
+        { status: 403 }
+      );
+    }
+
+    if (moneyRequest.status === "approved" || moneyRequest.status === "rejected") {
+      return NextResponse.json(
+        { success: false, status: "VALIDATION_ERROR", statusCode: 4001, message: `Money request is already ${moneyRequest.status}.` },
+        { status: 400 }
+      );
+    }
+
     const isHod = user.role === "hod" || canForwardFinanceReport(user);
     const isCeo = user.role === "ceo" || canApproveFinanceReport(user) || user.role === "admin";
 
@@ -76,6 +93,26 @@ export async function POST(request: Request, context: RouteContext) {
     if (action === "forward" && !isHod && !isCeo) {
       return NextResponse.json(
         { success: false, status: "FORBIDDEN", statusCode: 4003, message: "Only HOD can forward money requests to CEO" },
+        { status: 403 }
+      );
+    }
+
+    if (action === "forward" && moneyRequest.status !== "pending") {
+      return NextResponse.json(
+        { success: false, status: "VALIDATION_ERROR", statusCode: 4001, message: "Only pending money requests can be forwarded to CEO." },
+        { status: 400 }
+      );
+    }
+
+    // Strict CEO Rule: CEO cannot approve, revise, or reject before HOD has forwarded it
+    if (user.role === "ceo" && (action === "approve" || action === "reject") && moneyRequest.status !== "forwarded_to_ceo") {
+      return NextResponse.json(
+        {
+          success: false,
+          status: "FORBIDDEN",
+          statusCode: 4003,
+          message: "CEO cannot approve, revise, or reject a money request before HOD has forwarded it."
+        },
         { status: 403 }
       );
     }
@@ -149,24 +186,25 @@ export async function POST(request: Request, context: RouteContext) {
       }
     });
 
-    // If forwarded by HOD, notify CEO users
+    // If forwarded by HOD, notify CEO users for this workspace
     if (action === "forward") {
-      const ceoUsers = await db.user.findMany({
-        where: { role: "ceo", isDeleted: false }
-      });
-      const ceoNotifications = ceoUsers.map((ceo) => ({
-        recipientId: ceo.id,
+      const ceoRecipientIds = await getCeoUserIdsForWorkspace(moneyRequest.workspaceId);
+      const validCeoIds = ceoRecipientIds.filter((id) => id !== user.id);
+
+      const ceoNotifications = validCeoIds.map((ceoId) => ({
+        recipientId: ceoId,
         type: "money_request_approval_request",
         title: "Money Request — Pending CEO Approval",
-        message: `${moneyRequest.submittedByName} submitted a money request for ${moneyRequest.particulars} (${moneyRequest.amountINR} INR). It was forwarded by ${user.name} and is awaiting your approval.`,
+        message: `${moneyRequest.submittedByName} submitted a money request for ${moneyRequest.particulars} (₹${Number(moneyRequest.amountINR).toLocaleString("en-IN")}). It was forwarded by ${user.name} and is awaiting your approval.`,
         metadata: {
           moneyRequestId: moneyRequest.id,
           particulars: moneyRequest.particulars,
           submittedBy: moneyRequest.submittedByName,
           action,
-          forwardedBy: user.name
+          forwardedBy: user.name,
+          workspaceId: moneyRequest.workspaceId
         },
-        linkUrl: `/finance/requests`
+        linkUrl: `/finance/requests/${moneyRequest.id}`
       }));
       if (ceoNotifications.length > 0) {
         await db.notification.createMany({ data: ceoNotifications });

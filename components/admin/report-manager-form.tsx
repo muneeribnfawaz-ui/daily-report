@@ -1,6 +1,7 @@
 "use client";
 
 import axios from "axios";
+import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { useQuery } from "@tanstack/react-query";
@@ -13,6 +14,7 @@ import { adminCreateReportManagerSchema } from "@/lib/validation";
 import { Button } from "@/components/ui/button";
 import { ReportField, ReportInput, ReportSelect } from "@/components/forms/report-controls";
 import { PasswordInput } from "@/components/forms/password-input";
+import { useTranslation } from "@/lib/i18n";
 
 type ReportManagerValues = z.infer<typeof adminCreateReportManagerSchema>;
 type TeamTypeOption = {
@@ -22,6 +24,8 @@ type TeamTypeOption = {
 };
 
 export function AdminReportManagerForm() {
+  const { t } = useTranslation();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -76,26 +80,29 @@ export function AdminReportManagerForm() {
         password: "",
         teamName: teamOptions[0]?.name ?? TEAM_OPTIONS[0]
       });
-      setMessage("Report manager created successfully.");
+      setMessage(t("users.userCreated"));
       await queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      setTimeout(() => {
+        router.push("/admin/users");
+      }, 500);
     } catch (requestError) {
       const responseMessage = axios.isAxiosError(requestError) ? requestError.response?.data?.message : null;
-      setError(responseMessage ?? "Failed to create report manager.");
+      setError(responseMessage ?? t("common.somethingWentWrong"));
     }
   };
 
   return (
     <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSubmit(onSubmit)}>
-      <ReportField label="Full name" error={errors.name?.message}>
-        <ReportInput placeholder="Full name" {...register("name")} />
+      <ReportField label={t("common.name")} error={errors.name?.message}>
+        <ReportInput placeholder={t("common.name")} {...register("name")} />
       </ReportField>
-      <ReportField label="Email" error={errors.email?.message}>
-        <ReportInput placeholder="Email" type="email" {...register("email")} />
+      <ReportField label={t("common.email")} error={errors.email?.message}>
+        <ReportInput placeholder={t("common.email")} type="email" {...register("email")} />
       </ReportField>
-      <ReportField label="Password" error={errors.password?.message}>
-        <PasswordInput variant="report" placeholder="Password" {...register("password")} />
+      <ReportField label={t("users.password")} error={errors.password?.message}>
+        <PasswordInput variant="report" placeholder={t("users.password")} {...register("password")} />
       </ReportField>
-      <ReportField label="Team" error={errors.teamName?.message}>
+      <ReportField label={t("common.team")} error={errors.teamName?.message}>
         <ReportSelect {...register("teamName")}>
           {teamOptions.map((team) => (
             <option key={team._id} value={team.name}>
@@ -107,7 +114,7 @@ export function AdminReportManagerForm() {
       {error ? <p className="text-sm text-danger md:col-span-2">{error}</p> : null}
       {message ? <p className="text-sm text-success md:col-span-2">{message}</p> : null}
       <Button className="md:col-span-2 w-fit" type="submit" disabled={isSubmitting}>
-        {isSubmitting ? "Creating..." : "Create Report Manager"}
+        {isSubmitting ? t("common.creating") : t("users.addUser")}
       </Button>
     </form>
   );

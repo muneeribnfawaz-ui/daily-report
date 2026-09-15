@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { MyReportList } from "@/components/reports/my-report-list";
 import { ConsolidatedReportBrowser } from "@/components/consolidated/consolidated-report-browser";
+import { useTranslation } from "@/lib/i18n";
 
 type TmReportsViewProps = {
   userPrimaryDept?: string;
@@ -17,6 +18,7 @@ export function TmReportsView({
   enrolledTeams,
   userRole
 }: TmReportsViewProps) {
+  const { t } = useTranslation();
   const [view, setView] = useState<"submissions" | "consolidated">("submissions");
 
   return (
@@ -31,7 +33,7 @@ export function TmReportsView({
               : "text-muted-foreground hover:text-foreground"
           }`}
         >
-          My Submissions
+          {t("reports.mySubmissions")}
         </button>
         <button
           type="button"
@@ -42,7 +44,7 @@ export function TmReportsView({
               : "text-muted-foreground hover:text-foreground"
           }`}
         >
-          Consolidated Reports
+          {t("nav.consolidatedReports")}
         </button>
       </div>
 

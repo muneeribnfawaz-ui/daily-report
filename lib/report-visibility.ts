@@ -41,11 +41,47 @@ export async function getVisibleReportEmployeeIds(
   },
   options?: {
     scope?: "hod" | "tl" | "all";
+    workspaceId?: string;
   }
 ) {
   const memberFilter: any = { isActive: true };
 
-  if (user.role !== "admin") {
+  const targetWorkspaceId = options?.workspaceId !== undefined
+    ? options.workspaceId
+    : (user.role === "ceo" || user.role === "admin" ? undefined : user.workspaceId);
+
+  if (user.role === "ceo") {
+    const memberships = await db.workspaceMember.findMany({
+      where: {
+        userId: user.id,
+        status: "active",
+        isActive: true
+      },
+      include: { workspace: true }
+    });
+    const ceoWorkspaceIds = memberships.filter(m => m.workspace?.type === "ceo").map(m => m.workspaceId);
+    const directCompanyWorkspaceIds = memberships.filter(m => m.workspace?.type !== "ceo").map(m => m.workspaceId);
+
+    const ownedWorkspaces = db.workspace?.findMany
+      ? await db.workspace.findMany({
+          where: {
+            ownerWorkspaceId: { in: ceoWorkspaceIds },
+            isDeleted: false,
+            isActive: true
+          },
+          select: { id: true }
+        })
+      : [];
+    const ownedWorkspaceIds = ownedWorkspaces.map(w => w.id);
+
+    const allowedWorkspaceIds = Array.from(new Set([...directCompanyWorkspaceIds, ...ownedWorkspaceIds, ...ceoWorkspaceIds]));
+
+    if (targetWorkspaceId && targetWorkspaceId !== "all") {
+      memberFilter.workspaceId = allowedWorkspaceIds.includes(targetWorkspaceId) ? targetWorkspaceId : "non_existent_id";
+    } else {
+      memberFilter.workspaceId = { in: allowedWorkspaceIds };
+    }
+  } else if (user.role !== "admin") {
     const memberships = await db.workspaceMember.findMany({
       where: {
         userId: user.id,
@@ -56,14 +92,14 @@ export async function getVisibleReportEmployeeIds(
     });
     const allowedWorkspaceIds = memberships.map(m => m.workspaceId);
 
-    if (user.workspaceId && user.workspaceId !== "all") {
-      memberFilter.workspaceId = allowedWorkspaceIds.includes(user.workspaceId) ? user.workspaceId : "non_existent_id";
+    if (targetWorkspaceId && targetWorkspaceId !== "all") {
+      memberFilter.workspaceId = allowedWorkspaceIds.includes(targetWorkspaceId) ? targetWorkspaceId : "non_existent_id";
     } else {
       memberFilter.workspaceId = { in: allowedWorkspaceIds };
     }
   } else {
-    if (user.workspaceId && user.workspaceId !== "all") {
-      memberFilter.workspaceId = user.workspaceId;
+    if (targetWorkspaceId && targetWorkspaceId !== "all") {
+      memberFilter.workspaceId = targetWorkspaceId;
     }
   }
 
@@ -72,13 +108,38 @@ export async function getVisibleReportEmployeeIds(
     include: { user: true, departments: true }
   });
 
+  const activeTeamTypes = db.teamType ? await db.teamType.findMany({
+    where: { isDeleted: false },
+    select: { name: true, showName: true, department: true, subTeams: true }
+  }) : [];
+
+  const teamTypeMap = new Map<string, { department: string; subTeams: string[] }>();
+  for (const tt of activeTeamTypes) {
+    if (tt.name) teamTypeMap.set(tt.name, { department: tt.department, subTeams: tt.subTeams || [] });
+    if (tt.showName) teamTypeMap.set(tt.showName, { department: tt.department, subTeams: tt.subTeams || [] });
+  }
+
   const allUsers: VisibleUser[] = members.map((m) => {
+    const userTeams = [m.teamName, ...(m.teamNames || [])].filter(Boolean) as string[];
+    const effectiveDepts: Array<{ name: string; subTeams?: string[] }> = (m.departments || []).map((d) => ({
+      name: d.name,
+      subTeams: d.subTeams || []
+    }));
+
+    for (const team of userTeams) {
+      const tt = teamTypeMap.get(team);
+      if (tt) {
+        effectiveDepts.push({ name: tt.department, subTeams: [team, ...(tt.subTeams || [])] });
+      }
+      effectiveDepts.push({ name: team, subTeams: [] });
+    }
+
     return {
       _id: m.userId,
       name: m.user?.name,
       managerName: m.managerName,
-      role: m.role,
-      departments: m.departments.map(d => ({ name: d.name, subTeams: d.subTeams })),
+      role: m.role || m.user?.role,
+      departments: effectiveDepts,
       teamName: m.teamName || null,
       teamNames: m.teamNames || []
     };
@@ -86,8 +147,17 @@ export async function getVisibleReportEmployeeIds(
 
   const visibleEmployeeIds = new Set<string>();
 
-  // Admin and CEO see HOD, RM, TL, TM
+  // Admin and CEO see HOD, RM, TL, TM (or just HOD when scope === "hod")
   if (user.role === "admin" || user.role === "ceo") {
+    if (options?.scope === "hod") {
+      for (const currentUser of allUsers) {
+        if (!currentUser._id) continue;
+        if (currentUser.role === "hod" || currentUser._id === user.id) {
+          visibleEmployeeIds.add(String(currentUser._id));
+        }
+      }
+      return Array.from(visibleEmployeeIds);
+    }
     for (const currentUser of allUsers) {
       if (!currentUser._id) continue;
       if (["hod", "report_manager", "team_lead", "team_member"].includes(currentUser.role || "")) {
@@ -102,7 +172,11 @@ export async function getVisibleReportEmployeeIds(
 
   // HOD role filtering (HOD approves TL reports and department members)
   if (user.role === "hod") {
-    const userDepts = new Set(user.departments?.map((d) => d.name) ?? []);
+    const userDepts = new Set(
+      user.departments
+        ?.map((d: any) => (typeof d === "string" ? d : d.name))
+        .filter(Boolean) ?? []
+    );
     if (options?.scope === "tl") {
       for (const currentUser of allUsers) {
         if (!currentUser._id) continue;
@@ -130,19 +204,27 @@ export async function getVisibleReportEmployeeIds(
   }
 
   if (user.role === "report_manager") {
-    // Report Manager can only see Software and Marketing (Digital) and only TL, TM roles
+    const userDepts = new Map(
+      user.departments?.map((d) => [d.name, new Set(d.subTeams ?? [])]) ?? []
+    );
+
     for (const currentUser of allUsers) {
       if (!currentUser._id) continue;
       if (currentUser._id === user.id) {
         visibleEmployeeIds.add(String(currentUser._id));
         continue;
       }
-      const isAllowed = currentUser.departments?.some(
-        (dept) =>
-          dept.name === "Software" ||
-          (dept.name === "Marketing" && dept.subTeams?.includes("Digital"))
-      );
-      if (isAllowed && ["team_lead", "team_member"].includes(currentUser.role || "")) {
+
+      const isAllowed = currentUser.departments?.some((dept) => {
+        if (userDepts.size === 0) return true;
+        if (!userDepts.has(dept.name)) return false;
+        const allowedSubTeams = userDepts.get(dept.name)!;
+        if (allowedSubTeams.size === 0) return true;
+        if (!dept.subTeams || dept.subTeams.length === 0) return true;
+        return dept.subTeams.some((sub) => allowedSubTeams.has(sub));
+      });
+
+      if ((isAllowed || userDepts.size === 0) && currentUser.role === "team_lead") {
         visibleEmployeeIds.add(String(currentUser._id));
       }
     }

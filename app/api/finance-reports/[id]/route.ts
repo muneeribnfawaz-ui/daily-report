@@ -8,10 +8,9 @@ import { syncReportCashToPettyCash } from "@/lib/petty-cash-sync";
 import { financeReportSchema } from "@/lib/validation";
 import { getINRtoSARRate, convertINRtoSAR } from "@/lib/currency";
 import { encryptPayload, decryptPayload } from "@/lib/crypto";
+import { isWorkspaceAuthorizedForUser } from "@/lib/workspace-context";
 
 type RouteContext = { params: Promise<{ id: string }> };
-
-
 
 export async function GET(_request: Request, context: RouteContext) {
   try {
@@ -25,12 +24,17 @@ export async function GET(_request: Request, context: RouteContext) {
     }
 
     const { id } = await context.params;
-        const report = await db.financeReport.findUnique({
-          where: { id: String(id) },
-          include: { items: true, bankBalances: true, statusHistory: true }
-        }) as Record<string, unknown> | null;
+    const report = await db.financeReport.findUnique({
+      where: { id: String(id) },
+      include: { items: true, bankBalances: true, statusHistory: true }
+    }) as Record<string, unknown> | null;
 
     if (!report) {
+      return ApiResponse.notFound("Finance report not found");
+    }
+
+    const isAuthorized = await isWorkspaceAuthorizedForUser(user, report.workspaceId as string);
+    if (!isAuthorized) {
       return ApiResponse.notFound("Finance report not found");
     }
 
@@ -54,13 +58,18 @@ export async function PUT(request: Request, context: RouteContext) {
     }
 
     const { id } = await context.params;
-        const report = await db.financeReport.findUnique({
-          where: { id: String(id) },
-          include: { items: true, bankBalances: true }
-        });
+    const report = await db.financeReport.findUnique({
+      where: { id: String(id) },
+      include: { items: true, bankBalances: true }
+    });
 
     if (!report) {
       return ApiResponse.notFound("Finance report not found");
+    }
+
+    const isAuthorized = await isWorkspaceAuthorizedForUser(user, report.workspaceId);
+    if (!isAuthorized) {
+      return ApiResponse.forbidden("Forbidden: You cannot modify a finance report from another company/workspace.");
     }
 
     if (user.role !== "admin" && user.role !== "ceo" && String(report.submittedBy) !== user.id) {
@@ -98,6 +107,7 @@ export async function PUT(request: Request, context: RouteContext) {
       where: { id: report.id },
       data: {
         exchangeRate,
+        description: parsed.data.summary?.description || "",
         editAccessGranted: false,
         bankBalances: {
           create: parsed.data.bankBalances?.map((b: any) => ({
@@ -203,12 +213,17 @@ export async function DELETE(_request: Request, context: RouteContext) {
     }
 
     const { id } = await context.params;
-        const report = await db.financeReport.findUnique({
-          where: { id: String(id) }
-        });
+    const report = await db.financeReport.findUnique({
+      where: { id: String(id) }
+    });
 
     if (!report) {
       return ApiResponse.notFound("Finance report not found");
+    }
+
+    const isAuthorized = await isWorkspaceAuthorizedForUser(user, report.workspaceId);
+    if (!isAuthorized) {
+      return ApiResponse.forbidden("Forbidden: You cannot delete a finance report from another company/workspace.");
     }
 
     if (report.status !== "pending") {

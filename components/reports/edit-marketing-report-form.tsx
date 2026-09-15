@@ -14,6 +14,7 @@ import { ReportField, ReportInput, ReportSelect, ReportTextarea } from "@/compon
 import { ConstructionReportFields } from "../forms/construction-report-fields";
 import { MarketingReportFields } from "../forms/marketing-report-fields";
 import { formatDisplayName } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 
 type MarketingReportValues = z.infer<typeof dailyReportSchema>;
 
@@ -49,7 +50,8 @@ function toDateInputValue(value?: string | Date | null) {
   return date.toISOString().slice(0, 10);
 }
 
-export function EditMarketingReportForm({ reportId }: { reportId: string }) {
+export function EditMarketingReportForm({ reportId, initialData }: { reportId: string; initialData?: any }) {
+  const { t } = useTranslation();
   const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
   const [completedTasks, setCompletedTasks] = useState<string[]>([]);
@@ -272,19 +274,7 @@ export function EditMarketingReportForm({ reportId }: { reportId: string }) {
             });
           }
         }
-        let hasMarketingError = false;
-        const messages = parsed.error.issues.map((issue) => {
-          if (issue.path[0] === "marketingSelfItems" || issue.path[0] === "marketingClientItems") {
-            hasMarketingError = true;
-            return null;
-          }
-          return issue.message;
-        }).filter(Boolean);
-        
-        if (hasMarketingError) {
-          messages.push("Please fill all mandatory fields (*) correctly in the Marketing tables.");
-        }
-        
+        const messages = parsed.error.issues.map((issue) => issue.message).filter(Boolean);
         const uniqueMessages = Array.from(new Set(messages));
         setMessage(uniqueMessages.length ? uniqueMessages.join(" | ") : "Please fix the highlighted fields and try again.");
         return;
@@ -317,10 +307,11 @@ export function EditMarketingReportForm({ reportId }: { reportId: string }) {
         window.localStorage.removeItem(draftStorageKey);
       }
       
-      setMessage("Report updated successfully.");
-      router.push(`/daily-report/${reportId}/preview`);
+      setMessage(t("reports.reportUpdated"));
+      const previewPrefix = currentUser?.role === "team_member" ? "/tm/daily-report" : "/daily-report";
+      router.push(`${previewPrefix}/${reportId}/preview`);
     } catch {
-      setMessage("Update failed. Please try again.");
+      setMessage(t("common.somethingWentWrong"));
     }
   };
 
@@ -329,63 +320,68 @@ export function EditMarketingReportForm({ reportId }: { reportId: string }) {
       .map((error) => error?.message)
       .filter((message): message is string => Boolean(message));
 
-    setMessage(messages.length ? messages.join(" | ") : "Please fix the highlighted fields and try again.");
+    setMessage(messages.length ? messages.join(" | ") : t("common.somethingWentWrong"));
   };
 
   if (isLoading) {
-    return <div className="text-sm text-muted-foreground">Loading report...</div>;
+    return <div className="text-sm text-muted-foreground">{t("common.loading")}</div>;
   }
 
   if (isError || !report) {
-    return <div className="text-sm text-danger">Failed to load the report.</div>;
+    return <div className="text-sm text-danger">{t("reports.failedToLoadReport")}</div>;
   }
 
   return (
     <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSubmit(onSubmit, onInvalid)}>
-      <div className="md:col-span-2 rounded-2xl border bg-background/70 p-4">
-        <div className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Editing as</div>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Badge variant="soft">{currentUser?.name ?? "Loading user..."}</Badge>
-          <span className="text-sm text-muted-foreground">{currentUser?.email ?? ""}</span>
-          {report.teamName ? <Badge variant="outline">{formatDisplayName(report.teamName)}</Badge> : null}
-          {report.isLocked ? <Badge variant="outline">Locked</Badge> : null}
-          <Badge variant="soft" className="bg-amber-100 text-amber-800 hover:bg-amber-100">Status: Draft</Badge>
-        </div>
-        <div className="mt-3 text-xs text-muted-foreground">Only completed work is required. All other fields are optional.</div>
-        {!report.canEdit ? (
-          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            {currentUser?.role === "team_member"
-              ? "Team members need edit access approval before editing any submitted report."
-              : "Team leads can edit same-day reports directly. For older reports, request edit access from an approver."}
+      {currentUser?.role !== "team_lead" && (
+        <div className="md:col-span-2 rounded-2xl border bg-background/70 p-4">
+          <div className="text-xs uppercase tracking-[0.25em] text-muted-foreground">{t("reports.editingAs")}</div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Badge variant="soft">{currentUser?.name ?? t("common.loading")}</Badge>
+            <span className="text-sm text-muted-foreground">{currentUser?.email ?? ""}</span>
+            {report.teamName ? <Badge variant="outline">{formatDisplayName(report.teamName)}</Badge> : null}
+            {report.isLocked ? <Badge variant="outline">{t("reports.editLocked")}</Badge> : null}
+            <Badge variant="soft" className="bg-amber-100 text-amber-800 hover:bg-amber-100">{t("common.status")}: {report.status || t("reports.pending")}</Badge>
           </div>
-        ) : null}
-      </div>
+          <div className="mt-3 text-xs text-muted-foreground">{t("reports.completedWorkRequiredNotice")}</div>
+          {!report.canEdit ? (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              {currentUser?.role === "team_member"
+                ? t("reports.tmEditNotice")
+                : t("reports.tlEditNotice")}
+            </div>
+          ) : null}
+        </div>
+      )}
       <input type="hidden" {...register("teamName")} />
-      <ReportField label="Report type" error={errors.reportType?.message}>
-        <ReportSelect {...register("reportType")}>
-          {["Daily Update", "Bug Fix", "Meeting Notes", "Blocker", "Attendance", "Other"].map((type) => (
-            <option key={type} value={type}>
-              {type}
-            </option>
-          ))}
-        </ReportSelect>
-      </ReportField>
-      <ReportField className="md:col-span-2" label="Attachment link" error={errors.attachmentLink?.message}>
+      {currentUser?.role === "team_lead" ? (
+        <input type="hidden" {...register("reportType")} />
+      ) : (
+        <ReportField label={t("reports.reportTypeLabel")} error={errors.reportType?.message}>
+          <ReportSelect {...register("reportType")}>
+            {["Daily Update", "Bug Fix", "Meeting Notes", "Blocker", "Attendance", "Other"].map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </ReportSelect>
+        </ReportField>
+      )}
+      <ReportField className="md:col-span-2" label={t("reports.attachments")} error={errors.attachmentLink?.message}>
         <ReportInput
           type="url"
           inputMode="url"
-          placeholder="Attachment link (optional)"
+          placeholder={t("reports.attachmentsPlaceholder")}
           {...register("attachmentLink")}
         />
       </ReportField>
       {showDailyMeetingUpdate ? (
         <ReportField
           className="md:col-span-2"
-          label="Daily meeting update"
-          helperText="Optional. Add only points that were not already mentioned in the meeting."
+          label={t("reports.dailyMeetingUpdate")}
           error={errors.dailyMeetingUpdate?.message}
         >
-          <ReportTextarea placeholder="Add any new meeting points here" {...register("dailyMeetingUpdate")} />
+          <ReportTextarea placeholder={t("reports.dailyMeetingUpdate")} {...register("dailyMeetingUpdate")} />
         </ReportField>
       ) : null}
       {(!isConstructionTeam && !isMarketingTeam) ? (
@@ -395,13 +391,12 @@ export function EditMarketingReportForm({ reportId }: { reportId: string }) {
           <input type="hidden" {...register("blockers")} />
           <ReportField
             className="md:col-span-2"
-            label="Completed Work"
+            label={t("reports.completedTasks")}
             required
-            helperText="Required. Paste or type completed tasks (one per line)."
             error={errors.completedWork?.message}
           >
             <ReportTextarea
-              placeholder="Paste your completed work here..."
+              placeholder={t("reports.completedTasksPlaceholder")}
               value={completedDraft}
               onChange={(event) => {
                 const value = event.target.value;
@@ -416,12 +411,11 @@ export function EditMarketingReportForm({ reportId }: { reportId: string }) {
           </ReportField>
           <ReportField
             className="md:col-span-2"
-            label="Pending Work"
-            helperText="Optional. Paste pending tasks, one per line."
+            label={t("reports.pendingTasks")}
             error={errors.pendingWork?.message}
           >
             <ReportTextarea
-              placeholder="Paste pending work here..."
+              placeholder={t("reports.pendingTasksPlaceholder")}
               value={pendingDraft}
               onChange={(event) => {
                 const value = event.target.value;
@@ -436,12 +430,11 @@ export function EditMarketingReportForm({ reportId }: { reportId: string }) {
           </ReportField>
           <ReportField
             className="md:col-span-2"
-            label="Blockers"
-            helperText="Optional. Paste blockers, one per line."
+            label={t("reports.blockers")}
             error={errors.blockers?.message}
           >
             <ReportTextarea
-              placeholder="Paste blockers here..."
+              placeholder={t("reports.blockersPlaceholder")}
               value={blockerDraft}
               onChange={(event) => {
                 const value = event.target.value;
@@ -454,8 +447,8 @@ export function EditMarketingReportForm({ reportId }: { reportId: string }) {
               }}
             />
           </ReportField>
-          <ReportField className="md:col-span-2" label="Required clarification" error={errors.requiredClarification?.message}>
-            <ReportTextarea placeholder="Required Clarification" {...register("requiredClarification")} />
+          <ReportField className="md:col-span-2" label={t("reports.clarifications")} error={errors.requiredClarification?.message}>
+            <ReportTextarea placeholder={t("reports.clarificationsPlaceholder")} {...register("requiredClarification")} />
           </ReportField>
         </>
       ) : isMarketingTeam ? (
@@ -467,9 +460,11 @@ export function EditMarketingReportForm({ reportId }: { reportId: string }) {
         />
       ) : null}
       {message ? <p className={`text-sm md:col-span-2 ${message.toLowerCase().includes("success") ? "text-success" : "text-destructive font-medium"}`}>{message}</p> : null}
-      <Button className="md:col-span-2 w-fit" type="submit" disabled={isSubmitting || !report.canEdit}>
-        {isSubmitting ? "Saving..." : report.canEdit ? "Save Changes" : "Edit Locked"}
-      </Button>
+      <div className="md:col-span-2 flex justify-end">
+        <Button className="w-fit" type="submit" disabled={isSubmitting || !report.canEdit}>
+          {isSubmitting ? t("common.saving") : report.canEdit ? t("common.saveChanges") : t("reports.editLocked")}
+        </Button>
+      </div>
     </form>
   );
 }

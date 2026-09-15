@@ -3,6 +3,7 @@ import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { logAuditEntry } from "@/lib/audit";
 import { encryptPayload, decryptPayload } from "@/lib/crypto";
+import { isWorkspaceAuthorizedForUser } from "@/lib/workspace-context";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -24,6 +25,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const report = await db.financeReport.findUnique({ where: { id: String(id) } });
   if (!report) {
     return NextResponse.json({ success: false, message: "Finance Report not found" }, { status: 404 });
+  }
+
+  const isAuthorized = await isWorkspaceAuthorizedForUser(user, report.workspaceId);
+  if (!isAuthorized) {
+    return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
   }
 
   if (String(report.submittedBy) !== user.id) {

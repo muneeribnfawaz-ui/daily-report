@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { ReportSheetPreview, type ReportSheetEntry, type ReportSheetTeamGroup } from "@/components/reports/report-sheet-preview";
 import { CeoApprovalSection } from "@/components/reports/ceo-approval-section";
 import { useSession } from "@/hooks/use-session";
+import { useTranslation } from "@/lib/i18n";
 
 type ManagedReport = ReportSheetEntry & {
   editAccessRequested?: boolean;
@@ -16,30 +17,8 @@ type ManagedReport = ReportSheetEntry & {
   isLocked?: boolean;
 };
 
-function groupReportsByTeam(reports: ReportSheetEntry[]): ReportSheetTeamGroup[] {
-  const groups = new Map<string, ReportSheetEntry[]>();
-  for (const report of reports) {
-    const current = groups.get(report.teamName) ?? [];
-    current.push(report);
-    groups.set(report.teamName, current);
-  }
-
-  return Array.from(groups.entries()).map(([teamName, teamReports]) => ({
-    teamName,
-    dailyMeetingUpdate: teamReports.find((item) => item.dailyMeetingUpdate?.trim())?.dailyMeetingUpdate?.trim() ?? "",
-    dailyMeetingUpdates: teamReports
-      .filter((item) => item.dailyMeetingUpdate?.trim())
-      .map((item) => ({
-        employeeId: item.employeeId,
-        name: item.name,
-        role: item.employeeRole ?? null,
-        update: item.dailyMeetingUpdate?.trim() ?? ""
-      })),
-    reports: teamReports
-  }));
-}
-
 export function ReportDetailExplorer({ reportId }: { reportId: string }) {
+  const { t } = useTranslation();
   const { data: sessionUser } = useSession();
   const [isUpdatingEdit, setIsUpdatingEdit] = useState(false);
 
@@ -66,7 +45,7 @@ export function ReportDetailExplorer({ reportId }: { reportId: string }) {
   const singlePreviewGroups = useMemo<ReportSheetTeamGroup[]>(
     () =>
       report
-      ? [
+        ? [
             {
               teamName: report.teamName,
               dailyMeetingUpdate: report.dailyMeetingUpdate?.trim() ?? "",
@@ -88,11 +67,11 @@ export function ReportDetailExplorer({ reportId }: { reportId: string }) {
   );
 
   if (reportQuery.isLoading) {
-    return <div className="text-sm text-muted-foreground">Loading report details...</div>;
+    return <div className="text-sm text-muted-foreground">{t("reports.loadingReportDetails")}</div>;
   }
 
   if (reportQuery.isError || !report) {
-    return <div className="text-sm text-danger">Failed to load the report.</div>;
+    return <div className="text-sm text-danger">{t("reports.failedToLoadReport")}</div>;
   }
 
   const approvalItems = report.nextDayApprovalItems ?? [];
@@ -103,31 +82,31 @@ export function ReportDetailExplorer({ reportId }: { reportId: string }) {
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-300/60 bg-amber-500/10 p-4 shadow-sm">
         <div className="flex flex-col gap-1 text-sm">
           <div className="flex items-center gap-2">
-            {report.editAccessRequested ? <Badge variant="outline" className="border-amber-400 text-amber-800 dark:text-amber-300 font-bold">Edit Requested</Badge> : null}
-            {report.editAccessGranted ? <Badge variant="soft" className="bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 font-semibold">Edit Enabled</Badge> : null}
+            {report.editAccessRequested ? <Badge variant="outline" className="border-amber-400 text-amber-800 dark:text-amber-300 font-bold">{t("reports.editRequested")}</Badge> : null}
+            {report.editAccessGranted ? <Badge variant="soft" className="bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 font-semibold">{t("reports.editEnabled")}</Badge> : null}
             {!report.editAccessRequested && !report.editAccessGranted ? (
-              <div className="text-sm text-muted-foreground">No edit request for this report.</div>
+              <div className="text-sm text-muted-foreground">{t("reports.noEditRequest")}</div>
             ) : null}
           </div>
           {report.editAccessRequested && report.editAccessRequestReason ? (
             <div className="mt-1 text-xs bg-card/90 border border-amber-300/40 rounded-lg p-2.5 text-textPrimary">
-              <span className="font-semibold text-amber-800 dark:text-amber-300">Reason for Request: </span>
+              <span className="font-semibold text-amber-800 dark:text-amber-300">{t("reports.reasonForRequest")} </span>
               <span className="italic">"{report.editAccessRequestReason}"</span>
             </div>
           ) : null}
         </div>
-        {report.editAccessRequested && sessionUser?.role && ["admin", "ceo", "hod", "team_lead"].includes(sessionUser.role) && (
+        {report.editAccessRequested && sessionUser?.role && ["admin", "ceo", "hod", "report_manager", "team_lead"].includes(sessionUser.role) && (
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" className="border-danger/30 text-danger hover:bg-danger/10" onClick={() => handleEditApproval(false)} disabled={isUpdatingEdit}>
-              Reject Edit
+              {t("reports.rejectEdit")}
             </Button>
             <Button size="sm" className="bg-primary hover:bg-primaryDark text-primary-foreground font-bold" onClick={() => handleEditApproval(true)} disabled={isUpdatingEdit}>
-              Approve Edit
+              {t("reports.approveEdit")}
             </Button>
           </div>
         )}
       </div>
-      <ReportSheetPreview title="Daily Team Progress Report" dateLabel={dateLabel} teamGroups={singlePreviewGroups} />
+      <ReportSheetPreview title={t("reports.dailyTeamProgressReport")} dateLabel={dateLabel} teamGroups={singlePreviewGroups} />
       {approvalItems.length > 0 ? (
         <CeoApprovalSection
           reportId={reportId}

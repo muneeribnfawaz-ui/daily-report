@@ -272,9 +272,12 @@ function renderFinancePdfContent(doc: PDFKit.PDFDocument, data: FinanceReportPdf
   const colINR = contentWidth * 0.18;
   const colSAR = contentWidth * 0.18;
 
-  renderTableItems(doc, "Expenses", data.expenses, tableX, contentWidth, colParticular, colINR, colSAR);
-  renderTableItems(doc, "Receipts", data.receipts, tableX, contentWidth, colParticular, colINR, colSAR);
-  renderTableItems(doc, "Payments", data.payments, tableX, contentWidth, colParticular, colINR, colSAR);
+  const allExpenses = (data.expenses && data.expenses.length > 0)
+    ? (data.payments && data.payments.length > 0 ? [...data.expenses, ...data.payments] : data.expenses)
+    : (data.payments || []);
+
+  renderTableItems(doc, "Payments / Expenses", allExpenses, tableX, contentWidth, colParticular, colINR, colSAR);
+  renderTableItems(doc, "Receipts / Income", data.receipts, tableX, contentWidth, colParticular, colINR, colSAR);
   renderBankBalances(doc, data.bankBalances, tableX, contentWidth);
   renderCashBalance(doc, data.cashBalance || { pettyCash: 0, total: 0 }, tableX, contentWidth);
 
@@ -287,7 +290,7 @@ function renderFinancePdfContent(doc: PDFKit.PDFDocument, data: FinanceReportPdf
   doc.fillColor(COLORS.navy).font("Helvetica-Bold").fontSize(12).text("Summary", tableX, doc.y);
   doc.y += 12;
 
-  const summaryHeight = 124;
+  const summaryHeight = 104;
   doc.roundedRect(tableX, doc.y, contentWidth, summaryHeight, 4).fill(COLORS.panel).strokeColor(COLORS.line).lineWidth(0.5).stroke();
   
   const colLeftWidth = contentWidth * 0.45;
@@ -296,10 +299,10 @@ function renderFinancePdfContent(doc: PDFKit.PDFDocument, data: FinanceReportPdf
 
   // Left Column - Financial Totals
   let leftY = startY;
+  const totalExpenses = (data.summary.totalPayments || data.summary.totalExpenses || 0);
   const summaryRows = [
-    { label: "Total Expenses", val: formatINRPdf(data.summary.totalExpenses || 0), color: COLORS.rose },
+    { label: "Total Payments", val: formatINRPdf(totalExpenses), color: COLORS.rose },
     { label: "Total Receipts", val: formatINRPdf(data.summary.totalReceipts || 0), color: COLORS.emerald },
-    { label: "Total Payments", val: formatINRPdf(data.summary.totalPayments || 0), color: COLORS.rose },
     { label: "Bank Balance", val: formatINRPdf(data.summary.bankBalance || 0), color: COLORS.blue },
     { label: "Petty Cash Balance", val: formatINRPdf(data.summary.pettyCashBalance || 0), color: COLORS.ink }
   ];
@@ -311,7 +314,7 @@ function renderFinancePdfContent(doc: PDFKit.PDFDocument, data: FinanceReportPdf
   }
 
   // Divider Line
-  doc.moveTo(tableX + colLeftWidth + 12, startY).lineTo(tableX + colLeftWidth + 12, startY + 116).strokeColor(COLORS.line).lineWidth(0.5).stroke();
+  doc.moveTo(tableX + colLeftWidth + 12, startY).lineTo(tableX + colLeftWidth + 12, startY + 96).strokeColor(COLORS.line).lineWidth(0.5).stroke();
 
   // Right Column - Description / Notes
   const rightX = tableX + colLeftWidth + 24;

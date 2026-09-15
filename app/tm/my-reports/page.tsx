@@ -20,18 +20,7 @@ export default async function TmMyReportsPage() {
 
   return (
     <AppShell title="My Reports" role={user.role} sidebarVariant="daily-report">
-      <div className="space-y-4">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.35em] text-muted-foreground">My Reports</div>
-            <p className="mt-2 text-sm text-muted-foreground">View, edit, or delete your own reports while they remain unlocked.</p>
-          </div>
-          <Button asChild className="w-full sm:w-auto">
-            <Link href="/tm/daily-report">Create Report</Link>
-          </Button>
-        </div>
-        <MyReportList />
-      </div>
+      <MyReportList showHeader />
     </AppShell>
   );
 }

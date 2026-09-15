@@ -36,7 +36,10 @@ const safeZodResolver = (schema: typeof loginSchema): Resolver<LoginValues> => {
   };
 };
 
+import { useTranslation } from "@/lib/i18n";
+
 export function LoginForm() {
+  const { t, isRTL } = useTranslation();
   const router = useRouter();
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
@@ -67,30 +70,30 @@ export function LoginForm() {
       else router.push("/dashboard");
       router.refresh();
     } catch (err) {
-      setError("Login failed. Check your credentials and try again.");
+      setError(t("auth.invalidCredentials"));
     }
   };
 
   return (
     <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
-      <ReportField label="Email Address" error={errors.email?.message}>
+      <ReportField label={t("auth.emailLabel")} error={errors.email?.message}>
         <div className="relative">
-          <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-primary" />
+          <Mail className="absolute ltr:left-3.5 rtl:right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-primary" />
           <Input
-            placeholder="name@company.com"
+            placeholder={t("auth.emailPlaceholder")}
             type="email"
-            className="pl-10 h-11 border-border bg-card text-textPrimary placeholder:text-mutedForeground focus-visible:ring-2 focus-visible:ring-primary focus-visible:border-primary rounded-xl transition-all"
+            className="ltr:pl-10 rtl:pr-10 h-11 border-border bg-card text-textPrimary placeholder:text-mutedForeground focus-visible:ring-2 focus-visible:ring-primary focus-visible:border-primary rounded-xl transition-all"
             {...register("email")}
           />
         </div>
       </ReportField>
 
-      <ReportField label="Password" error={errors.password?.message}>
+      <ReportField label={t("auth.passwordLabel")} error={errors.password?.message}>
         <div className="relative">
-          <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-primary" />
+          <Lock className="absolute ltr:left-3.5 rtl:right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-primary" />
           <PasswordInput
-            placeholder="Enter your password"
-            className="pl-10 h-11 border-border bg-card text-textPrimary placeholder:text-mutedForeground focus-visible:ring-2 focus-visible:ring-primary focus-visible:border-primary rounded-xl transition-all"
+            placeholder={t("auth.passwordPlaceholder")}
+            className="ltr:pl-10 rtl:pr-10 h-11 border-border bg-card text-textPrimary placeholder:text-mutedForeground focus-visible:ring-2 focus-visible:ring-primary focus-visible:border-primary rounded-xl transition-all"
             {...register("password")}
           />
         </div>
@@ -109,11 +112,11 @@ export function LoginForm() {
         disabled={isSubmitting}
       >
         {isSubmitting ? (
-          "Signing in..."
+          t("auth.signingIn")
         ) : (
           <>
-            <span>Login to Workspace</span>
-            <ArrowRight className="h-4 w-4" />
+            <span>{t("auth.signIn")}</span>
+            <ArrowRight className="h-4 w-4 rtl:rotate-180" />
           </>
         )}
       </Button>

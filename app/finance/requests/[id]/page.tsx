@@ -7,6 +7,7 @@ import {
   canApproveFinanceReport
 } from "@/lib/permissions";
 import db from "@/lib/db";
+import { isWorkspaceAuthorizedForUser } from "@/lib/workspace-context";
 import { MoneyRequestDetail } from "@/components/finance/money-request-detail";
 
 type PageProps = { params: Promise<{ id: string }> };
@@ -35,6 +36,9 @@ export default async function MoneyRequestDetailPage({ params }: PageProps) {
   }
 
   if (!moneyRequest) notFound();
+
+  const isAuthorized = await isWorkspaceAuthorizedForUser(user, moneyRequest.workspaceId);
+  if (!isAuthorized) notFound();
 
   const bankBalances = await db.moneyRequestBankBalance.findMany({
     where: { moneyRequestId: moneyRequest.id }

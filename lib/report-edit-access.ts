@@ -42,9 +42,12 @@ export function canEditDailyReport(report: EditableReport, actor?: EditActor, no
     return false;
   }
   const reportDate = report.reportDate instanceof Date || typeof report.reportDate === "string" ? report.reportDate : null;
-  if (actor?.role === "team_member" || actor?.role === "report_manager") {
+  if (!isReportDateToday(reportDate, now)) {
+    return false;
+  }
+  if (actor?.role === "team_member" || actor?.role === "report_manager" || actor?.role === "team_lead") {
     return Boolean(report.editAccessGranted);
   }
 
-  return isReportDateToday(reportDate, now) || Boolean(report.editAccessGranted);
+  return true;
 }

@@ -3,6 +3,7 @@ import db from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { logAuditEntry } from "@/lib/audit";
 import { getVisibleReportEmployeeIds } from "@/lib/report-visibility";
+import { notifyReportEditAccessApproved } from "@/lib/notifications";
 
 export async function PATCH(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -12,7 +13,7 @@ export async function PATCH(_request: Request, { params }: { params: Promise<{ i
 
   const { id } = await params;
 
-    const report = await db.dailyReport.findUnique({ where: { id: String(id) } });
+  const report = await db.dailyReport.findUnique({ where: { id: String(id) } });
   if (!report) {
     return NextResponse.json({ success: false, message: "Report not found" }, { status: 404 });
   }
@@ -43,6 +44,20 @@ export async function PATCH(_request: Request, { params }: { params: Promise<{ i
     reportId: id,
     newValue: {
       editAccessGranted: true
+    }
+  });
+
+  // Dispatch notification to the requesting Team Member
+  await notifyReportEditAccessApproved({
+    report: {
+      id: report.id,
+      employeeId: report.employeeId,
+      reportDate: report.reportDate,
+      workspaceId: report.workspaceId
+    },
+    approver: {
+      id: user.id,
+      name: user.name
     }
   });
 

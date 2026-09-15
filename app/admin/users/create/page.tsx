@@ -4,6 +4,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { DashboardPageHeader } from "@/components/dashboard/ui";
 import { UserCreateScreen } from "@/components/admin/user-create-screen";
 import { Button } from "@/components/ui/button";
+import { ArrowLeft } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 
 export default async function AdminCreateUserPage({
@@ -33,9 +34,11 @@ export default async function AdminCreateUserPage({
           eyebrow="Access Control"
           title="Add User"
           description="Create staff profiles on a dedicated page with role, manager, and software type selection."
-          actions={
-            <Button asChild variant="outline">
-              <Link href="/admin/users">Back to Users</Link>
+          backButton={
+            <Button asChild variant="outline" size="icon" className="h-9 w-9 rounded-xl shrink-0">
+              <Link href="/admin/users" title="Back" aria-label="Back">
+                <ArrowLeft className="h-4 w-4" />
+              </Link>
             </Button>
           }
         />

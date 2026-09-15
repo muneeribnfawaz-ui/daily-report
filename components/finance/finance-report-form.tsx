@@ -13,6 +13,7 @@ import { financeReportSchema } from "@/lib/validation";
 import { PAYMENT_MODES, PAYMENT_MODE_LABELS } from "@/lib/constants";
 import { useSelectedCompany } from "@/hooks/use-selected-company";
 import { encryptPayload } from "@/lib/crypto";
+import { useTranslation } from "@/lib/i18n";
 
 type FinanceFormValues = z.infer<typeof financeReportSchema>;
 type FinanceItemValues = FinanceFormValues["receipts"][number];
@@ -63,6 +64,7 @@ const buildLinkedCashReceipt = (item: any, revisionReference: string): FinanceIt
 });
 
 export function FinanceReportForm({ mode, formType = "full", initialData }: FinanceReportFormProps) {
+  const { t, isRtl } = useTranslation();
   const router = useRouter();
   const isMoneyRequestOnly = formType === "money-request";
   const [mounted, setMounted] = useState(false);
@@ -148,11 +150,13 @@ export function FinanceReportForm({ mode, formType = "full", initialData }: Fina
     queryKey: ["bank-accounts-form-list", selectedCompanyId],
     queryFn: async () => {
       const headers: Record<string, string> = {};
+      let url = "/api/finance/bank-accounts";
       if (selectedCompanyId && selectedCompanyId !== "all") {
         headers["x-workspace-id"] = selectedCompanyId;
+        url += `?workspaceId=${encodeURIComponent(selectedCompanyId)}`;
       }
       
-      const res = await fetch("/api/finance/bank-accounts", { 
+      const res = await fetch(url, { 
         cache: "no-store",
         headers
       });
@@ -211,9 +215,13 @@ export function FinanceReportForm({ mode, formType = "full", initialData }: Fina
   } = useForm<FinanceFormValues>({
     defaultValues: {
       reportDate: initialData?.reportDate || todayStr,
-      expenses: sanitizeItems(initialData?.expenses),
+      expenses: sanitizeItems(
+        initialData?.expenses?.length
+          ? (initialData.payments?.length ? [...initialData.expenses, ...initialData.payments] : initialData.expenses)
+          : (initialData?.payments || [])
+      ),
       receipts: sanitizeItems(initialData?.receipts),
-      payments: sanitizeItems(initialData?.payments),
+      payments: [],
       bankBalances: sanitizeBanks(initialData?.bankBalances),
       cashBalance: {
         pettyCash: initialData?.cashBalance?.pettyCash ? initialData.cashBalance.pettyCash : ("" as any),
@@ -242,8 +250,14 @@ export function FinanceReportForm({ mode, formType = "full", initialData }: Fina
       if (savedDraft) {
         const parsed = JSON.parse(savedDraft);
         if (parsed && typeof parsed === "object") {
+          const mergedExpenses = [
+            ...(Array.isArray(parsed.expenses) ? parsed.expenses : []),
+            ...(Array.isArray(parsed.payments) ? parsed.payments : [])
+          ];
           reset({
             ...parsed,
+            expenses: mergedExpenses,
+            payments: [],
             reportDate: parsed.reportDate || todayStr,
             exchangeRate: sarRate
           });
@@ -497,15 +511,33 @@ export function FinanceReportForm({ mode, formType = "full", initialData }: Fina
     });
   }, [watchedValues.payments, watchedValues.expenses, watchedValues.receipts, prependReceipt, updateReceipt, removeReceipt, setValue]);
 
-  const expensesTotal = (watchedValues.expenses || []).reduce((acc, curr) => acc + (Number(curr.amountINR) || 0), 0);
+  const expensesTotal = (watchedValues.expenses || []).reduce((acc, curr) => acc + (Number(curr.amountINR) || 0), 0)
+    + (watchedValues.payments || []).reduce((acc, curr) => acc + (Number(curr.amountINR) || 0), 0);
   const receiptsTotal = (watchedValues.receipts || [])
     .filter((r: any) => r.particulars !== "Bank to Cash" && !r.revisionReference?.startsWith("link_cash_") && r.paymentMode !== "transfer_to_cash")
     .reduce((acc, curr) => acc + (Number(curr.amountINR) || 0), 0);
-  const paymentsTotal = (watchedValues.payments || []).reduce((acc, curr) => acc + (Number(curr.amountINR) || 0), 0);
-  const banksTotal = (watchedValues.bankBalances || [])
-    .filter((b: any) => b.bankName !== "Cash")
-    .reduce((acc, curr) => acc + (Number(curr.closingBalance) || 0), 0);
-  const pettyCashTotal = Number((watchedValues.bankBalances || []).find((b: any) => b.bankName === "Cash")?.closingBalance) || 0;
+  const paymentsTotal = expensesTotal;
+
+  const calculateAccountClosing = (bankName: string, openingBalance: number | string | undefined) => {
+    const ob = Number(openingBalance) || 0;
+    const rec = (watchedValues.receipts || [])
+      .filter(r => isSameBank(r.bankName, bankName))
+      .reduce((sum, r) => sum + (Number(r.amountINR) || 0), 0);
+    const pay = (watchedValues.payments || [])
+      .filter(p => isSameBank(p.bankName, bankName))
+      .reduce((sum, p) => sum + (Number(p.amountINR) || 0), 0)
+      + (watchedValues.expenses || [])
+      .filter(e => isSameBank(e.bankName, bankName))
+      .reduce((sum, e) => sum + (Number(e.amountINR) || 0), 0);
+    return ob + rec - pay;
+  };
+
+  const banksTotal = (watchedValues.bankBalances || []).reduce((acc, b: any) => {
+    return acc + calculateAccountClosing(b.bankName, b.openingBalance);
+  }, 0);
+
+  const cashAccount = (watchedValues.bankBalances || []).find((b: any) => isSameBank(b.bankName, "Cash"));
+  const pettyCashTotal = cashAccount ? calculateAccountClosing(cashAccount.bankName, cashAccount.openingBalance) : 0;
 
   const onSubmit = async (data: FinanceFormValues) => {
     setIsSubmitting(true);
@@ -539,24 +571,26 @@ export function FinanceReportForm({ mode, formType = "full", initialData }: Fina
       }
     }
 
-    // Ensure all numeric and SAR values are accurately computed right before submit
+    // Ensure all numeric, text and SAR values are accurately trimmed and computed right before submit
+    data.payments = [];
     data.expenses = (data.expenses || []).map((e) => ({
       ...e,
+      particulars: (e.particulars || "").trim(),
+      description: (e.description || "").trim(),
       amountINR: Number(e.amountINR) || 0,
       amountSAR: (Number(e.amountINR) || 0) * sarRate
     }));
     data.receipts = (data.receipts || []).map((e) => ({
       ...e,
-      amountINR: Number(e.amountINR) || 0,
-      amountSAR: (Number(e.amountINR) || 0) * sarRate
-    }));
-    data.payments = (data.payments || []).map((e) => ({
-      ...e,
+      particulars: (e.particulars || "").trim(),
+      description: (e.description || "").trim(),
       amountINR: Number(e.amountINR) || 0,
       amountSAR: (Number(e.amountINR) || 0) * sarRate
     }));
     data.nextDayApprovals = (data.nextDayApprovals || []).map((e) => ({
       ...e,
+      particulars: (e.particulars || "").trim(),
+      description: (e.description || "").trim(),
       amountINR: Number(e.amountINR) || 0,
       amountSAR: (Number(e.amountINR) || 0) * sarRate
     }));
@@ -565,10 +599,7 @@ export function FinanceReportForm({ mode, formType = "full", initialData }: Fina
       const rec = (data.receipts || [])
         .filter(r => isSameBank(r.bankName, b.bankName))
         .reduce((sum, r) => sum + (Number(r.amountINR) || 0), 0);
-      const pay = (data.payments || [])
-        .filter(p => isSameBank(p.bankName, b.bankName))
-        .reduce((sum, p) => sum + (Number(p.amountINR) || 0), 0)
-        + (data.expenses || [])
+      const pay = (data.expenses || [])
         .filter(e => isSameBank(e.bankName, b.bankName))
         .reduce((sum, e) => sum + (Number(e.amountINR) || 0), 0);
       return {
@@ -579,9 +610,14 @@ export function FinanceReportForm({ mode, formType = "full", initialData }: Fina
         closingBalance: ob + rec - pay
       };
     });
+
+    const finalBanksTotal = (data.bankBalances || []).reduce((acc, b) => acc + (b.closingBalance || 0), 0);
+    const finalCashAccount = (data.bankBalances || []).find((b) => isSameBank(b.bankName, "Cash"));
+    const finalPettyCashTotal = finalCashAccount ? finalCashAccount.closingBalance || 0 : 0;
+
     data.cashBalance = {
-      pettyCash: pettyCashTotal,
-      total: pettyCashTotal
+      pettyCash: finalPettyCashTotal,
+      total: finalPettyCashTotal
     };
     data.exchangeRate = sarRate;
     
@@ -589,8 +625,16 @@ export function FinanceReportForm({ mode, formType = "full", initialData }: Fina
     data.summary.totalExpenses = expensesTotal;
     data.summary.totalReceipts = receiptsTotal;
     data.summary.totalPayments = paymentsTotal;
-    data.summary.bankBalance = banksTotal;
-    data.summary.pettyCashBalance = pettyCashTotal;
+    data.summary.bankBalance = finalBanksTotal;
+    data.summary.pettyCashBalance = finalPettyCashTotal;
+
+    const validation = financeReportSchema.safeParse(data);
+    if (!validation.success) {
+      const firstError = validation.error.issues[0]?.message || "Please fill in all required fields.";
+      setSubmitError(firstError);
+      setIsSubmitting(false);
+      return;
+    }
 
     try {
       const payload = { ...data, workspaceId: selectedCompanyId && selectedCompanyId !== "all" ? selectedCompanyId : null };
@@ -637,15 +681,15 @@ export function FinanceReportForm({ mode, formType = "full", initialData }: Fina
   const renderBankBalances = () => (
     <div className="overflow-hidden rounded-xl border border-cardBorder bg-card shadow-soft mb-6">
       <div className="flex items-center justify-between border-b border-primary/20 bg-sidebar px-4 py-3 text-sidebarText">
-        <h3 className="font-semibold">Bank & Cash Balances</h3>
+        <h3 className="font-semibold">{t("finance.bankBalance")} & {t("finance.pettyCashBalance")}</h3>
       </div>
       <div className="p-0 overflow-x-auto">
         <div className="grid grid-cols-[1.5fr_1fr_1fr_1fr_1fr] gap-2 px-4 py-2 bg-muted/30 text-sm font-semibold border-b min-w-[700px]">
-          <div>Bank Name</div>
-          <div className="text-right">Opening Bal</div>
-          <div className="text-right">Receipts</div>
-          <div className="text-right">Payments</div>
-          <div className="text-right">Closing Bal</div>
+          <div>{t("banks.bankName")}</div>
+          <div className="text-right">{t("banks.openingBalance")}</div>
+          <div className="text-right">{t("finance.income")}</div>
+          <div className="text-right">{t("finance.expenses")}</div>
+          <div className="text-right">{t("banks.currentBalance")}</div>
         </div>
         {bankFields.map((field, index) => {
           const currentBankName = watchedValues.bankBalances?.[index]?.bankName || (field as any).bankName;
@@ -688,7 +732,7 @@ export function FinanceReportForm({ mode, formType = "full", initialData }: Fina
             </div>
           );
         })}
-        {bankFields.length === 0 && <div className="p-4 text-center text-sm text-muted-foreground">No bank accounts registered in this workspace.</div>}
+        {bankFields.length === 0 && <div className="p-4 text-center text-sm text-muted-foreground">{t("banks.titleList")}</div>}
       </div>
     </div>
   );
@@ -721,18 +765,18 @@ export function FinanceReportForm({ mode, formType = "full", initialData }: Fina
             }
             className="h-8 bg-primary hover:bg-primaryDark text-primary-foreground font-semibold border-none shadow-sm"
           >
-            <Plus className="h-4 w-4 mr-1" /> Add Row
+            <Plus className="h-4 w-4 mr-1" /> {t("common.add")}
           </Button>
         </div>
         <div className="p-0 overflow-x-auto">
           <div className={`grid ${gridCols} gap-2 px-4 py-2 bg-muted/30 text-sm font-semibold border-b`}>
-            <div>Particulars</div>
-            <div>{isApproval ? "Reason / Details" : "Description"}</div>
-            {isApproval && <div>Priority</div>}
-            {!isApproval && <div>Bank / Cash</div>}
-            {!isApproval && <div>Payment Mode</div>}
-            <div className="text-right">Amount (INR)</div>
-            <div className="text-right flex justify-end items-center gap-1"><ArrowRightLeft className="h-3 w-3" /> Amount (Riyal)</div>
+            <div>{t("moneyRequests.particulars")}</div>
+            <div>{t("common.description")}</div>
+            {isApproval && <div>{t("moneyRequests.priority", "Priority")}</div>}
+            {!isApproval && <div>{t("finance.bankAccount")}</div>}
+            {!isApproval && <div>{t("finance.paymentMode")}</div>}
+            <div className="text-right">{t("moneyRequests.amountINR")}</div>
+            <div className="text-right flex justify-end items-center gap-1"><ArrowRightLeft className="h-3 w-3" /> {t("moneyRequests.amountSAR")}</div>
             <div></div>
           </div>
           {fields.map((field, index) => {
@@ -742,42 +786,48 @@ export function FinanceReportForm({ mode, formType = "full", initialData }: Fina
               <div key={field.id} className={`grid ${gridCols} gap-2 px-4 py-2 items-center border-b last:border-0`}>
                 {(() => {
                   const { onChange: pOnChange, ...pRegister } = register(`${namePrefix}.${index}.particulars`);
+                  const val = watchedValues[namePrefix]?.[index]?.particulars ?? (field as any).particulars ?? "";
                   return (
                     <Input
                       {...pRegister}
+                      value={val}
                       onChange={(e) => {
+                        if (submitError) setSubmitError(null);
                         pOnChange(e);
-                        const val = e.target.value;
-                        setValue(`${namePrefix}.${index}.particulars`, val, { shouldDirty: true });
+                        const v = e.target.value;
+                        setValue(`${namePrefix}.${index}.particulars`, v, { shouldDirty: true });
                         if (namePrefix === "expenses" || namePrefix === "payments") {
-                          const currentItem = { ...(getValues(namePrefix)?.[index] || {}), particulars: val };
+                          const currentItem = { ...(getValues(namePrefix)?.[index] || {}), particulars: v };
                           if (currentItem.paymentMode === "transfer_to_cash") {
                             upsertLinkedCashReceipt(namePrefix, index, currentItem);
                           }
                         }
                       }}
-                      placeholder="Enter particulars"
+                      placeholder={`${t("moneyRequests.particulars")}...`}
                       className="h-9"
                     />
                   );
                 })()}
                 {(() => {
                   const { onChange: dOnChange, ...dRegister } = register(`${namePrefix}.${index}.description`);
+                  const val = watchedValues[namePrefix]?.[index]?.description ?? (field as any).description ?? "";
                   return (
                     <Input
                       {...dRegister}
+                      value={val}
                       onChange={(e) => {
+                        if (submitError) setSubmitError(null);
                         dOnChange(e);
-                        const val = e.target.value;
-                        setValue(`${namePrefix}.${index}.description`, val, { shouldDirty: true });
+                        const v = e.target.value;
+                        setValue(`${namePrefix}.${index}.description`, v, { shouldDirty: true });
                         if (namePrefix === "expenses" || namePrefix === "payments") {
-                          const currentItem = { ...(getValues(namePrefix)?.[index] || {}), description: val };
+                          const currentItem = { ...(getValues(namePrefix)?.[index] || {}), description: v };
                           if (currentItem.paymentMode === "transfer_to_cash") {
                             upsertLinkedCashReceipt(namePrefix, index, currentItem);
                           }
                         }
                       }}
-                      placeholder={isApproval ? "Reason for request" : "Payment description / details"}
+                      placeholder={`${t("common.description")}...`}
                       className="h-9"
                     />
                   );
@@ -802,6 +852,7 @@ export function FinanceReportForm({ mode, formType = "full", initialData }: Fina
                       onBlur={bankOnBlur}
                       value={watchedValues[namePrefix]?.[index]?.bankName || ""}
                       onChange={(event) => {
+                        if (submitError) setSubmitError(null);
                         bankOnChange(event);
                         const nextBankName = event.target.value;
                         setValue(`${namePrefix}.${index}.bankName`, nextBankName, { shouldDirty: true });
@@ -818,7 +869,7 @@ export function FinanceReportForm({ mode, formType = "full", initialData }: Fina
                       }}
                       className="h-9 rounded-md border border-input bg-background px-2 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring w-full"
                     >
-                      <option value="">Select Bank</option>
+                      <option value="">{t("finance.bankAccount")}</option>
                       {bankOptions.map((opt) => (
                         <option key={opt} value={opt}>
                           {opt}
@@ -830,7 +881,7 @@ export function FinanceReportForm({ mode, formType = "full", initialData }: Fina
                 {!isApproval && (() => {
                    const selectedBank = watchedValues[namePrefix]?.[index]?.bankName;
                    if (!selectedBank) {
-                     return <div className="h-9 text-xs text-muted-foreground/60 italic flex items-center px-2">Select bank first</div>;
+                     return <div className="h-9 text-xs text-muted-foreground/60 italic flex items-center px-2">{t("finance.bankAccount")}</div>;
                    }
                    const { onChange: rOnChange, onBlur: rOnBlur, name: rName, ref: rRef } = register(`${namePrefix}.${index}.paymentMode`);
                    return (
@@ -840,6 +891,7 @@ export function FinanceReportForm({ mode, formType = "full", initialData }: Fina
                        onBlur={rOnBlur}
                        value={watchedValues[namePrefix]?.[index]?.paymentMode || ""}
                        onChange={(event) => {
+                         if (submitError) setSubmitError(null);
                          rOnChange(event);
                          const nextPaymentMode = event.target.value;
                          const currentItem = {
@@ -855,7 +907,7 @@ export function FinanceReportForm({ mode, formType = "full", initialData }: Fina
                        }}
                        className="h-9 rounded-md border border-input bg-background px-2 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring w-full"
                      >
-                       <option value="">Select Mode</option>
+                       <option value="">{t("finance.paymentMode")}</option>
                        {(selectedBank === "Cash" 
                          ? ["cash"] 
                          : PAYMENT_MODES.filter(m => m !== "cash")
@@ -869,41 +921,56 @@ export function FinanceReportForm({ mode, formType = "full", initialData }: Fina
                 })()}
                 {(() => {
                   const { onChange: aOnChange, ...aRegister } = register(`${namePrefix}.${index}.amountINR`);
+                  const val = watchedValues[namePrefix]?.[index]?.amountINR ?? (field as any).amountINR ?? "";
                   return (
                     <Input
                       type="number"
                       step="any"
                       min="0"
                       {...aRegister}
+                      value={val}
                       onChange={(e) => {
+                        if (submitError) setSubmitError(null);
                         aOnChange(e);
-                        const val = e.target.value;
-                        setValue(`${namePrefix}.${index}.amountINR`, val as any, { shouldDirty: true });
+                        const v = e.target.value;
+                        setValue(`${namePrefix}.${index}.amountINR`, v as any, { shouldDirty: true });
                         if (namePrefix === "expenses" || namePrefix === "payments") {
-                          const currentItem = { ...(getValues(namePrefix)?.[index] || {}), amountINR: val };
+                          const currentItem = { ...(getValues(namePrefix)?.[index] || {}), amountINR: v };
                           if (currentItem.paymentMode === "transfer_to_cash") {
                             upsertLinkedCashReceipt(namePrefix, index, currentItem);
                           }
                         }
                       }}
                       className="h-9 text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                      placeholder="Enter amount"
+                      placeholder="0"
                     />
                   );
                 })()}
                 <div className="text-right text-sm tabular-nums text-muted-foreground">{formatCurrency(sarVal, "SAR")}</div>
-                <Button type="button" variant="ghost" size="sm" onClick={() => remove(index)} className="h-8 w-8 text-danger hover:text-danger hover:bg-danger/10 p-0">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    if (submitError) setSubmitError(null);
+                    if (namePrefix === "expenses" || namePrefix === "payments") {
+                      removeLinkedCashReceipt(namePrefix, index, watchedValues[namePrefix]?.[index]?.revisionReference);
+                    }
+                    remove(index);
+                  }}
+                  className="h-8 w-8 text-danger hover:text-danger hover:bg-danger/10 p-0"
+                >
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
             );
           })}
           {fields.length === 0 && (
-            <div className="p-4 text-center text-sm text-muted-foreground">No items added.</div>
+            <div className="p-4 text-center text-sm text-muted-foreground">{t("reports.noReportsSubmitted")}</div>
           )}
           {fields.length > 0 && (
             <div className={`grid ${gridCols} gap-2 px-4 py-3 bg-muted/10 font-bold items-center`}>
-              <div className={isApproval ? "col-span-3" : "col-span-4"}>Total</div>
+              <div className={isApproval ? "col-span-3" : "col-span-4"}>{t("common.total", "Total")}</div>
               <div className="text-right tabular-nums text-primary">
                 {formatCurrency((watchedValues[namePrefix] || []).reduce((sum, item) => sum + (Number(item?.amountINR) || 0), 0))}
               </div>
@@ -922,7 +989,7 @@ export function FinanceReportForm({ mode, formType = "full", initialData }: Fina
     return (
       <div className="flex h-64 items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <span className="ml-3 font-medium text-muted-foreground">Checking for existing report...</span>
+        <span className="ml-3 font-medium text-muted-foreground">{t("common.loading")}</span>
       </div>
     );
   }
@@ -949,58 +1016,52 @@ export function FinanceReportForm({ mode, formType = "full", initialData }: Fina
 
       {!isMoneyRequestOnly && (
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-          <label htmlFor="reportDate" className="text-sm font-semibold text-foreground min-w-[120px]">Report Date</label>
+          <label htmlFor="reportDate" className="text-sm font-semibold text-foreground min-w-[120px]">{t("reports.reportDate")}</label>
           <Input id="reportDate" type="date" {...register("reportDate")} readOnly className="max-w-[220px] bg-muted/30 cursor-not-allowed text-muted-foreground font-medium" />
         </div>
       )}
 
       <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/30 px-4 py-2.5 text-xs text-muted-foreground">
         <ArrowRightLeft className="h-3.5 w-3.5" />
-        <span>Exchange Rate: 1 INR = {sarRate.toFixed(4)} SAR/Riyal (auto-updated)</span>
+        <span>1 SAR = {sarRate.toFixed(4)} INR</span>
       </div>
 
       {isMoneyRequestOnly ? (
         <>
           {renderBankBalances()}
-          {renderItemTable("Next Day Money Request (Approval Required)", nextDayFields, prependNextDay, removeNextDay, "nextDayApprovals")}
+          {renderItemTable(t("moneyRequests.titleCreate"), nextDayFields, prependNextDay, removeNextDay, "nextDayApprovals")}
         </>
       ) : (
         <>
-          {renderItemTable("Expenses", expensesFields, prependExpense, removeExpense, "expenses")}
-          {renderItemTable("Receipts", receiptsFields, prependReceipt, removeReceipt, "receipts")}
-          {renderItemTable("Payments", paymentsFields, prependPayment, removePayment, "payments")}
+          {renderItemTable(t("finance.expenses"), expensesFields, prependExpense, removeExpense, "expenses")}
+          {renderItemTable(t("finance.income"), receiptsFields, prependReceipt, removeReceipt, "receipts")}
 
           {/* Bank Balances */}
           {renderBankBalances()}
 
-
           <div className="overflow-hidden rounded-xl border border-cardBorder bg-card shadow-soft mb-6">
             <div className="border-b border-primary/20 bg-sidebar px-4 py-3 text-sidebarText">
-              <h3 className="font-semibold">Summary</h3>
+              <h3 className="font-semibold">{t("finance.summaryNotes")}</h3>
             </div>
             <div className="grid grid-cols-[1.5fr_1fr_2fr] gap-4 p-4 bg-muted/10 items-start">
               <div className="space-y-3">
                 <div className="flex justify-between border-b pb-1">
-                  <span className="text-sm">Total Expenses</span>
+                  <span className="text-sm">{t("finance.totalPayments")}</span>
                   <span className="font-semibold tabular-nums text-danger">{formatCurrency(expensesTotal)}</span>
                 </div>
                 <div className="flex justify-between border-b pb-1">
-                  <span className="text-sm">Total Receipts</span>
+                  <span className="text-sm">{t("finance.totalReceipts")}</span>
                   <span className="font-semibold tabular-nums text-success">{formatCurrency(receiptsTotal)}</span>
                 </div>
-                <div className="flex justify-between border-b pb-1">
-                  <span className="text-sm">Total Payments</span>
-                  <span className="font-semibold tabular-nums text-danger">{formatCurrency(paymentsTotal)}</span>
-                </div>
                 <div className="flex justify-between pb-1">
-                  <span className="text-sm">Bank & Cash Balances</span>
+                  <span className="text-sm">{t("finance.bankBalance")}</span>
                   <span className="font-semibold tabular-nums text-primary">{formatCurrency(banksTotal)}</span>
                 </div>
               </div>
               <div></div>
               <div className="flex flex-col gap-2">
-                <label className="text-sm font-semibold">Description</label>
-                <Textarea {...register("summary.description")} rows={6} placeholder="Enter summary description..." className="resize-none" />
+                <label className="text-sm font-semibold">{t("common.description")}</label>
+                <Textarea {...register("summary.description")} rows={6} placeholder={`${t("finance.summaryPlaceholder")}...`} className="resize-none" />
               </div>
             </div>
           </div>
@@ -1019,23 +1080,23 @@ export function FinanceReportForm({ mode, formType = "full", initialData }: Fina
             disabled={isSubmitting || isDeleting}
           >
             {isDeleting ? (
-              <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Deleting...</>
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t("common.submitting")}</>
             ) : (
-              <><Trash2 className="mr-1.5 h-4 w-4" /> Delete Request</>
+              <><Trash2 className="mr-1.5 h-4 w-4" /> {t("common.delete")}</>
             )}
           </Button>
         )}
         <div className="flex items-center gap-3 ml-auto">
-          <Button type="button" variant="outline" onClick={() => router.push(isMoneyRequestOnly ? "/finance/requests" : "/finance")} disabled={isSubmitting || isDeleting}>Cancel</Button>
+          <Button type="button" variant="outline" onClick={() => router.push(isMoneyRequestOnly ? "/finance/requests" : "/finance")} disabled={isSubmitting || isDeleting}>{t("common.cancel")}</Button>
           <Button type="submit" disabled={isSubmitting || isDeleting} className="bg-primary hover:bg-primaryDark text-primary-foreground font-bold shadow-md">
             {isSubmitting ? (
-              <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</>
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t("common.submitting")}</>
             ) : isMoneyRequestOnly ? (
-              mode === "edit" ? "Update Request" : "Submit Money Request"
+              mode === "edit" ? t("moneyRequests.titleEdit") : t("moneyRequests.createRequest")
             ) : mode === "edit" ? (
-              "Update Report"
+              t("finance.titleEdit")
             ) : (
-              "Submit Finance Report"
+              t("common.submit")
             )}
           </Button>
         </div>

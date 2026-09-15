@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { ReportField, ReportInput, ReportMultiSelectCards, ReportSelect } from "@/components/forms/report-controls";
 import { api } from "@/lib/api";
 import { DEPARTMENT_OPTIONS, MARKETING_SUB_TEAMS } from "@/lib/constants";
-
+import { useTranslation } from "@/lib/i18n";
 import { useQuery } from "@tanstack/react-query";
 import type { SessionUser } from "@/lib/types";
 
@@ -51,6 +51,7 @@ export function TeamTypeForm({
   onSaved?: () => void;
   onCancel?: () => void;
 }) {
+  const { t } = useTranslation();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(mode === "edit");
@@ -98,111 +99,107 @@ export function TeamTypeForm({
           defaultDept = stored;
         }
       }
-      if (!defaultDept && availableDepartments.length === 1) {
+      if (!defaultDept && availableDepartments.length > 0) {
         defaultDept = availableDepartments[0];
       }
       if (defaultDept) {
-        setValue("department", defaultDept);
+        reset({ ...emptyValues, department: defaultDept });
       }
     }
-  }, [mode, availableDepartments, setValue]);
+  }, [mode, availableDepartments, reset]);
 
   useEffect(() => {
     if (mode !== "edit" || !teamTypeId) return;
 
-    let active = true;
-    setLoading(true);
+    let isSubscribed = true;
+    const fetchTeamType = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await api.get(`/api/admin/team-types/${teamTypeId}`);
+        const data = response.data?.data as TeamTypeRecord | undefined;
+        if (!data || !isSubscribed) return;
 
-    api
-      .get(`/api/admin/team-types/${teamTypeId}`)
-      .then((response) => {
-        if (!active) return;
-        const teamType = response.data?.data as TeamTypeRecord;
-        setRecord(teamType);
+        setRecord(data);
         reset({
-          showName: teamType.showName || teamType.name,
-          department: teamType.department ?? "",
-          subTeams: teamType.subTeams ?? [],
-          isActive: teamType.isActive ?? true,
-          isDeleted: teamType.isDeleted ?? false
+          showName: data.showName || data.name,
+          department: data.department || "",
+          subTeams: data.subTeams || [],
+          isActive: data.isActive ?? true,
+          isDeleted: data.isDeleted ?? false
         });
-      })
-      .catch((requestError) => {
-        if (!active) return;
-        const responseMessage = axios.isAxiosError(requestError) ? requestError.response?.data?.message : null;
-        setError(responseMessage ?? "Failed to load team type.");
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-
-    return () => {
-      active = false;
+      } catch (err: any) {
+        if (!isSubscribed) return;
+        const msg = err.response?.data?.message || err.message || "Failed to load team type.";
+        setError(msg);
+      } finally {
+        if (isSubscribed) setLoading(false);
+      }
     };
-  }, [mode, reset, teamTypeId]);
 
-  const internalName = useMemo(() => record?.name ?? "Will be generated automatically", [record?.name]);
+    fetchTeamType();
+    return () => {
+      isSubscribed = false;
+    };
+  }, [mode, teamTypeId, reset]);
 
   const onSubmit = async (values: TeamTypeFormValues) => {
-    setMessage(null);
     setError(null);
-    clearErrors();
+    setMessage(null);
 
-    const parsed = teamTypeFormSchema.safeParse(values);
+    let parsed: ReturnType<typeof teamTypeFormSchema.safeParse>;
+    try {
+      parsed = teamTypeFormSchema.safeParse(values);
+    } catch {
+      return;
+    }
+
     if (!parsed.success) {
+      clearErrors();
       parsed.error.issues.forEach((issue) => {
-        const fieldName = issue.path[0] as keyof TeamTypeFormValues;
-        if (fieldName) {
-          setFieldError(fieldName, {
-            type: "manual",
-            message: issue.message || "Invalid input"
-          });
-        }
+        const fieldName = issue.path.join(".") as keyof TeamTypeFormValues;
+        setFieldError(fieldName, {
+          type: "manual",
+          message: issue.message || "Invalid input"
+        });
       });
       return;
     }
 
-    const payload = {
-      ...parsed.data,
-      isActive: mode === "create" ? true : parsed.data.isActive,
-      department: parsed.data.department ? parsed.data.department : undefined,
-      subTeams: parsed.data.department === "Marketing" ? parsed.data.subTeams : []
-    };
+    const payload = parsed.data;
 
     try {
-      if (mode === "edit" && teamTypeId) {
-        await api.patch(`/api/admin/team-types/${teamTypeId}`, payload);
-        setMessage("Team type updated successfully.");
-      } else {
-        await api.post("/api/admin/team-types", payload);
-        setMessage("Team type created successfully.");
-        reset(emptyValues);
-      }
-
-      onSaved?.();
-    } catch (requestError) {
-      if (axios.isAxiosError(requestError)) {
-        const data = requestError.response?.data;
-        let msg: string | null = null;
-        if (typeof data?.message === "string") {
-          msg = data.message;
-        } else if (Array.isArray(data) && data[0]?.message) {
-          msg = data[0].message;
+      if (mode === "create") {
+        let activeWorkspaceId = currentUser?.workspaceId;
+        if (typeof window !== "undefined") {
+          const storedComp = localStorage.getItem("daily_report_selected_company");
+          if (storedComp && storedComp !== "all") {
+            activeWorkspaceId = storedComp;
+          }
         }
-        setError(msg ?? "Failed to save team type.");
-      } else {
-        setError("Failed to save team type.");
+        await api.post("/api/admin/team-types", { ...payload, workspaceId: activeWorkspaceId });
+        setMessage(t("teamTypes.teamTypeCreated"));
+      } else if (teamTypeId) {
+        await api.patch(`/api/admin/team-types/${teamTypeId}`, payload);
+        setMessage(t("teamTypes.teamTypeUpdated"));
       }
+      setTimeout(() => {
+        if (onSaved) onSaved();
+      }, 500);
+    } catch (requestError: any) {
+      const errorData = axios.isAxiosError(requestError) ? requestError.response?.data : null;
+      const responseMessage = errorData?.message ?? (axios.isAxiosError(requestError) ? requestError.message : null);
+      setError(responseMessage ?? t("common.somethingWentWrong"));
     }
   };
 
   if (loading) {
-    return <div className="text-sm text-muted-foreground">Loading team type...</div>;
+    return <div className="text-sm text-muted-foreground">{t("common.loading")}</div>;
   }
 
   return (
     <form className="grid gap-4" onSubmit={handleSubmit(onSubmit)}>
-      <ReportField label="Department" required error={errors.department?.message}>
+      <ReportField label={t("common.department")} required error={errors.department?.message}>
         <ReportSelect
           {...register("department", {
             onChange: (e) => {
@@ -212,7 +209,7 @@ export function TeamTypeForm({
             }
           })}
         >
-          <option value="">Select Department</option>
+          <option value="">{t("teamTypes.selectDepartment")}</option>
           {availableDepartments.map((dept) => (
             <option key={dept} value={dept}>
               {dept}
@@ -221,8 +218,8 @@ export function TeamTypeForm({
         </ReportSelect>
       </ReportField>
 
-      <ReportField label="Team Name" required error={errors.showName?.message}>
-        <ReportInput placeholder="e.g. Finance Team, Frontend, QA" {...register("showName")} />
+      <ReportField label={t("teamTypes.teamName")} required error={errors.showName?.message}>
+        <ReportInput placeholder={t("teamTypes.teamName")} {...register("showName")} />
       </ReportField>
 
       {selectedDepartment === "Marketing" && (
@@ -247,10 +244,10 @@ export function TeamTypeForm({
 
       {mode === "edit" ? (
         <>
-          <ReportField label="Status" error={errors.isActive?.message}>
+          <ReportField label={t("common.status")} error={errors.isActive?.message}>
             <ReportSelect {...register("isActive", { setValueAs: (value) => String(value) === "true" })}>
-              <option value="true">Active</option>
-              <option value="false">Inactive</option>
+              <option value="true">{t("common.active")}</option>
+              <option value="false">{t("common.inactive")}</option>
             </ReportSelect>
           </ReportField>
           <ReportField label="Deleted" error={errors.isDeleted?.message}>
@@ -267,15 +264,14 @@ export function TeamTypeForm({
 
       <div className="flex flex-wrap gap-3">
         <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "Saving..." : mode === "edit" ? "Update Team Type" : "Create Team Type"}
+          {isSubmitting ? t("common.saving") : mode === "edit" ? t("common.saveChanges") : t("teamTypes.createTeamType")}
         </Button>
         {onCancel ? (
           <Button type="button" variant="outline" onClick={onCancel}>
-            Cancel
+            {t("common.cancel")}
           </Button>
         ) : null}
       </div>
     </form>
   );
 }
-

@@ -8,7 +8,8 @@ export function cn(...inputs: ClassValue[]) {
 export function formatDate(value: Date | string | number) {
   return new Intl.DateTimeFormat("en-IN", {
     dateStyle: "medium",
-    timeStyle: "short"
+    timeStyle: "short",
+    timeZone: "Asia/Kolkata"
   }).format(new Date(value));
 }
 
@@ -24,10 +25,12 @@ export function formatDisplayName(value?: string | null): string {
     .filter(Boolean)
     .map((word) => {
       const upper = word.toUpperCase();
-      if (["MIF", "TL", "HOD", "CEO", "INR", "SAR", "ID", "TM"].includes(upper)) {
-        return upper;
-      }
       return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
     })
     .join(" ");
+}
+
+export function normalizeEmpId(empId?: string | null): string {
+  if (!empId) return "";
+  return empId.trim().toLowerCase();
 }

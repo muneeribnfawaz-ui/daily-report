@@ -7,6 +7,7 @@ import { getActiveTeamTypeNames, getActiveTeamTypeShowNameMap } from "@/lib/team
 import { getUserTeamLabel, sortUsersForDirectory } from "@/lib/user-directory-sort";
 import { ApiResponse } from "@/lib/api-response";
 import { authorizeApi } from "@/lib/api-auth";
+import { normalizeEmpId } from "@/lib/utils";
 
 
 function normalizeTeamNames(teamName?: string | null, teamNames?: string[] | null) {
@@ -35,7 +36,7 @@ export async function GET(request: Request) {
     return ApiResponse.validationError("workspaceId is required");
   }
 
-    const teamTypeShowNameMap = await getActiveTeamTypeShowNameMap();
+    const teamTypeShowNameMap = await getActiveTeamTypeShowNameMap(workspaceId || undefined);
 
   const filter: Record<string, any> = {};
   if (role) filter.role = role;
@@ -44,6 +45,7 @@ export async function GET(request: Request) {
     const matchingTeamTypes = await db.teamType.findMany({
       where: {
         isDeleted: false,
+        ...(workspaceId && workspaceId !== "all" ? { workspaceId } : {}),
         OR: [
           { name: department },
           { showName: department },
@@ -113,7 +115,7 @@ export async function GET(request: Request) {
 
   const memberUserIds = new Set(members.map(m => String(m.userId)));
 
-  const validTeamNames = await getActiveTeamTypeNames();
+  const validTeamNames = await getActiveTeamTypeNames(workspaceId || undefined);
 
   // Flatten the member and user data for the frontend
   const users = members.map(m => {
@@ -186,7 +188,12 @@ export async function POST(request: Request) {
     return ApiResponse.validationError("Invalid user payload", parsed.error.format());
   }
 
-  const validTeamNames = await getActiveTeamTypeNames();
+  let targetWorkspaceId = parsed.data.workspaceId;
+  if (!targetWorkspaceId && user.role !== "admin" && user.role !== "ceo") {
+    targetWorkspaceId = user.workspaceId;
+  }
+
+  const validTeamNames = await getActiveTeamTypeNames(targetWorkspaceId || undefined);
   const existingUser = await db.user.findFirst({ where: { email: parsed.data.email.toLowerCase() } });
   if (existingUser) {
     return ApiResponse.error("A user with this email already exists", 2002, 409);
@@ -211,7 +218,12 @@ export async function POST(request: Request) {
       if (managerMember?.departments?.length) {
         const deptNames = managerMember.departments.map((d: any) => d.name);
         const deptTeams = await db.teamType.findMany({ 
-          where: { department: { in: deptNames }, isActive: true, isDeleted: false }
+          where: {
+            department: { in: deptNames },
+            isActive: true,
+            isDeleted: false,
+            ...(targetWorkspaceId ? { workspaceId: targetWorkspaceId } : {})
+          }
         });
         allowedTeamNames = deptTeams.map((t: any) => t.name);
       }
@@ -266,6 +278,28 @@ export async function POST(request: Request) {
     }
   }
 
+  const rawEmpId = parsed.data.empID ? parsed.data.empID.trim() : "";
+  const normalizedEmpId = normalizeEmpId(rawEmpId);
+
+  if (!targetWorkspaceId && user.role !== "admin" && user.role !== "ceo") {
+    targetWorkspaceId = user.workspaceId;
+  }
+
+  if (targetWorkspaceId && normalizedEmpId) {
+    const existingMember = await (db.workspaceMember as any).findFirst({
+      where: {
+        workspaceId: targetWorkspaceId,
+        OR: [
+          { empIDNormalized: normalizedEmpId },
+          { empID: { equals: rawEmpId, mode: "insensitive" } }
+        ]
+      }
+    });
+    if (existingMember) {
+      return ApiResponse.error("Employee ID already exists. Please enter a unique Employee ID.", 2004, 409);
+    }
+  }
+
   const isExecutive = parsed.data.role === "admin" || parsed.data.role === "ceo";
 
   // 1. Create global User
@@ -284,8 +318,6 @@ export async function POST(request: Request) {
     }
   });
 
-  let targetWorkspaceId = parsed.data.workspaceId;
-
   // Auto-create workspace for CEO
   if (parsed.data.role === "ceo") {
     const workspaceName = `${fullName} CEO Workspace`.trim();
@@ -300,28 +332,48 @@ export async function POST(request: Request) {
     targetWorkspaceId = newWorkspace.id;
   }
 
+  const resolvedManagerName =
+    user.role === "team_lead"
+      ? user.name
+      : user.role === "hod" && (parsed.data.role === "team_lead" || parsed.data.role === "report_manager")
+        ? user.name
+        : user.role === "report_manager" && parsed.data.role === "team_lead"
+          ? user.name
+          : parsed.data.role === "admin" || parsed.data.role === "ceo"
+            ? ""
+            : parsed.data.managerName ?? "";
+
   // 2. Create WorkspaceMember if workspaceId is provided or auto-created
   if (targetWorkspaceId && targetWorkspaceId.trim() !== "") {
-    const newMember = await db.workspaceMember.create({
-      data: {
-        userId: newUser.id,
-        workspaceId: targetWorkspaceId,
-        empID: parsed.data.empID || "EMP",
-        role: parsed.data.role,
-        roleTypes: parsed.data.roleTypes ?? [],
-        teamNames: parsed.data.teamNames ?? [],
-        teamName: parsed.data.teamNames?.[0] || "",
-        departments: {
-          create: parsed.data.departments?.map((d: any) => ({ name: d.name, subTeams: d.subTeams })) || []
+    try {
+      const newMember = await (db.workspaceMember as any).create({
+        data: {
+          userId: newUser.id,
+          workspaceId: targetWorkspaceId,
+          empID: rawEmpId || (isExecutive ? (parsed.data.role === "ceo" ? "CEO" : "EXEC") : "EMP"),
+          empIDNormalized: normalizedEmpId || (isExecutive ? (parsed.data.role === "ceo" ? "ceo" : "exec") : "emp"),
+          role: parsed.data.role,
+          roleTypes: parsed.data.roleTypes ?? [],
+          teamNames: parsed.data.teamNames ?? [],
+          teamName: parsed.data.teamNames?.[0] || "",
+          departments: {
+            create: parsed.data.departments?.map((d: any) => ({ name: d.name, subTeams: d.subTeams })) || []
+          },
+          managerName: resolvedManagerName,
+          status: "active",
+          isActive: true
         },
-        managerName: parsed.data.managerName ?? "",
-        status: "active",
-        isActive: true
-      },
-      include: { departments: true }
-    });
+        include: { departments: true }
+      });
 
-    return ApiResponse.created({ ...newUser, ...newMember }, "User created successfully");
+      return ApiResponse.created({ ...newUser, ...newMember }, "User created successfully");
+    } catch (dbError: any) {
+      await db.user.delete({ where: { id: newUser.id } }).catch(() => {});
+      if (dbError?.code === "P2002" || String(dbError?.message).includes("empID") || String(dbError?.message).includes("Unique constraint")) {
+        return ApiResponse.error("Employee ID already exists. Please enter a unique Employee ID.", 2004, 409);
+      }
+      throw dbError;
+    }
   }
 
   return ApiResponse.created(newUser, "User created successfully");
