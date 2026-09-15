@@ -10,7 +10,7 @@ import db from "@/lib/db";
 import { canEditLockedReport } from "@/lib/permissions";
 import { isInMarketing } from "@/lib/permissions";
 
-export default async function EditMarketingReportPage({ params }: { params: { id: string } }) {
+export default async function EditMarketingReportPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) {
     redirect("/login");
@@ -20,7 +20,7 @@ export default async function EditMarketingReportPage({ params }: { params: { id
     redirect("/dashboard");
   }
 
-  const reportId = params.id;
+  const reportId = (await params).id;
   const report = await db.dailyReport.findUnique({
     where: { id: reportId },
     include: {

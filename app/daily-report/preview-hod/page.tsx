@@ -10,14 +10,14 @@ import { getCurrentUser } from "@/lib/auth";
 export default async function PreviewHodDailyReportPage({
   searchParams,
 }: {
-  searchParams: { date?: string };
+  searchParams: Promise<{ date?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user || user.role !== "hod") {
     redirect("/login");
   }
 
-  const { date } = searchParams;
+  const { date } = await searchParams;
   if (!date) {
     redirect("/daily-report/my-reports");
   }

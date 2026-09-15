@@ -10,7 +10,7 @@
     "seed:admin": "node scripts/seed-default-admin.js",
     "test": "vitest",
     "test:ui": "vitest --ui",
-    "postinstall": "prisma skills sync || exit 0"
+    "postinstall": "prisma generate || exit 0"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
